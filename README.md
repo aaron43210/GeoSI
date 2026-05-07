@@ -1,106 +1,187 @@
-# 🌍 GeoSI: Geospatial Superintelligence
+# GeoSI - Geospatial Superintelligence
 
-**The Autonomous Intelligence Layer for Professional GIS.**
+**The autonomous intelligence layer for professional GIS.**
 
-[![Version](https://img.shields.io/badge/version-2.0.0--alpha-blue.svg)](https://github.com/aaron43210/GEO_SUPER_INTELLIGENCE)
-[![Status](https://img.shields.io/badge/status-production--ready-green.svg)](https://github.com/aaron43210/GEO_SUPER_INTELLIGENCE)
-[![Platform](https://img.shields.io/badge/platform-QGIS%20%7C%20Web%20%7C%20CLI-orange.svg)](https://github.com/aaron43210/GEO_SUPER_INTELLIGENCE)
-
----
-
-## 🛰️ The Vision
-> *"Democratizing Geospatial Intelligence by making complex spatial analysis as simple as natural language."*
-
-GeoSI (Geospatial Superintelligence) is a unified AI orchestration engine designed to bridge the gap between human reasoning and professional GIS execution. It transforms ambiguous natural language prompts into precise, multi-step geospatial workflows, leveraging the full power of QGIS, GDAL, and modern LLMs.
+[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](#)
+[![Status](https://img.shields.io/badge/status-production--ready-green.svg)](#)
+[![Platform](https://img.shields.io/badge/platform-QGIS%20%7C%20Python%20%7C%20API-orange.svg)](#)
+[![LLM](https://img.shields.io/badge/LLM-Ollama%20%7C%20Gemini%20%7C%20Claude-teal.svg)](#)
 
 ---
 
-## 🏗️ System Architecture
+## The Vision
 
-```mermaid
-graph TD
-    User([User Prompt]) --> NLP[Natural Language Parser]
-    NLP --> Agent{Autonomous Agent}
-    
-    subgraph "Reasoning & Planning"
-        Agent --> Plan[Execution Plan Generator]
-        Plan --> Knowledge[Spatial Knowledge Graph]
-    end
-    
-    subgraph "Unified Execution Engine"
-        Plan --> Executor[Workflow Executor]
-        Executor --> Tools[130+ GIS Tools Pool]
-        Tools --> Vector[Vector Ops]
-        Tools --> Raster[Raster Ops]
-        Tools --> Network[Network Analysis]
-    end
-    
-    subgraph "Deployment Interfaces"
-        Executor --> QGIS[QGIS Plugin]
-        Executor --> API[FastAPI Cloud]
-        Executor --> CLI[Terminal CLI]
-    end
-    
-    QGIS --> Results[Visual Insights]
-    API --> Results
-    CLI --> Results
+> *"The beginning of geospatial superintelligence - making complex
+> spatial analysis as simple as asking a question."*
+
+GeoSI bridges natural language and professional GIS. You ask a
+geospatial question; GeoSI plans a multi-step workflow across 125
+tools (vector, raster, terrain, network, ML, cartography) and runs it
+on the layers you already have open in QGIS. No scripting, no menus,
+no SQL.
+
+---
+
+## Three-Surface Architecture
+
+```
+               +----------------------+
+               |  geosi_engine/       |   universal core
+               |  (no QGIS, no Qt)    |   parser  agent  executor
+               |  125 tools, backend  |   state   validation
+               |  dispatch pattern    |   conversation memory
+               +----------+-----------+
+                          ^
+      installs "qgis"     |              no backend installed
+      backend at boot     |              -> BackendTools report
+            +-------------+-------------+     "run from QGIS" error
+            |                           |
++-----------+-----------+   +-----------+-----------+
+|  geosi_plugin/        |   |  geosi_server/ (opt.) |
+|  QGIS dock widget     |   |  FastAPI REST         |
+|  Layers panel sync    |   |  OSM auto-fetch when  |
+|  Processing bridge    |   |  layer is missing     |
++-----------------------+   +-----------------------+
 ```
 
----
-
-## 🚀 Core Pillars
-
-### 1. Autonomous Spatial Reasoning
-GeoSI doesn't just run commands; it understands **spatial context**.
-- **Intent Detection**: Distinguishes between simple queries and complex analytical requests.
-- **Task Decomposition**: Breaks down "Find flood-risk areas near hospitals" into:
-    1. Identify hospital locations.
-    2. Retrieve flood zone data.
-    3. Generate proximity buffers.
-    4. Perform spatial intersection.
-- **Self-Correction**: Validates geometry and CRS (Coordinate Reference Systems) automatically.
-
-### 2. Unified Engine Strategy
-The same core `geosi_engine` powers all interfaces:
-- **QGIS Plugin**: Native desktop integration for GIS professionals.
-- **Hugging Face / Cloud API**: Scalable REST endpoints for web and mobile apps.
-- **Python SDK**: Importable library for data science notebooks and pipelines.
-- **CLI**: Scriptable terminal tool for automated GIS tasks.
-
-### 3. Professional Grade Capabilities
-- **130+ Tools**: From basic Buffering and Clipping to advanced Terrain Analysis, Carbon Accounting, and NDVI calculation.
-- **Multi-Source**: Seamlessly handles Shapefiles, GeoJSON, PostGIS, GeoTIFF, and OGC Web Services.
-- **Explainable AI**: Provides a step-by-step reasoning chain for every result generated.
+- **Engine** is pure Python. Zero QGIS imports. Importable anywhere.
+- **Plugin** is the only code that touches QGIS. It reads the Layers
+  panel and dispatches tools through QGIS Processing.
+- **Server** is optional and independent of the plugin.
 
 ---
 
-## 🛠️ Technology Stack
+## Quick Start (Plugin)
 
-| Layer | Technologies |
-| :--- | :--- |
-| **Intelligence** | Claude 3.5, Gemini Pro, GPT-4o, LangChain |
-| **GIS Engine** | GeoPandas, Rasterio, Shapely, GDAL/OGR |
-| **Backend** | FastAPI, Uvicorn, Pydantic |
-| **Desktop** | QGIS Python API (PyQGIS) |
-| **Infrastructure** | Docker, PostGIS, Hugging Face Spaces |
+### 1. Install Ollama (recommended, keeps everything local)
+
+```bash
+# macOS / Linux
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull mistral        # or: llama3.1, qwen2.5, phi3, gemma2
+ollama serve               # usually auto-starts
+```
+
+### 2. Install GeoSI in QGIS
+
+Copy the `geosi_plugin/` folder into your QGIS plugins directory:
+
+- **Linux:** `~/.local/share/QGIS/QGIS3/profiles/default/python/plugins/geosi_plugin/`
+- **macOS:** `~/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/geosi_plugin/`
+- **Windows:** `%APPDATA%\QGIS\QGIS3\profiles\default\python\plugins\geosi_plugin\`
+
+Copy the `geosi_engine/` package to the same parent `python/plugins/`
+directory (it must be importable by QGIS's Python).
+
+Restart QGIS. Enable **GeoSI - AI Agent** in Plugins -> Manage and
+Install Plugins.
+
+### 3. Use it
+
+- Load any vector or raster layer into the QGIS Layers panel.
+- Click the GeoSI toolbar button. The dock opens on the right.
+- Click the **LLM** button, confirm `http://localhost:11434` and the
+  model name (default `mistral`), hit **Test Ollama**, then
+  **Save and Reload**.
+- Type a question in plain English and press Enter.
+
+```
+You: Buffer Schools by 500 meters
+You: Intersect that with Kerala
+You: Export result as GeoJSON
+```
+
+Try `help`, `layers`, or `tools` at any time.
 
 ---
 
-## 🗺️ Roadmap: The Path to Superintelligence
-- [x] **v1.0**: Core engine with basic vector operations.
-- [x] **v2.0**: Autonomous Agent integration and QGIS Plugin.
-- [ ] **v2.5**: Advanced Raster Analysis & Change Detection.
-- [ ] **v3.0**: Real-time Satellite Stream Monitoring & 3D Viewshed Analysis.
-- [ ] **v4.0**: Predictive Spatial Modeling & Autonomous Decision Support.
+## Supported LLMs (priority order)
+
+| Priority | Provider | Setup |
+|---|---|---|
+| 1 | **Ollama** (local) | `ollama pull mistral` |
+| 2 | Google Gemini | `export GEMINI_API_KEY=...` |
+| 3 | Anthropic Claude | Paste key into the dock's LLM panel |
+| 4 | OpenAI | `export OPENAI_API_KEY=...` |
+| 5 | Rule-based keyword parser | Always on, no setup |
+
+Each provider has a 1.5-second availability probe, so missing ones
+fall through instantly. GeoSI always produces an answer, even offline.
 
 ---
 
-## 🤝 Contact & Contribution
-**GeoSI** is an open-vision project aimed at pushing the boundaries of AI in Geography.
+## Capability Highlights
 
-- **Developer**: AARON R
-- **Email**: [aaronr.ds25@duk.ac.in](mailto:aaronr.ds25@duk.ac.in)
-- **Repository**: [github.com/aaron43210/GEO_SUPER_INTELLIGENCE](https://github.com/aaron43210/GEO_SUPER_INTELLIGENCE)
+- **125 tools**, auto-discovered across 9 domains
+  (vector, raster, network, terrain, temporal, AI/ML, cartography,
+  validation, portable I/O).
+- **Multi-step planning** - GeoSI decomposes compound queries
+  ("find flood-risk hospitals within 2km of rivers") into chained
+  tool calls.
+- **Layer validation** - references a missing layer? GeoSI replies
+  "Layer 'X' not found" and lists what is loaded, with fuzzy
+  suggestions.
+- **Conversation memory** - follow-ups reuse prior context.
+- **Explainable** - every result shows the plan and the reasoning.
 
 ---
-*© 2026 GeoSI Project. Built for the future of our planet.*
+
+## Repository Layout
+
+| Path | Purpose |
+|---|---|
+| `geosi_engine/` | Universal core (no QGIS). Tools, parser, agent, executor. |
+| `geosi_plugin/` | QGIS desktop plugin. Dock, QGIS Processing bridge. |
+| `geosi_server/` | Optional FastAPI REST surface. |
+| `Data_06_2_2026/` | Example Kerala shapefiles for testing. |
+| `prompts.md` | Suggested prompts for vector and raster workflows. |
+| `Connections.md` | Full architecture and flow documentation. |
+
+---
+
+## Example Prompts
+
+See [`prompts.md`](prompts.md) for a complete catalog. A taste:
+
+- *"Buffer Schools by 1 km and intersect with TVM_Corp"*
+- *"Count features in Assets"*
+- *"Calculate slope and hillshade from DEM"*
+- *"Cluster Schools using DBSCAN with eps=500"*
+- *"Export the intersection as GeoJSON"*
+- *"Check Assets for invalid geometries and fix them"*
+
+---
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| "Layer 'X' not found" | Load the layer into the QGIS Layers panel first, then retry. |
+| "Ollama not reachable" | `ollama serve` in a terminal, or click LLM -> Test Ollama. |
+| "No tools loaded" | Engine init failed - check the QGIS Python console for a traceback. |
+| Slow first query | Ollama warms up the model on the first call. Subsequent queries are fast. |
+| Wrong tool picked | Try a more specific phrasing, or use `tools` to see categories. |
+
+---
+
+## Roadmap
+
+- [x] **v1.0** - Core engine, 80 tools, basic plugin.
+- [x] **v2.0** - Ollama-first, 125 tools, universal engine, validation,
+      conversation memory, three clean surfaces.
+- [ ] **v2.5** - GeoPandas backend for the server, batch mode.
+- [ ] **v3.0** - Real-time satellite stream monitoring, 3D viewshed.
+- [ ] **v4.0** - Predictive spatial modelling, autonomous decision
+      support.
+
+---
+
+## Author
+
+**AARON R** - Digital University Kerala (DUK)
+[aaronr.ds25@duk.ac.in](mailto:aaronr.ds25@duk.ac.in)
+
+GeoSI is an open-vision project: the beginning of geospatial
+superintelligence built for the domain.
+
+*© 2026 GeoSI Project.*

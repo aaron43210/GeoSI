@@ -581,11 +581,18 @@ class QueryParser:
         self, query: str, available_layers: List[str]
     ) -> Tuple[AnalysisRequest, float]:
         import requests
-        
-        # Add to conversation history
+
+        # Fast availability probe so we fail over to other providers / rules
+        # within a second instead of waiting out the generation timeout when
+        # Ollama is not running.
+        try:
+            requests.get(f"{self._ollama_endpoint}/api/tags", timeout=1.5)
+        except Exception as exc:
+            raise RuntimeError(f"Ollama not reachable at {self._ollama_endpoint}: {exc}")
+
         self.conversation.add_user_message(self._prompt(query, available_layers))
         context = self.conversation.get_context(include_system=True)
-        
+
         endpoint = f"{self._ollama_endpoint}/api/generate"
         payload = {
             "model": self._ollama_model,

@@ -105,8 +105,56 @@ class GeoSIAgent:
                 "(e.g. 'Count schools from Schools.shp')."
             )
 
-        # Check if primary layer exists (case-insensitive + stem matching)
+        # If the parser could not resolve a primary_layer but the query
+        # clearly names one (e.g. "Buffer hospitals by 500m" with only
+        # "Schools" loaded), surface that to the user instead of silently
+        # running a layerless plan.
         primary = request.entities.get("primary_layer")
+        if not primary:
+            import re as _re
+            candidates = _re.findall(
+                r"\b([A-Za-z][A-Za-z_]{3,})\b",
+                request.query or "",
+            )
+            _STOP = {
+                "buffer", "intersect", "clip", "union", "merge", "dissolve",
+                "centroid", "slope", "aspect", "ndvi", "ndwi", "raster",
+                "shortest", "path", "service", "area", "hotspot", "cluster",
+                "count", "export", "geojson", "shapefile", "from", "with",
+                "into", "within", "meters", "meter", "metre", "metres",
+                "kilometers", "kilometer", "km", "miles", "feet", "yards",
+                "the", "and", "near", "nearest", "find", "calculate", "show",
+                "list", "layer", "layers", "between", "over", "above",
+                "below", "features", "points", "feature", "point",
+            }
+            noun_like = [c for c in candidates if c.lower() not in _STOP]
+            # Look for nouns NOT present in any loaded layer
+            loaded_lower = {l.lower() for l in available}
+            loaded_stems = {os.path.splitext(l)[0].lower() for l in available}
+            orphans = [
+                n for n in noun_like
+                if n.lower() not in loaded_lower
+                and n.lower() not in loaded_stems
+            ]
+            if orphans:
+                orphan = orphans[0]
+                similar = self.find_similar_layers(orphan, available, threshold=0.5)
+                self.layer_suggestions = similar
+                if similar:
+                    suggestions = ", ".join(
+                        [f"'{s[0]}' ({s[1]:.0%} match)" for s in similar[:3]]
+                    )
+                    return False, (
+                        f"Layer '{orphan}' not found in the QGIS Layers panel. "
+                        f"Did you mean: {suggestions}?"
+                    )
+                layers_list = "\n  - ".join(available)
+                return False, (
+                    f"Layer '{orphan}' not found in the QGIS Layers panel.\n\n"
+                    f"Available layers:\n  - {layers_list}"
+                )
+
+        # Check if primary layer exists (case-insensitive + stem matching)
         if primary:
             primary_lower = primary.lower()
             primary_stem  = os.path.splitext(primary_lower)[0]
@@ -288,13 +336,15 @@ Return ONLY valid JSON:
 
     def _plan_with_ollama(self, request: AnalysisRequest) -> ExecutionPlan:
         import requests
-        
-        # Add user query to conversation history
+
+        try:
+            requests.get(f"{self._ollama_endpoint}/api/tags", timeout=1.5)
+        except Exception as exc:
+            raise RuntimeError(f"Ollama not reachable at {self._ollama_endpoint}: {exc}")
+
         self.conversation.add_user_message(self._get_prompt(request))
-        
-        # Build context from conversation history
         context = self.conversation.get_context(include_system=True)
-        
+
         endpoint = f"{self._ollama_endpoint}/api/generate"
         payload = {
             "model": self._ollama_model,
