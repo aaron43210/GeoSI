@@ -1,0 +1,431 @@
+# -*- coding: utf-8 -*-
+"""
+GeoSI Engine — Agent (LLM-Powered Planning)
+
+Plans GIS workflows using Ollama (local-first), Google Gemini, or Anthropic Claude LLMs.
+Ollama is tried first if available; then falls back to Gemini, then Claude, then rule-based planning.
+"""
+
+import os
+import json
+import logging
+from typing import Dict, List, Optional, Any, Tuple
+from difflib import SequenceMatcher
+
+from geosi_engine.models import (
+    AnalysisRequest,
+    ExecutionPlan,
+    ToolStep,
+    IntentType,
+)
+from geosi_engine.parser import QueryParser
+from geosi_engine.registry import ToolRegistry
+from geosi_engine.state import StateManager
+from geosi_engine.validation import ValidationEngine, ValidationReport
+from geosi_engine.conversation import ConversationManager
+
+logger = logging.getLogger("geosi_engine.agent")
+
+_DEFAULT_PLANS: Dict[IntentType, List[str]] = {
+    IntentType.PROXIMITY:       ["buffer", "intersect"],
+    IntentType.OVERLAY:         ["intersect"],
+    IntentType.GEOMETRY:        ["clean_layer"],
+    IntentType.RASTER:          ["raster_calc"],
+    IntentType.TERRAIN:         ["slope"],
+    IntentType.NETWORK:         ["shortest_path"],
+    IntentType.AI_ML:           ["kmeans_cluster", "hotspot_analysis"],
+    IntentType.CARTOGRAPHY:     ["export_geojson"],
+    IntentType.STATISTICS:      ["count_features"],
+    IntentType.DATA_MANAGEMENT: ["load_spatial_data"],
+    IntentType.VALIDATION:      ["validate_geometry"],
+    IntentType.TEMPORAL:        ["load_spatial_data"],
+    IntentType.UNKNOWN:         ["count_features"],
+}
+
+class GeoSIAgent:
+    """
+    Plans multi-step GIS workflows using Gemini or Claude.
+    Only works with layers available in QGIS layer panel.
+    """
+
+    def __init__(self, registry: ToolRegistry, use_llm: bool = True, conversation: Optional[ConversationManager] = None):
+        self.registry = registry
+        self.parser = QueryParser(use_llm=use_llm)
+        self.validator = ValidationEngine()
+        self.use_llm = use_llm
+        self.conversation = conversation or ConversationManager(
+            system_prompt="You are a GIS workflow planner. You help users analyze geospatial data and create analysis plans."
+        )
+        self._ollama_endpoint = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
+        self._ollama_model = os.environ.get("OLLAMA_MODEL", "mistral")
+        self._anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        self._gemini_key = os.environ.get("GEMINI_API_KEY", "")
+        self.layer_suggestions: Optional[List[Tuple[str, float]]] = None  # For UI to show similar layers
+
+    def parse(self, query: str, state: StateManager) -> AnalysisRequest:
+        layer_names = state.list_layers() if state else []
+        return self.parser.parse(query, layer_names)
+
+    def find_similar_layers(self, layer_name: str, available_layers: List[str], threshold: float = 0.6) -> List[Tuple[str, float]]:
+        """
+        Find similar layer names using fuzzy matching.
+        Returns list of (layer_name, similarity_score) tuples sorted by score descending.
+        """
+        if not available_layers or not layer_name:
+            return []
+        
+        matches = []
+        layer_lower = layer_name.lower()
+        for available in available_layers:
+            available_lower = available.lower()
+            # Check exact match first
+            if available_lower == layer_lower:
+                matches.append((available, 1.0))
+            else:
+                # Fuzzy match
+                ratio = SequenceMatcher(None, layer_lower, available_lower).ratio()
+                if ratio >= threshold:
+                    matches.append((available, ratio))
+        
+        return sorted(matches, key=lambda x: x[1], reverse=True)
+
+    def validate_layers_exist(self, request: AnalysisRequest, state: StateManager) -> Tuple[bool, Optional[str]]:
+        """
+        Validate that requested layers exist in available layers.
+        Returns (is_valid, error_message).
+        If similar layers found, sets self.layer_suggestions for UI.
+        """
+        if not state:
+            return False, "No state manager available"
+
+        available = state.list_layers()
+        if not available:
+            return False, (
+                "No layers loaded. Please load a shapefile first, or reference one by filename "
+                "(e.g. 'Count schools from Schools.shp')."
+            )
+
+        # Check if primary layer exists (case-insensitive + stem matching)
+        primary = request.entities.get("primary_layer")
+        if primary:
+            primary_lower = primary.lower()
+            primary_stem  = os.path.splitext(primary_lower)[0]
+            available_lower = [l.lower() for l in available]
+            available_stems = [os.path.splitext(l)[0].lower() for l in available]
+
+            matched = (
+                primary_lower in available_lower
+                or primary_stem in available_lower
+                or primary_lower in available_stems
+                or primary_stem in available_stems
+            )
+
+            if not matched:
+                # Try fuzzy suggestions
+                similar = self.find_similar_layers(primary, available, threshold=0.5)
+                self.layer_suggestions = similar
+
+                if similar:
+                    suggestions = ", ".join(
+                        [f"'{s[0]}' ({s[1]:.0%} match)" for s in similar[:3]]
+                    )
+                    return False, f"Layer '{primary}' not found. Did you mean: {suggestions}?"
+                else:
+                    layers_list = "\n  - ".join(available)
+                    return False, (
+                        f"Layer '{primary}' not found.\n\n"
+                        f"Available layers:\n  - {layers_list}"
+                    )
+
+        return True, None
+
+    def plan(self, request: AnalysisRequest, state: Optional[StateManager] = None) -> ExecutionPlan:
+        # Validate layers exist first
+        if state:
+            valid, error_msg = self.validate_layers_exist(request, state)
+            if not valid:
+                # Return a failed plan with error message
+                return ExecutionPlan(
+                    request=request,
+                    steps=[],
+                    reasoning=error_msg or "Layer validation failed"
+                )
+        
+        if self.use_llm:
+            # Priority 1: Try Ollama first (if available)
+            try:
+                return self._plan_with_ollama(request)
+            except Exception as e:
+                logger.warning(f"Ollama planning failed: {e}")
+            
+            # Priority 2: Try Gemini
+            if self._gemini_key:
+                try:
+                    return self._plan_with_gemini(request)
+                except Exception as e:
+                    logger.warning(f"Gemini planning failed: {e}")
+            
+            # Priority 3: Try Anthropic
+            if self._anthropic_key:
+                try:
+                    return self._plan_with_anthropic(request)
+                except Exception as e:
+                    logger.warning(f"Anthropic planning failed: {e}")
+
+        return self._plan_with_rules(request)
+
+    def _plan_with_rules(self, request: AnalysisRequest) -> ExecutionPlan:
+        tool_names = _DEFAULT_PLANS.get(request.intent, ["count_features"])
+        steps = []
+        for i, tool_name in enumerate(tool_names):
+            tool = self.registry.get_tool(tool_name)
+            if not tool:
+                continue
+
+            spec = tool.spec()
+            params = {}
+            description_parts = [tool_name]
+
+            # Collect all parameter specs
+            param_specs = {p.name: p for p in (spec.parameters or [])}
+
+            # Primary input layer (usually first parameter: INPUT, layer, etc.)
+            primary = request.entities.get("primary_layer") or request.entities.get("layer")
+            if param_specs:
+                first_param_name = spec.parameters[0].name
+                params[first_param_name] = primary
+            else:
+                params["INPUT"] = primary
+
+            # Fill in other parameters based on intent and tool
+            if tool_name == "buffer":
+                # Buffer tool needs DISTANCE
+                dist = request.parameters.get("distance_value")
+                if dist:
+                    params["DISTANCE"] = dist
+                    description_parts.append(f"by {dist}m")
+            
+            elif tool_name == "intersect" or tool_name == "intersection":
+                # Intersect tool needs OVERLAY (secondary layer)
+                overlay = request.entities.get("secondary_layer")
+                if overlay:
+                    params["OVERLAY"] = overlay
+                    description_parts.append(f"with {overlay}")
+                else:
+                    # If no secondary layer specified, try to find another available layer
+                    available = request.available_layers or []
+                    for layer in available:
+                        if layer.lower() != (primary or "").lower():
+                            params["OVERLAY"] = layer
+                            description_parts.append(f"with {layer}")
+                            break
+            
+            elif tool_name == "clip":
+                # Clip tool needs MASK layer
+                mask = request.entities.get("secondary_layer")
+                if mask:
+                    params["MASK"] = mask
+                    description_parts.append(f"to {mask}")
+            
+            elif tool_name in ["slope", "aspect", "hillshade", "contour"]:
+                # Terrain tools usually just need input DEM
+                pass
+            
+            elif "cluster" in tool_name.lower():
+                # K-means cluster - may need NUM_CLUSTERS or EPS parameter
+                threshold = request.parameters.get("threshold")
+                if threshold:
+                    if "NUM_CLUSTERS" in param_specs:
+                        params["NUM_CLUSTERS"] = int(threshold)
+                    elif "EPS" in param_specs:
+                        params["EPS"] = threshold
+            
+            elif "hotspot" in tool_name.lower():
+                # Hotspot analysis - may need secondary layer
+                overlay = request.entities.get("secondary_layer")
+                if overlay and "OVERLAY" in param_specs:
+                    params["OVERLAY"] = overlay
+
+            step = ToolStep(
+                step_id=f"step_{i+1}",
+                tool_name=tool_name,
+                parameters=params,
+                output_name=f"step_{i+1}_output",
+                description=" ".join(description_parts)
+            )
+            steps.append(step)
+        return ExecutionPlan(request=request, steps=steps, reasoning="Rule-based fallback plan")
+
+    def _get_prompt(self, request: AnalysisRequest) -> str:
+        tool_catalog = []
+        for spec in self.registry.list_tools():
+            tool_catalog.append({
+                "name": spec.name,
+                "description": spec.description,
+                "parameters": [{"name": p.name, "type": p.param_type} for p in spec.parameters]
+            })
+        
+        return f"""You are a GIS workflow planner. Available tools:
+{json.dumps(tool_catalog, indent=2)}
+
+Available layers: {request.available_layers}
+User query: "{request.query}"
+
+Return ONLY valid JSON:
+{{
+  "reasoning": "Plan explanation",
+  "steps": [
+    {{
+      "step_id": "step_1",
+      "tool_name": "tool_name",
+      "parameters": {{ "INPUT": "layer_name" }},
+      "output_name": "step_1_output",
+      "description": "Task description",
+      "depends_on": []
+    }}
+  ]
+}}"""
+
+    def _plan_with_ollama(self, request: AnalysisRequest) -> ExecutionPlan:
+        import requests
+        
+        # Add user query to conversation history
+        self.conversation.add_user_message(self._get_prompt(request))
+        
+        # Build context from conversation history
+        context = self.conversation.get_context(include_system=True)
+        
+        endpoint = f"{self._ollama_endpoint}/api/generate"
+        payload = {
+            "model": self._ollama_model,
+            "prompt": context,
+            "stream": False,
+            "temperature": 0.0,
+        }
+        response = requests.post(endpoint, json=payload, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        text = data.get("response", "")
+        
+        # Add assistant response to conversation history
+        self.conversation.add_assistant_message(text)
+        
+        return self._json_to_plan(request, text)
+
+    def _plan_with_anthropic(self, request: AnalysisRequest) -> ExecutionPlan:
+        import anthropic
+        client = anthropic.Anthropic(api_key=self._anthropic_key)
+        response = client.messages.create(
+            model="claude-3-sonnet-20240229",
+            max_tokens=2048,
+            messages=[{"role": "user", "content": self._get_prompt(request)}],
+        )
+        return self._json_to_plan(request, response.content[0].text)
+
+    def _plan_with_gemini(self, request: AnalysisRequest) -> ExecutionPlan:
+        import google.generativeai as genai
+        genai.configure(api_key=self._gemini_key)
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        response = model.generate_content(self._get_prompt(request))
+        return self._json_to_plan(request, response.text)
+
+    def _json_to_plan(self, request: AnalysisRequest, text: str) -> ExecutionPlan:
+        text = text.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1]
+            if text.endswith("```"): text = text[:-3]
+        data = json.loads(text)
+        steps = [ToolStep(**s) for s in data.get("steps", [])]
+        return ExecutionPlan(request=request, steps=steps, reasoning=data.get("reasoning", ""))
+
+    # ── Plan validation & error recovery (Architecture Module 2) ──────
+
+    def validate_plan(
+        self, plan: ExecutionPlan, state: Optional[StateManager] = None
+    ) -> ValidationReport:
+        """
+        Validate an ExecutionPlan against the tool registry and state.
+
+        Returns a ValidationReport aggregating unknown tools, unknown
+        layers, and missing required parameters for every step.
+        """
+        report = ValidationReport()
+        known_steps: set = set()
+        for step in plan.steps:
+            tool = self.registry.get_tool(step.tool_name)
+            spec = tool.spec() if tool else None
+
+            if spec is None:
+                from geosi_engine.validation import ValidationIssue
+                report.add(ValidationIssue(
+                    "error", "unknown_tool",
+                    f"Step {step.step_id}: tool '{step.tool_name}' not in registry.",
+                ))
+                continue
+
+            for param in spec.parameters:
+                if param.required and param.name not in (step.parameters or {}):
+                    from geosi_engine.validation import ValidationIssue
+                    report.add(ValidationIssue(
+                        "error", "missing_parameter",
+                        f"Step {step.step_id}: required parameter "
+                        f"'{param.name}' is missing.",
+                    ))
+
+            for dep in step.depends_on or []:
+                if dep not in known_steps:
+                    from geosi_engine.validation import ValidationIssue
+                    report.add(ValidationIssue(
+                        "error", "bad_dependency",
+                        f"Step {step.step_id} depends on unknown step '{dep}'.",
+                    ))
+
+            if state is not None:
+                pre = self.validator.validate_operation_preconditions(step, state)
+                report.issues.extend(pre.issues)
+                if not pre.ok:
+                    report.ok = False
+
+            known_steps.add(step.step_id)
+        return report
+
+    def recover_from_error(
+        self,
+        error: Exception,
+        plan: ExecutionPlan,
+        failed_step_id: Optional[str] = None,
+    ) -> ExecutionPlan:
+        """
+        Produce a fallback ExecutionPlan when a step fails.
+
+        Strategy:
+        1. Drop the failed step and any steps depending (directly or
+           transitively) on it.
+        2. Append a note to the plan reasoning so the UI can surface why
+           the recovery plan looks different.
+
+        This matches Module 2 / FR-08 of GEOSI_COMPLETE_ARCHITECTURE.md.
+        """
+        if failed_step_id is None and plan.steps:
+            failed_step_id = plan.steps[-1].step_id
+
+        dropped = {failed_step_id} if failed_step_id else set()
+        changed = True
+        while changed:
+            changed = False
+            for step in plan.steps:
+                if step.step_id in dropped:
+                    continue
+                if any(d in dropped for d in (step.depends_on or [])):
+                    dropped.add(step.step_id)
+                    changed = True
+
+        surviving = [s for s in plan.steps if s.step_id not in dropped]
+        note = (
+            f"\n[recovery] dropped step(s) {sorted(dropped)} after error: {error}"
+        )
+        return ExecutionPlan(
+            request=plan.request,
+            steps=surviving,
+            reasoning=(plan.reasoning or "") + note,
+        )

@@ -1,0 +1,26 @@
+[general]
+name=GeoSI — Geospatial Superintelligence
+qgisMinimumVersion=3.22
+qgisMaximumVersion=4.99
+description=AI agent plugin for QGIS. Type natural language prompts to execute GIS operations, spatial analysis, terrain analysis, carbon accounting, and more — directly on your loaded layers.
+version=1.0.0
+author= AARON R
+email= aaronr.ds25@duk.ac.in
+about=GeoSI is a prompt-driven AI agent that lives inside QGIS as a dock widget. Type commands like "buffer hospitals by 500m", "calculate NDVI", "find shortest path", "calculate carbon stock" and the agent translates your intent into real QGIS Processing algorithms executed on your actual project layers. Supports 50+ operations across vector, raster, terrain, network, temporal, carbon, and AI prediction categories.
+
+tracker=https://github.com/geosi/geosi-qgis-plugin/issues
+repository=https://github.com/geosi/geosi-qgis-plugin
+hasProcessingProvider=no
+tags=ai,agent,prompt,gis,analysis,vector,raster,carbon,ndvi,buffer,spatial,processing
+homepage=https://github.com/geosi/geosi-qgis-plugin
+category=Analysis
+icon=icon.png
+experimental=False
+deprecated=False
+changelog=
+    1.0.0 - Initial release
+    - AI prompt agent dock widget
+    - 50+ GIS operations via natural language
+    - Vector, raster, terrain, network, temporal, carbon
+    - Works on loaded QGIS project layers
+    - Conversation history with undo
