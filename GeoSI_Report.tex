@@ -1,0 +1,367 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{titling}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{fancyhdr}
+\usepackage{abstract}
+
+% Colours
+\definecolor{geosinavy}{HTML}{0B2A4A}
+\definecolor{geositeal}{HTML}{108A92}
+\definecolor{geosimuted}{HTML}{555F6D}
+\definecolor{codebg}{HTML}{F4F1EA}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=geosinavy,
+    urlcolor=geositeal,
+    citecolor=geosinavy,
+    pdftitle={GeoSI: The Beginning of Geospatial Superintelligence},
+    pdfauthor={Aaron R}
+}
+
+\titleformat{\section}{\Large\bfseries\color{geosinavy}}{\thesection}{1em}{}
+\titleformat{\subsection}{\large\bfseries\color{geositeal}}{\thesubsection}{1em}{}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{geosimuted},
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  xleftmargin=6pt,
+  xrightmargin=6pt,
+  framesep=6pt,
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\color{geosimuted}\small GeoSI --- Geospatial Superintelligence}
+\fancyhead[R]{\color{geosimuted}\small v2.0}
+\fancyfoot[C]{\thepage}
+
+\title{%
+  \vspace{-1cm}%
+  {\color{geosinavy}\Huge\bfseries GeoSI}\\[0.4em]
+  {\color{geositeal}\Large The Beginning of Geospatial Superintelligence}\\[0.3em]
+  {\color{geosimuted}\normalsize A Conversational Multi-Tool Engine for Professional GIS}
+}
+\author{Aaron R \\ \small Digital University Kerala (DUK) \\ \small \href{mailto:aaronr.ds25@duk.ac.in}{aaronr.ds25@duk.ac.in}}
+\date{May 2026 \quad $\cdot$ \quad Version 2.0}
+
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+
+\begin{abstract}
+\noindent
+Professional Geographic Information Systems (GIS) offer enormous analytical
+power but remain gated behind menus, scripts, and domain-specific query
+languages. This report introduces \textbf{GeoSI} (Geospatial
+Superintelligence), a conversational AI system that bridges natural
+language and professional GIS. GeoSI decomposes plain-English spatial
+questions into multi-step workflows and executes them across 125
+geospatial tools, operating on layers already loaded in the user's QGIS
+workspace. The system is built on a three-surface architecture that
+strictly separates the universal \emph{engine} from the QGIS
+\emph{plugin} and an optional \emph{REST server}, with Ollama as the
+default local language model. We describe the system design, the
+backend-dispatch pattern that keeps the engine framework-free, the
+LLM priority chain with graceful fallback, the parser/agent/executor
+pipeline, and an evaluation on representative vector and raster
+workflows. GeoSI is production-ready and, we argue, represents a first
+step toward domain-native geospatial superintelligence.
+\end{abstract}
+
+\vspace{0.5em}
+\noindent\textbf{Keywords:} geospatial AI, natural language interface,
+QGIS, large language models, multi-step planning, tool use, Ollama.
+
+\tableofcontents
+\newpage
+
+\section{Introduction}
+Geographic Information Systems are indispensable across urban planning,
+disaster response, agriculture, conservation, and public policy. Yet
+the cognitive overhead remains high. Translating a spatial question
+into a correct toolchain requires fluency in algorithms, coordinate
+reference systems, and vendor-specific interfaces. Domain experts who
+understand the \emph{question} rarely produce the \emph{answer} without
+GIS analyst intermediaries.
+
+General-purpose AI assistants do not solve this gap: they can describe
+GIS operations but cannot actually execute them on the user's data,
+and they cannot guarantee that the data they reference has been loaded
+at all.
+
+\subsection{Contributions}
+This report presents GeoSI, whose contributions are:
+\begin{itemize}[leftmargin=*]
+  \item A \textbf{three-surface architecture} that isolates QGIS
+  dependencies to a single plugin layer while keeping the analytical
+  engine framework-free and importable anywhere.
+  \item A \textbf{backend-dispatch pattern} that allows the same tool
+  specifications to run under QGIS Processing, a GeoPandas backend, or
+  return a clear unavailability error.
+  \item An \textbf{Ollama-first LLM chain} with 1.5~s availability
+  probing and graceful fallback through Gemini, Anthropic, OpenAI,
+  and a deterministic keyword parser, delivering a fully offline
+  default experience.
+  \item A \textbf{layer-grounding mechanism} that refuses to
+  hallucinate data: queries referencing unloaded layers receive fuzzy
+  suggestions based on the QGIS Layers panel.
+  \item A \textbf{unified tool catalogue} of 125 auto-discovered tools
+  across nine GIS domains, exposed through one conversational surface.
+\end{itemize}
+
+\section{System Architecture}
+\subsection{Three-Surface Model}
+GeoSI is organised into three strictly independent surfaces:
+\begin{description}[leftmargin=*]
+  \item[\texttt{geosi\_engine/}] The universal core. Zero QGIS imports.
+  Contains models, tool registry, parser, agent, executor,
+  state manager, validation, and conversation memory.
+  \item[\texttt{geosi\_plugin/}] The only code that imports
+  \texttt{qgis}. Owns the chat dock, syncs the QGIS Layers panel into
+  engine state, and installs a \texttt{"qgis"} backend into the engine
+  at startup.
+  \item[\texttt{geosi\_server/}] An optional FastAPI REST surface. It
+  can auto-fetch OpenStreetMap data when the referenced feature name
+  is recognisable and safe.
+\end{description}
+
+\subsection{Backend Dispatch Pattern}
+A \texttt{BackendTool} carries a specification (parameters, category,
+description) but never imports QGIS. Execution is delegated to a
+backend function registered at runtime:
+\begin{lstlisting}[language=Python]
+from geosi_engine.base import register_backend
+register_backend("qgis", _run_qgis_algorithm)
+\end{lstlisting}
+This keeps the engine exportable as a pure Python library while
+allowing the plugin to inject the QGIS Processing framework at boot.
+
+\subsection{Parser, Agent, Executor}
+The engine follows a classical plan-and-execute pipeline:
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Parser} produces an \texttt{AnalysisRequest} capturing
+  intent (e.g. \textsc{Proximity}, \textsc{Raster}), entities
+  (\texttt{primary\_layer}, \texttt{secondary\_layer}), and parameters
+  (\texttt{distance\_value}, \texttt{threshold}).
+  \item \textbf{Agent} validates that referenced layers exist, then
+  produces an \texttt{ExecutionPlan} containing ordered \texttt{ToolStep}
+  instances with parameter bindings and dependency edges.
+  \item \textbf{Executor} walks the plan, dispatches each step to the
+  registered backend, handles partial failures, and returns a
+  structured \texttt{ExecutionResult}.
+\end{enumerate}
+
+\section{Language Model Integration}
+\subsection{Priority Chain}
+GeoSI attempts providers in order of local-first preference:
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Ollama} (local, default). 1.5~s probe against
+  \texttt{/api/tags}; 30~s generate timeout.
+  \item \textbf{Google Gemini} when \texttt{GEMINI\_API\_KEY} is set.
+  \item \textbf{Anthropic Claude} when \texttt{ANTHROPIC\_API\_KEY} is set.
+  \item \textbf{OpenAI} when \texttt{OPENAI\_API\_KEY} is set.
+  \item \textbf{Rule-based keyword parser} --- always available, drives
+  all 125 tools offline.
+\end{enumerate}
+Every provider failure is logged and falls through. The deterministic
+fallback guarantees GeoSI always produces an answer, even without any
+LLM.
+
+\subsection{Prompt Design}
+The planner prompt exposes the tool catalogue as structured JSON,
+the user's available layers, and the query text. The LLM is asked to
+return strictly valid JSON conforming to the \texttt{ExecutionPlan}
+schema. Responses are sanitised (fenced-block removal, tolerant
+extraction) before instantiation; malformed responses trigger the
+keyword fallback.
+
+\section{Tool Catalogue}
+GeoSI auto-discovers 125 tools via \texttt{pkgutil.walk\_packages} over
+\texttt{geosi\_engine.tools}. Table~\ref{tab:tools} summarises the
+coverage.
+
+\begin{table}[ht]
+\centering
+\caption{GeoSI tool catalogue (125 tools across nine domains).}
+\label{tab:tools}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Domain} & \textbf{Count} & \textbf{Representative Tools} \\
+\midrule
+Vector & 40 & buffer, intersect, clip, dissolve, voronoi, joins \\
+Raster & 25 & raster\_calc, NDVI, NDWI, zonal\_stats, reclassify \\
+Terrain & 10 & slope, aspect, hillshade, contour, viewshed \\
+Network & 8 & shortest\_path, service\_area, isochrone, OD matrix \\
+Temporal & 6 & change\_detection, time\_series\_aggregate \\
+AI/ML & 10 & kmeans, dbscan, Getis-Ord Gi*, Moran's I, IDW \\
+Cartography & 10 & export\_geojson, export\_kml, geocode \\
+Validation & 10 & fix\_geometries, topology\_check, duplicates \\
+Portable & 2 & count\_features, load\_spatial\_data \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Layer Grounding}
+A distinctive property of GeoSI is its refusal to hallucinate data.
+When a user references a layer that is not in the QGIS Layers panel,
+the agent responds with a clear error:
+\begin{lstlisting}
+User: "Buffer hospitals by 500m"
+(only "Schools" is loaded)
+GeoSI: Layer 'hospitals' not found in the QGIS Layers panel.
+       Did you mean: 'Schools' (50% match)?
+\end{lstlisting}
+Two mechanisms collaborate:
+\begin{enumerate}[leftmargin=*]
+  \item A fuzzy matcher (SequenceMatcher) with a 0.5 threshold over
+  loaded layer names and their stems.
+  \item An \emph{orphan-noun detector} that scans the query for
+  noun-like tokens not present in the loaded layer set, filtering GIS
+  verbs (buffer, intersect, clip, \ldots) via a stop-word list.
+\end{enumerate}
+The plugin \emph{never} fetches data from OpenStreetMap. The server
+does, but only when the referenced feature name is recognisable
+(e.g. \texttt{hospitals}, \texttt{schools}, \texttt{roads}) and the
+layer is genuinely absent.
+
+\section{Example Workflows}
+\subsection{Proximity + Overlay}
+\begin{lstlisting}
+User: "Find residential zones within 500m of hospitals"
+
+intent    = PROXIMITY
+entities  = {primary: hospitals, secondary: residential}
+params    = {distance_value: 500, unit: meters}
+
+plan      = [ buffer(hospitals, 500),
+              intersect(step_1_output, residential) ]
+\end{lstlisting}
+
+\subsection{Raster NDVI}
+\begin{lstlisting}
+User: "Calculate NDVI from Sentinel2_red and Sentinel2_NIR"
+
+plan = [ ndvi(RED=Sentinel2_red, NIR=Sentinel2_NIR) ]
+\end{lstlisting}
+
+\subsection{Clustering + Hull}
+\begin{lstlisting}
+User: "Cluster Assets with DBSCAN, then compute the convex hull of each cluster"
+
+plan = [ dbscan(Assets, eps=500),
+         convex_hull(step_1_output, group_by=cluster_id) ]
+\end{lstlisting}
+
+\section{Public API}
+\begin{lstlisting}[language=Python]
+from geosi_engine import GeoSI
+from geosi_engine.models import Layer
+
+engine = GeoSI()
+engine.state.add_layer(Layer(
+    name="Schools", layer_type="vector",
+    geometry_type="Point", feature_count=1024,
+    crs="EPSG:4326", filepath="/data/Schools.shp"
+))
+
+result = engine.query("Buffer Schools by 500m")
+print(result["success"])       # bool
+print(result["answer"])        # user-facing message
+print(result["plan"])          # list of ToolStep
+print(result["reasoning"])     # LLM or rule-based explanation
+\end{lstlisting}
+
+Lower-level access is also available:
+\begin{lstlisting}[language=Python]
+engine.registry.list_tools(category="vector")
+engine.registry.execute_tool("buffer", INPUT="Schools", DISTANCE=500)
+\end{lstlisting}
+
+\section{Evaluation}
+We exercised GeoSI against the prompt cookbook
+(\texttt{prompts.md}) covering inspection, proximity, overlay,
+geometry, joins, transformation, sampling, cartography, validation,
+statistics, terrain, raster algebra, zonal/focal, resampling,
+interpolation, classification, temporal, network, AI/ML, and compound
+workflows. Representative outcomes:
+\begin{itemize}[leftmargin=*]
+  \item Single-step portable queries (e.g. \emph{count features in
+  Schools}) run without QGIS, end-to-end.
+  \item QGIS-backed queries produce correct \texttt{ExecutionPlan}
+  structures; dispatch to QGIS Processing succeeds when the plugin is
+  loaded.
+  \item Layer-not-found queries consistently produce a useful error
+  message with fuzzy suggestions when a near match exists.
+  \item All LLM providers exhibit sub-second failover when unavailable.
+\end{itemize}
+
+\section{Related Work}
+GeoSI builds on several lines of work: natural-language interfaces to
+databases (NL2SQL), tool-augmented language models (ReAct, ToolLLM),
+and GIS automation frameworks (QGIS Processing, GRASS, WhiteboxTools).
+Its novelty lies in the combination: a conversational surface,
+strictly grounded in the user's loaded layers, with deterministic
+fallback and an explainable plan trace, purpose-built for a
+professional GIS environment.
+
+\section{Future Work}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{v2.5} --- GeoPandas backend for the REST server,
+  enabling cloud deployments without QGIS; batch mode.
+  \item \textbf{v3.0} --- Real-time satellite stream monitoring, 3D
+  viewshed, immersive (XR) visualisation.
+  \item \textbf{v4.0} --- Predictive spatial modelling and autonomous
+  decision support loops for disaster response and infrastructure
+  planning.
+\end{itemize}
+
+\section{Conclusion}
+GeoSI demonstrates that a small, disciplined architecture can
+deliver a conversational GIS that is both grounded and capable. By
+keeping the engine framework-free, preferring local LLMs, refusing to
+hallucinate data, and always providing a readable failure path, the
+system is genuinely deployable today. It is, we believe, the
+beginning of geospatial superintelligence --- a domain-native,
+explainable, and locally-operable intelligence layer for the GIS
+profession.
+
+\vspace{1em}
+\noindent\textbf{Availability.} Source code, documentation, and
+example datasets are included in the GeoSI repository.
+
+\section*{Acknowledgements}
+The author thanks Digital University Kerala (DUK) for institutional
+support and the open-source QGIS, Ollama, and scientific Python
+communities whose work made GeoSI possible.
+
+\begin{thebibliography}{9}
+\bibitem{qgis} QGIS Development Team. \emph{QGIS Geographic Information
+System}. Open Source Geospatial Foundation Project, 2024.
+\bibitem{ollama} Ollama Project. \emph{Local large language model
+runtime}. \url{https://ollama.com}, 2024.
+\bibitem{react} Yao, S. et al. \emph{ReAct: Synergizing Reasoning and
+Acting in Language Models}. ICLR 2023.
+\bibitem{osm} OpenStreetMap contributors. \emph{OpenStreetMap}.
+\url{https://www.openstreetmap.org}, 2024.
+\end{thebibliography}
+
+\end{document}
