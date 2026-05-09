@@ -77,8 +77,84 @@ _TOOL_DEFS = [
     ('distance_matrix', 'Distance Matrix', 'Calculate distances between point layers', 'native:distancematrix', [('INPUT', 'layer', True, 'Input point layer'), ('INPUT_FIELD', 'string', True, 'Input ID field'), ('TARGET', 'layer', True, 'Target point layer'), ('TARGET_FIELD', 'string', True, 'Target ID field')]),
     ('mean_coordinates', 'Mean Coordinates', 'Calculate mean coordinate center', 'native:meancoordinates', [('INPUT', 'layer', True, 'Input layer'), ('WEIGHT', 'string', False, 'Weight field')]),
     ('snap_to_grid', 'Snap to Grid', 'Snap geometries to a regular grid', 'native:snappointstogrid', [('INPUT', 'layer', True, 'Input layer'), ('HSPACING', 'number', True, 'Horizontal spacing'), ('VSPACING', 'number', True, 'Vertical spacing')]),
-    ('join_attributes', 'Join Attributes by Field', 'Join tabular data to a layer', 'native:joinattributesbyfieldvalue', [('INPUT', 'layer', True, 'Input layer'), ('FIELD', 'string', True, 'Table field'), ('INPUT_2', 'layer', True, 'Join layer'), ('FIELD_2', 'string', True, 'Join field')]),
 ]
+
+# ═══════════════════════════════════════════════════════════════
+# Custom Tools (GIS Perspective: Auto-detecting schemas, preprocessing)
+# ═══════════════════════════════════════════════════════════════
+
+class JoinAttributesTool(QGISProcessingTool):
+    """
+    Smart Join Attributes tool.
+    Automatically detects the best fields to join on if none are provided,
+    taking a GIS perspective on common attribute schemas (e.g. DISTRICT, NAME, ID).
+    """
+    def __init__(self):
+        super().__init__(
+            name="join_attributes",
+            display_name="Join Attributes by Field",
+            description="Join tabular data to a layer, auto-detecting common fields if missing.",
+            qgis_algorithm="native:joinattributesbyfieldvalue",
+            category="vector",
+            tags=["join", "attribute", "merge", "table"],
+            parameters=[
+                ToolParameter(name="INPUT", param_type="layer", required=True, description="Input layer"),
+                ToolParameter(name="FIELD", param_type="string", required=False, description="Table field"),
+                ToolParameter(name="INPUT_2", param_type="layer", required=True, description="Join layer"),
+                ToolParameter(name="FIELD_2", param_type="string", required=False, description="Join field")
+            ]
+        )
+
+    def execute(self, **kwargs) -> ToolResult:
+        import logging
+        logger = logging.getLogger("geosi_engine.tools.vector")
+        
+        # Auto-detect fields if missing
+        if not kwargs.get("FIELD") or not kwargs.get("FIELD_2"):
+            layer1 = kwargs.get("INPUT")
+            layer2 = kwargs.get("INPUT_2")
+            
+            if layer1 and layer2 and hasattr(layer1, "features") and hasattr(layer2, "features"):
+                ql1 = layer1.features
+                ql2 = layer2.features
+                if ql1 and ql2:
+                    try:
+                        fields1 = [f.name() for f in ql1.fields()]
+                        fields2 = [f.name() for f in ql2.fields()]
+                        
+                        # Priority 1: Identical names ignoring case (excluding generic IDs)
+                        common = None
+                        skip_generic = {"id", "fid", "objectid", "shape_area", "shape_length"}
+                        for f1 in fields1:
+                            for f2 in fields2:
+                                if f1.lower() == f2.lower() and f1.lower() not in skip_generic:
+                                    common = (f1, f2)
+                                    break
+                            if common: break
+                        
+                        # Priority 2: Generic IDs if nothing else matches
+                        if not common:
+                            for f1 in fields1:
+                                for f2 in fields2:
+                                    if f1.lower() == f2.lower():
+                                        common = (f1, f2)
+                                        break
+                                if common: break
+                                
+                        if common:
+                            kwargs["FIELD"] = common[0]
+                            kwargs["FIELD_2"] = common[1]
+                            logger.info(f"GIS Preprocessing: Auto-detected join fields: {common[0]} = {common[1]}")
+                        else:
+                            # Fallback to first field of each (risky but better than crashing)
+                            if fields1 and fields2:
+                                kwargs["FIELD"] = fields1[0]
+                                kwargs["FIELD_2"] = fields2[0]
+                                logger.warning("GIS Preprocessing: No common fields found. Guessing first fields.")
+                    except Exception as e:
+                        logger.error(f"Auto-detect fields failed: {e}")
+        
+        return super().execute(**kwargs)
 
 
 # ═══════════════════════════════════════════════════════════════

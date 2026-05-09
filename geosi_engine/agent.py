@@ -415,6 +415,20 @@ class GeoSIAgent:
                             description_parts.append(f"clipped to {layer}")
                             break
 
+            elif tool_name == "join_attributes":
+                # Join attributes needs INPUT_2 (the table to join)
+                overlay = request.entities.get("secondary_layer")
+                if overlay:
+                    params["INPUT_2"] = overlay
+                    description_parts.append(f"joined with {overlay}")
+                else:
+                    available = request.available_layers or []
+                    for layer in available:
+                        if layer.lower() != (primary or "").lower():
+                            params["INPUT_2"] = layer
+                            description_parts.append(f"joined with {layer}")
+                            break
+
             elif tool_name in ["union_layer", "difference", "symmetric_difference"]:
                 # Two-layer overlay operations need OVERLAY
                 overlay = request.entities.get("secondary_layer")
