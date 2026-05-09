@@ -17,6 +17,12 @@ from starlette.status import HTTP_403_FORBIDDEN
 
 from geosi_server.app.api.routes import router
 from geosi_server.app.core.config import settings
+from geosi_engine.base import register_backend
+from geosi_engine.backends.portable import run_portable_algorithm
+
+# Register the portable backend to intercept QGIS tool executions
+register_backend("qgis", run_portable_algorithm)
+
 
 
 # --- Security -------------------------------------------------------------
