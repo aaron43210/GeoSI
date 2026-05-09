@@ -111,6 +111,16 @@ class ExecutionEngine:
                     layer = self.state.get_layer(value)
                     if layer is not None:
                         resolved_params[key] = layer
+                elif isinstance(value, list):
+                    # Resolve a list of layer names
+                    new_list = []
+                    for item in value:
+                        if isinstance(item, str):
+                            layer = self.state.get_layer(item)
+                            new_list.append(layer if layer is not None else item)
+                        else:
+                            new_list.append(item)
+                    resolved_params[key] = new_list
 
             # Call the tool through the registry with resolved parameters
             tool_result = self.registry.execute_tool(

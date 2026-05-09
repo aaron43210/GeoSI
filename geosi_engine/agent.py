@@ -56,11 +56,32 @@ class GeoSIAgent:
         self.conversation = conversation or ConversationManager(
             system_prompt="You are a GIS workflow planner. You help users analyze geospatial data and create analysis plans."
         )
-        self._ollama_endpoint = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
-        self._ollama_model = os.environ.get("OLLAMA_MODEL", "mistral")
+        self._ollama_endpoint = self._detect_ollama_endpoint()
+        self._ollama_model = self._detect_ollama_model()
         self._anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
         self._gemini_key = os.environ.get("GEMINI_API_KEY", "")
         self.layer_suggestions: Optional[List[Tuple[str, float]]] = None  # For UI to show similar layers
+
+    def _detect_ollama_endpoint(self) -> str:
+        return os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
+
+    def _detect_ollama_model(self) -> str:
+        model = os.environ.get("OLLAMA_MODEL", "mistral")
+        try:
+            import requests
+            endpoint = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
+            resp = requests.get(f"{endpoint}/api/tags", timeout=1.5)
+            if resp.status_code == 200:
+                models = [m.get("name") for m in resp.json().get("models", [])]
+                if models and model not in models:
+                    # Prefer a small fast model if available
+                    for pref in ["llama3.2:3b", "qwen2.5-coder:14b", "mistral"]:
+                        if pref in models:
+                            return pref
+                    return models[0]
+        except Exception:
+            pass
+        return model
 
     def parse(self, query: str, state: StateManager) -> AnalysisRequest:
         layer_names = state.list_layers() if state else []
@@ -126,6 +147,8 @@ class GeoSIAgent:
                 "the", "and", "near", "nearest", "find", "calculate", "show",
                 "list", "layer", "layers", "between", "over", "above",
                 "below", "features", "points", "feature", "point",
+                "vegetative", "index", "satellite", "bands", "band", "using",
+                "water", "imagery", "spatial", "compute", "extract", "generate"
             }
             noun_like = [c for c in candidates if c.lower() not in _STOP]
             # Look for nouns NOT present in any loaded layer
@@ -199,31 +222,140 @@ class GeoSIAgent:
                     reasoning=error_msg or "Layer validation failed"
                 )
         
+        # If the parser already identified a clear, well-understood operation
+        # (clip, buffer, intersect, etc.), skip the LLM — the rule-based planner
+        # handles these perfectly and the LLM often generates worse plans.
+        operation = request.parameters.get("operation", "")
+        well_understood_ops = {
+            "clip", "buffer", "intersect", "union", "difference",
+            "dissolve", "centroid", "convex_hull", "simplify",
+            "slope", "aspect", "hillshade", "contour",
+            "ndvi", "ndwi", "reproject", "join_attributes",
+        }
+        if operation in well_understood_ops:
+            logger.info(f"Operation '{operation}' is well-understood, using rule-based planner")
+            return self._plan_with_rules(request)
+
         if self.use_llm:
             # Priority 1: Try Ollama first (if available)
             try:
-                return self._plan_with_ollama(request)
+                llm_plan = self._plan_with_ollama(request)
+                if self._validate_plan_layers(llm_plan, request.available_layers):
+                    return llm_plan
+                logger.warning("Ollama plan referenced nonexistent layers, falling back to rules")
             except Exception as e:
                 logger.warning(f"Ollama planning failed: {e}")
             
             # Priority 2: Try Gemini
             if self._gemini_key:
                 try:
-                    return self._plan_with_gemini(request)
+                    llm_plan = self._plan_with_gemini(request)
+                    if self._validate_plan_layers(llm_plan, request.available_layers):
+                        return llm_plan
+                    logger.warning("Gemini plan referenced nonexistent layers, falling back to rules")
                 except Exception as e:
                     logger.warning(f"Gemini planning failed: {e}")
             
             # Priority 3: Try Anthropic
             if self._anthropic_key:
                 try:
-                    return self._plan_with_anthropic(request)
+                    llm_plan = self._plan_with_anthropic(request)
+                    if self._validate_plan_layers(llm_plan, request.available_layers):
+                        return llm_plan
+                    logger.warning("Anthropic plan referenced nonexistent layers, falling back to rules")
                 except Exception as e:
                     logger.warning(f"Anthropic planning failed: {e}")
 
         return self._plan_with_rules(request)
 
+    def _validate_plan_layers(self, plan: ExecutionPlan, available_layers: list) -> bool:
+        """Check that all layer references in an LLM plan actually exist."""
+        if not available_layers or not plan.steps:
+            return True  # can't validate, let it through
+        available_set = set(available_layers)
+        for step in plan.steps:
+            for key, value in (step.parameters or {}).items():
+                if isinstance(value, str) and value not in available_set:
+                    # Check if it's a numeric value or a non-layer parameter
+                    try:
+                        float(value)
+                        continue  # it's a number, not a layer name
+                    except (ValueError, TypeError):
+                        pass
+                    # Skip known non-layer parameter values
+                    if value.lower() in ("memory:", "temporary_output", "true", "false"):
+                        continue
+                    # Skip output references from previous steps (step_1_output, etc.)
+                    if value.startswith("step_") and "_output" in value:
+                        continue
+                    logger.warning(f"LLM plan references unknown layer: '{value}' (param {key})")
+                    return False
+        return True
+
     def _plan_with_rules(self, request: AnalysisRequest) -> ExecutionPlan:
         tool_names = _DEFAULT_PLANS.get(request.intent, ["count_features"])
+        query_lower = request.query.lower() if request.query else ""
+
+        # Override generic raster_calc for specific index operations
+        if request.intent == IntentType.RASTER or any(kw in query_lower for kw in [
+            "ndvi", "vegetative", "vegetation", "spectral index", "band ratio",
+            "ndwi", "water index",
+        ]):
+            if any(kw in query_lower for kw in ["ndvi", "vegetative", "vegetation", "spectral", "band ratio"]):
+                tool_names = ["ndvi"]
+            elif any(kw in query_lower for kw in ["ndwi", "water index"]):
+                tool_names = ["ndwi"]
+            elif tool_names == ["raster_calc"]:
+                if not request.parameters.get("operation"):
+                    tool_names = ["count_features"]
+
+        # Override default tool with the specific operation parsed from the query.
+        # This fires regardless of intent classification — if the parser found
+        # "clip", the tool must be "clip" even if the LLM said intent=GEOMETRY.
+        operation = request.parameters.get("operation", "")
+        op_to_tool = {
+            "clip": "clip", "intersect": "intersect", "union": "union_layer",
+            "difference": "difference", "symmetric_difference": "symmetric_difference",
+            "buffer": "buffer", "dissolve": "dissolve", "centroid": "centroid",
+            "simplify": "simplify", "reproject": "reproject",
+            "slope": "slope", "aspect": "aspect", "hillshade": "hillshade",
+            "contour": "contour", "ndvi": "ndvi", "ndwi": "ndwi",
+            "join_attributes": "join_attributes",
+        }
+        if operation in op_to_tool:
+            tool_names = [op_to_tool[operation]]
+
+        # Validate entity layer references: if an entity references a layer
+        # that doesn't exist in available_layers, it might be a geographic name
+        # in the attribute table (e.g., "Thiruvananthapuram" in Kerala's DISTRICT field).
+        available_set = set(request.available_layers or [])
+        secondary = request.entities.get("secondary_layer")
+        
+        # If secondary_layer is None but query has geographic names (features)
+        # that aren't loaded layers, use them as the search term.
+        if secondary is None and operation in ("clip", "extract"):
+            features = request.entities.get("features", [])
+            for feat in features:
+                if feat not in available_set:
+                    secondary = feat
+                    break
+        
+        if (isinstance(secondary, str) and secondary not in available_set
+                and operation in ("clip", "extract") 
+                and self.registry.get_tool("extract_by_name")):
+            # Switch from clip to extract_by_name: search the primary layer's
+            # attribute table for the geographic name instead of using an overlay.
+            logger.info(f"'{secondary}' not a loaded layer — switching to extract_by_name (attribute search)")
+            tool_names = ["extract_by_name"]
+            request.parameters["_search_term"] = secondary
+            request.entities["secondary_layer"] = None
+        else:
+            for entity_key in ("primary_layer", "secondary_layer"):
+                name = request.entities.get(entity_key)
+                if isinstance(name, str) and name not in available_set:
+                    logger.warning(f"Entity '{entity_key}' = '{name}' not in available layers, clearing")
+                    request.entities[entity_key] = None
+
         steps = []
         for i, tool_name in enumerate(tool_names):
             tool = self.registry.get_tool(tool_name)
@@ -269,12 +401,40 @@ class GeoSIAgent:
                             break
             
             elif tool_name == "clip":
-                # Clip tool needs MASK layer
-                mask = request.entities.get("secondary_layer")
-                if mask:
-                    params["MASK"] = mask
-                    description_parts.append(f"to {mask}")
-            
+                # Clip tool needs OVERLAY (the boundary to clip to)
+                overlay = request.entities.get("secondary_layer")
+                if overlay:
+                    params["OVERLAY"] = overlay
+                    description_parts.append(f"clipped to {overlay}")
+                else:
+                    # Fallback: pick the best remaining loaded layer as clip boundary
+                    available = request.available_layers or []
+                    for layer in available:
+                        if layer.lower() != (primary or "").lower():
+                            params["OVERLAY"] = layer
+                            description_parts.append(f"clipped to {layer}")
+                            break
+
+            elif tool_name in ["union_layer", "difference", "symmetric_difference"]:
+                # Two-layer overlay operations need OVERLAY
+                overlay = request.entities.get("secondary_layer")
+                if overlay:
+                    params["OVERLAY"] = overlay
+                    description_parts.append(f"with {overlay}")
+                else:
+                    available = request.available_layers or []
+                    for layer in available:
+                        if layer.lower() != (primary or "").lower():
+                            params["OVERLAY"] = layer
+                            description_parts.append(f"with {layer}")
+                            break
+            elif tool_name == "extract_by_name":
+                # Smart attribute search — pass the search term
+                search_term = request.parameters.get("_search_term", "")
+                if search_term:
+                    params["SEARCH_TERM"] = search_term
+                    description_parts.append(f"searching for '{search_term}' in attribute table")
+
             elif tool_name in ["slope", "aspect", "hillshade", "contour"]:
                 # Terrain tools usually just need input DEM
                 pass
@@ -294,6 +454,28 @@ class GeoSIAgent:
                 if overlay and "OVERLAY" in param_specs:
                     params["OVERLAY"] = overlay
 
+            elif tool_name in ["ndvi", "ndwi"]:
+                available = request.available_layers or []
+                # Simple fallback: try to find B4/B5 or just use first two layers
+                red_layer = primary or (available[0] if len(available) > 0 else "")
+                nir_layer = request.entities.get("secondary_layer") or (available[1] if len(available) > 1 else "")
+                
+                # If available layers have B4 and B5, use them
+                b4_layers = [l for l in available if "B4" in l.upper()]
+                b5_layers = [l for l in available if "B5" in l.upper()]
+                if b4_layers and b5_layers:
+                    red_layer = b4_layers[0]
+                    nir_layer = b5_layers[0]
+                
+                if tool_name == "ndvi":
+                    params["RED_BAND"] = red_layer
+                    params["NIR_BAND"] = nir_layer
+                else:
+                    params["GREEN_BAND"] = red_layer
+                    params["NIR_BAND"] = nir_layer
+                
+                description_parts.append(f"using {red_layer} and {nir_layer}")
+
             step = ToolStep(
                 step_id=f"step_{i+1}",
                 tool_name=tool_name,
@@ -307,28 +489,40 @@ class GeoSIAgent:
     def _get_prompt(self, request: AnalysisRequest) -> str:
         tool_catalog = []
         for spec in self.registry.list_tools():
+            # To save tokens, only send core tools + the requested intent
             tool_catalog.append({
                 "name": spec.name,
                 "description": spec.description,
                 "parameters": [{"name": p.name, "type": p.param_type} for p in spec.parameters]
             })
         
-        return f"""You are a GIS workflow planner. Available tools:
+        return f"""You are GeoSI, an advanced geospatial workflow planner.
+Your goal is to map the user's natural language request to a sequence of available GIS tools.
+
+CRITICAL RULES — VIOLATIONS WILL CAUSE FAILURE:
+1. ONLY use tool names from the "Available tools" list below. NEVER invent tools.
+2. ONLY reference layer names from the "Available layers" list below. NEVER invent layer names.
+3. NEVER use load_spatial_data or any file-loading tool. ALL layers are ALREADY loaded.
+4. If the user mentions a file extension like .shp or .geojson, IGNORE the extension and match the layer name from the available layers list.
+5. Prioritize specific tools: for NDVI use `ndvi`, for NDWI use `ndwi`, not `raster_calc`.
+6. Every step MUST use exactly one tool from the catalog with its exact parameter names.
+
+Available tools:
 {json.dumps(tool_catalog, indent=2)}
 
 Available layers: {request.available_layers}
 User query: "{request.query}"
 
-Return ONLY valid JSON:
+Return ONLY valid JSON matching this schema:
 {{
-  "reasoning": "Plan explanation",
+  "reasoning": "Explain step-by-step how you chose the tools and layers.",
   "steps": [
     {{
       "step_id": "step_1",
-      "tool_name": "tool_name",
-      "parameters": {{ "INPUT": "layer_name" }},
+      "tool_name": "exact_tool_name_from_catalog",
+      "parameters": {{ "PARAM_NAME": "exact_layer_name_from_available_layers" }},
       "output_name": "step_1_output",
-      "description": "Task description",
+      "description": "Short human-readable task description",
       "depends_on": []
     }}
   ]
@@ -352,7 +546,7 @@ Return ONLY valid JSON:
             "stream": False,
             "temperature": 0.0,
         }
-        response = requests.post(endpoint, json=payload, timeout=30)
+        response = requests.post(endpoint, json=payload, timeout=120)
         response.raise_for_status()
         data = response.json()
         text = data.get("response", "")

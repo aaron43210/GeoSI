@@ -77,6 +77,7 @@ _TOOL_DEFS = [
     ('distance_matrix', 'Distance Matrix', 'Calculate distances between point layers', 'native:distancematrix', [('INPUT', 'layer', True, 'Input point layer'), ('INPUT_FIELD', 'string', True, 'Input ID field'), ('TARGET', 'layer', True, 'Target point layer'), ('TARGET_FIELD', 'string', True, 'Target ID field')]),
     ('mean_coordinates', 'Mean Coordinates', 'Calculate mean coordinate center', 'native:meancoordinates', [('INPUT', 'layer', True, 'Input layer'), ('WEIGHT', 'string', False, 'Weight field')]),
     ('snap_to_grid', 'Snap to Grid', 'Snap geometries to a regular grid', 'native:snappointstogrid', [('INPUT', 'layer', True, 'Input layer'), ('HSPACING', 'number', True, 'Horizontal spacing'), ('VSPACING', 'number', True, 'Vertical spacing')]),
+    ('join_attributes', 'Join Attributes by Field', 'Join tabular data to a layer', 'native:joinattributesbyfieldvalue', [('INPUT', 'layer', True, 'Input layer'), ('FIELD', 'string', True, 'Table field'), ('INPUT_2', 'layer', True, 'Join layer'), ('FIELD_2', 'string', True, 'Join field')]),
 ]
 
 
@@ -93,3 +94,73 @@ for _def in _TOOL_DEFS:
 
 # Clean up namespace
 del _sys, _module, _def, _cls
+
+
+# ═══════════════════════════════════════════════════════════════
+# Smart extract tool — searches all text fields for a name
+# ═══════════════════════════════════════════════════════════════
+
+class ExtractByNameTool(QGISProcessingTool):
+    """Extract features from a layer where ANY text field contains the search term.
+    
+    This enables queries like 'extract Thiruvananthapuram from Kerala' without
+    the user needing to know the exact field name (DISTRICT, NAME, etc.).
+    """
+    def __init__(self):
+        super().__init__(
+            name="extract_by_name",
+            display_name="Extract Features by Name",
+            description="Extract features from a layer by searching all text attribute fields for a name",
+            category="vector",
+            qgis_algorithm="native:extractbyexpression",
+            parameters=[
+                ToolParameter("INPUT", "layer", True, "Input layer to search"),
+                ToolParameter("SEARCH_TERM", "string", True, "Name to search for in attribute table"),
+            ],
+            tags=["extract", "filter", "attribute", "search", "name", "select"]
+        )
+
+    def execute(self, **kwargs) -> ToolResult:
+        layer = kwargs.get("INPUT")
+        search_term = kwargs.get("SEARCH_TERM")
+
+        if layer is None:
+            return ToolResult(success=False, error="Missing required parameter: INPUT")
+        if not search_term:
+            return ToolResult(success=False, error="Missing required parameter: SEARCH_TERM")
+
+        # Build a QGIS expression that searches ALL text fields using ILIKE.
+        # We get the field names from the QgsVectorLayer and build:
+        #   "FIELD1" ILIKE '%search%' OR "FIELD2" ILIKE '%search%' OR ...
+        qgis_layer = getattr(layer, 'features', None)
+        if qgis_layer is None:
+            return ToolResult(success=False, error=f"Layer '{getattr(layer, 'name', layer)}' has no QGIS reference")
+
+        try:
+            # Get all field names from the layer
+            field_names = [f.name() for f in qgis_layer.fields()]
+            if not field_names:
+                return ToolResult(success=False, error=f"Layer has no attribute fields")
+            
+            # Build OR expression across all fields
+            # Escape single quotes in search term
+            safe_term = search_term.replace("'", "''")
+            clauses = [f'"{fname}" ILIKE \'%{safe_term}%\'' for fname in field_names]
+            expression = " OR ".join(clauses)
+            
+            print(f"[GeoSI extract_by_name] Searching '{search_term}' across {len(field_names)} fields")
+            print(f"[GeoSI extract_by_name] Expression: {expression[:200]}...")
+        except Exception as e:
+            return ToolResult(success=False, error=f"Failed to inspect layer fields: {e}")
+
+        params = {
+            "INPUT": layer,
+            "EXPRESSION": expression,
+            "OUTPUT": "TEMPORARY_OUTPUT"
+        }
+
+        from geosi_engine.base import get_backend
+        fn = get_backend(self._backend_name)
+        if fn is None:
+            return ToolResult(success=False, error="No backend registered.")
+        return fn(self._algorithm, params)

@@ -153,28 +153,64 @@ class GeoSIDock(QDockWidget):
         self.api_panel.setVisible(False)
         layout.addWidget(self.api_panel)
 
-        # Chat display
+        # Chat display (Premium Dark Theme)
         self.chat = QTextEdit()
         self.chat.setReadOnly(True)
-        self.chat.setStyleSheet(
-            "background:#1e1e1e; color:#d4d4d4;"
-            " font-family:monospace; font-size:12px; padding:5px;"
-        )
+        self.chat.setStyleSheet("""
+            QTextEdit {
+                background-color: #0d1117;
+                color: #c9d1d9;
+                border: 1px solid #30363d;
+                border-radius: 8px;
+                padding: 15px;
+                font-family: 'Segoe UI', 'SF Pro Display', 'Roboto', sans-serif;
+                line-height: 1.6;
+            }
+        """)
         layout.addWidget(self.chat)
 
         # Input row
         input_row = QHBoxLayout()
         self.prompt = QLineEdit()
-        self.prompt.setPlaceholderText("e.g. Buffer hospitals by 500m …")
-        self.prompt.setStyleSheet("padding:5px; font-size:12px;")
+        self.prompt.setPlaceholderText("Ask GeoSI Quantum...")
+        self.prompt.setStyleSheet("""
+            QLineEdit {
+                background-color: #161b22;
+                color: #f0f6fc;
+                border: 2px solid #30363d;
+                border-radius: 6px;
+                padding: 8px 12px;
+                font-size: 13px;
+            }
+            QLineEdit:focus {
+                border-color: #58a6ff;
+            }
+        """)
         self.prompt.returnPressed.connect(self._run_query)
         input_row.addWidget(self.prompt)
 
-        self.run_btn = QPushButton("▶ Run")
-        self.run_btn.setStyleSheet(
-            "background:#007acc; color:white; padding:5px 12px; font-weight:bold;"
-        )
-        self.run_btn.clicked.connect(self._run_query)
+        self.run_btn = QPushButton("▶")
+        self.run_btn.setToolTip("Run Analysis")
+        self.run_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #238636;
+                color: white;
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-weight: bold;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #2ea043;
+            }
+            QPushButton:pressed {
+                background-color: #238636;
+            }
+            QPushButton:disabled {
+                background-color: #21262d;
+                color: #484f58;
+            }
+        """)
         input_row.addWidget(self.run_btn)
         layout.addLayout(input_row)
 
@@ -457,19 +493,33 @@ Be concise, friendly, and use emojis to make responses clear. Ask clarifying que
     # ── Message display ───────────────────────────────────────────────
 
     def _msg(self, text: str, kind: str = "normal"):
-        colors = {
-            "user":    "#569cd6",
-            "success": "#4ec9b0",
-            "error":   "#f44747",
-            "warn":    "#dcdcaa",
-            "info":    "#9cdcfe",
-            "normal":  "#d4d4d4",
+        schemes = {
+            "user":    {"bg": "#161b22", "border": "#30363d", "text": "#58a6ff", "icon": "👤"},
+            "success": {"bg": "#161b22", "border": "#238636", "text": "#3fb950", "icon": "✅"},
+            "error":   {"bg": "#161b22", "border": "#f85149", "text": "#f85149", "icon": "❌"},
+            "warn":    {"bg": "#161b22", "border": "#d29922", "text": "#d29922", "icon": "⚠️"},
+            "info":    {"bg": "#161b22", "border": "#30363d", "text": "#8b949e", "icon": "ℹ️"},
+            "normal":  {"bg": "transparent", "border": "transparent", "text": "#c9d1d9", "icon": "🤖"},
         }
-        color = colors.get(kind, "#d4d4d4")
-        prefix = "<b>You:</b> " if kind == "user" else "<b>GeoSI:</b><br>"
-        safe = text.replace("\n", "<br>")
-        html = f'<div style="margin-top:8px; color:{color};">{prefix}{safe}</div>'
+        scheme = schemes.get(kind, schemes["normal"])
+        
+        # Build message box
+        if kind == "normal":
+            html = f'<div style="color:{scheme["text"]}; margin-bottom:10px;">{text}</div>'
+        else:
+            prefix = f'<b>{scheme["icon"]} {kind.upper()}</b>'
+            html = f"""
+                <div style="background-color:{scheme["bg"]}; border: 1px solid {scheme["border"]}; 
+                            border-radius: 6px; padding: 10px; margin-bottom: 10px;">
+                    <div style="color:{scheme["text"]}; margin-bottom: 4px; font-size: 11px;">{prefix}</div>
+                    <div style="color:#c9d1d9;">{text.replace(chr(10), "<br>")}</div>
+                </div>
+            """
+        
         self.chat.append(html)
+        self.chat.verticalScrollBar().setValue(
+            self.chat.verticalScrollBar().maximum()
+        )
         self.chat.verticalScrollBar().setValue(
             self.chat.verticalScrollBar().maximum()
         )

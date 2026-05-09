@@ -62,8 +62,10 @@ _INTENT_KEYWORDS: Dict[IntentType, Dict[str, int]] = {
     IntentType.OVERLAY: {
         "intersect": 3, "intersection": 3, "union": 3, "clip": 3,
         "difference": 3, "overlay": 3, "combine": 2, "merge": 2,
-        "spatial join": 3, "overlap": 2, "symmetric difference": 3,
-        "erase": 2, "split": 2,
+        "spatial join": 3, "join": 3, "attribute join": 3, "overlap": 2,
+        "symmetric difference": 3, "erase": 2, "split": 2, "extract": 2,
+        "subset": 3, "crop": 3, "shapefile from": 2, "region from": 2,
+        "area from": 2,
     },
     IntentType.GEOMETRY: {
         "centroid": 3, "simplify": 3, "smooth": 2, "dissolve": 3,
@@ -77,6 +79,7 @@ _INTENT_KEYWORDS: Dict[IntentType, Dict[str, int]] = {
         "ndbi": 3, "evi": 3, "savi": 3, "zonal": 3, "reclassify": 3,
         "raster calculator": 3, "composite": 2, "mosaic": 3,
         "nodata": 2, "resample": 2, "interpolate raster": 3,
+        "vegetative index": 3, "water index": 3, "satellite": 2,
     },
     IntentType.TERRAIN: {
         "slope": 3, "aspect": 3, "hillshade": 3, "elevation": 2,
@@ -160,10 +163,13 @@ _FIELD_FILTER_PATTERN = re.compile(
 
 # Canonical operation tokens the rule-based planner can consume directly.
 _OPERATION_MAP: Dict[str, List[str]] = {
+    "ndvi": ["ndvi", "vegetative index", "vegetation index", "vegetation"],
+    "ndwi": ["ndwi", "water index"],
     "buffer": ["buffer", "grow by", "ring around"],
     "intersect": ["intersect", "overlap", "common area", "inside both"],
     "union": ["union", "merge", "combine"],
-    "clip": ["clip", "cut to"],
+    "clip": ["clip", "cut to", "crop", "extract", "subset", "shapefile from",
+             "region from", "area from", "need", "get"],
     "difference": ["difference", "erase", "subtract"],
     "centroid": ["centroid", "center point", "centre point"],
     "dissolve": ["dissolve"],
@@ -174,7 +180,6 @@ _OPERATION_MAP: Dict[str, List[str]] = {
     "hillshade": ["hillshade"],
     "contour": ["contour"],
     "viewshed": ["viewshed"],
-    "ndvi": ["ndvi"],
     "cluster": ["cluster", "kmeans", "dbscan"],
     "hotspot": ["hotspot", "getis", "moran"],
     "shortest_path": ["shortest path", "shortest route", "fastest route"],
@@ -182,6 +187,7 @@ _OPERATION_MAP: Dict[str, List[str]] = {
     "reproject": ["reproject", "transform crs", "change projection"],
     "export_geojson": ["export geojson", "save geojson", "to geojson"],
     "geocode": ["geocode", "address to"],
+    "join_attributes": ["join", "attribute join", "join with", "link with"],
 }
 
 
@@ -286,7 +292,7 @@ class QueryParser:
             system_prompt="You are a GIS query parser. Extract the intent, layers, and parameters from queries."
         )
         self._ollama_endpoint = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
-        self._ollama_model = os.environ.get("OLLAMA_MODEL", "mistral")
+        self._ollama_model = self._detect_ollama_model()
         self._anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
         self._gemini_key = (
             os.environ.get("GEMINI_API_KEY")
@@ -295,6 +301,24 @@ class QueryParser:
         )
         self._openai_key = os.environ.get("OPENAI_API_KEY", "")
         self._cache = _LocalCache() if use_cache else None
+
+    def _detect_ollama_model(self) -> str:
+        """Auto-detect an available Ollama model, falling back gracefully."""
+        model = os.environ.get("OLLAMA_MODEL", "mistral")
+        try:
+            import requests
+            endpoint = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
+            resp = requests.get(f"{endpoint}/api/tags", timeout=1.5)
+            if resp.status_code == 200:
+                models = [m.get("name") for m in resp.json().get("models", [])]
+                if models and model not in models:
+                    for pref in ["llama3.2:3b", "qwen2.5-coder:14b", "mistral"]:
+                        if pref in models:
+                            return pref
+                    return models[0]
+        except Exception:
+            pass
+        return model
 
     # -- public API --------------------------------------------------------
 
@@ -326,12 +350,26 @@ class QueryParser:
                 except Exception as exc:
                     logger.debug("Cache payload rejected: %s", exc)
 
-        # 2. LLM providers (Ollama first, then cloud providers)
+        # 2. Keyword parser FIRST — fast, reliable for well-understood ops.
+        #    Only fall through to LLM if keywords can't determine intent.
+        kw_req, kw_confidence = self._parse_with_keywords(normalized, available_layers)
+        kw_req.query = query
+        self._post_process(kw_req, normalized, available_layers)
+
+        if kw_req.intent != IntentType.UNKNOWN:
+            # Keywords identified a clear intent — use it, skip LLM entirely.
+            # This is faster and more reliable for clip, buffer, ndvi, etc.
+            logger.info(f"Keyword parser identified intent={kw_req.intent}, skipping LLM")
+            self._store_cache(
+                cache_key, query, available_layers, kw_req, kw_confidence, "keywords"
+            )
+            return kw_req
+
+        # 3. LLM providers — only for ambiguous/complex queries where
+        #    keywords returned UNKNOWN.
         llm_order: List[Tuple[str, Any]] = []
         if self.use_llm:
-            # Priority 1: Ollama (local, no API key needed)
             llm_order.append(("ollama", self._parse_with_ollama))
-            # Priority 2: Cloud providers
             if self._gemini_key:
                 llm_order.append(("gemini", self._parse_with_gemini))
             if self._anthropic_key:
@@ -344,6 +382,9 @@ class QueryParser:
                 req, confidence = fn(normalized, available_layers)
                 req.query = query
                 self._post_process(req, normalized, available_layers)
+                if req.intent == IntentType.UNKNOWN:
+                    logger.warning(f"{name} returned UNKNOWN intent, trying next parser")
+                    continue
                 self._store_cache(
                     cache_key, query, available_layers, req, confidence, name
                 )
@@ -351,14 +392,11 @@ class QueryParser:
             except Exception as exc:
                 logger.warning("%s parse failed: %s", name, exc)
 
-        # 3. Rule-based fallback (always succeeds)
-        req, confidence = self._parse_with_keywords(normalized, available_layers)
-        req.query = query
-        self._post_process(req, normalized, available_layers)
+        # 4. If everything failed, return the keyword result (even if UNKNOWN)
         self._store_cache(
-            cache_key, query, available_layers, req, confidence, "keywords"
+            cache_key, query, available_layers, kw_req, kw_confidence, "keywords"
         )
-        return req
+        return kw_req
 
     # -- normalization / hashing ------------------------------------------
 
@@ -390,7 +428,8 @@ class QueryParser:
         for intent, keywords in _INTENT_KEYWORDS.items():
             total = 0
             for kw, weight in keywords.items():
-                if kw in lowered:
+                # Use word boundaries to prevent false positives (e.g., 'tri' in 'distribution')
+                if re.search(rf"\b{re.escape(kw)}\b", lowered):
                     total += weight
             if total:
                 scores[intent] = total
@@ -458,7 +497,7 @@ class QueryParser:
         # Identify the operation to perform (buffer, clip, slope, etc.)
         operation = None
         for op_name, aliases in _OPERATION_MAP.items():
-            if any(alias in lowered for alias in aliases):
+            if any(re.search(rf"\b{re.escape(alias)}\b", lowered) for alias in aliases):
                 operation = op_name
                 break
         if operation:
@@ -600,7 +639,7 @@ class QueryParser:
             "stream": False,
             "temperature": 0.0,
         }
-        response = requests.post(endpoint, json=payload, timeout=30)
+        response = requests.post(endpoint, json=payload, timeout=120)
         response.raise_for_status()
         data = response.json()
         text = data.get("response", "")
@@ -753,6 +792,19 @@ class QueryParser:
             for key in ("primary_layer", "secondary_layer", "additional_layers"):
                 if fuzzy.get(key) and not request.entities.get(key):
                     request.entities[key] = fuzzy[key]
+
+        # Strip file extensions (.shp, .geojson, etc.) from layer references
+        # and match the stem against loaded layers.
+        import os as _os
+        for key in ("primary_layer", "secondary_layer"):
+            name = request.entities.get(key)
+            if isinstance(name, str) and available_layers:
+                # If the name has a geo extension, try the stem first
+                stem, ext = _os.path.splitext(name)
+                if ext.lower() in (".shp", ".geojson", ".gpkg", ".kml", ".tif", ".tiff"):
+                    if stem in available_layers:
+                        request.entities[key] = stem
+                        name = stem
 
         # Warn when a referenced layer is not actually loaded.
         for key in ("primary_layer", "secondary_layer"):

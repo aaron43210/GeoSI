@@ -11,6 +11,13 @@ The engine itself has zero QGIS imports; all QGIS coupling lives here.
 """
 
 import logging
+import sys
+import os
+
+# Ensure plugin directory is in sys.path
+plugin_dir = os.path.dirname(__file__)
+if plugin_dir not in sys.path:
+    sys.path.insert(0, plugin_dir)
 
 from geosi_engine.base import register_backend
 from geosi_engine.models import ToolResult
