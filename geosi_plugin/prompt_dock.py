@@ -211,6 +211,7 @@ class GeoSIDock(QDockWidget):
                 color: #484f58;
             }
         """)
+        self.run_btn.clicked.connect(self._run_query)
         input_row.addWidget(self.run_btn)
         layout.addLayout(input_row)
 
@@ -246,23 +247,24 @@ Be concise, friendly, and use emojis to make responses clear. Ask clarifying que
             if saved_key:
                 os.environ["ANTHROPIC_API_KEY"] = saved_key
 
-            # Ensure plugin directory is in sys.path for module imports
+            # Ensure plugin directory is in sys.path for absolute module imports
             plugin_dir = os.path.dirname(__file__)
             if plugin_dir not in sys.path:
                 sys.path.insert(0, plugin_dir)
             
             # FULL module cache purge - force reload from disk
-            mods_to_remove = [m for m in sys.modules.keys() if m.startswith('geosi_')]
+            mods_to_remove = [m for m in sys.modules.keys() if m.startswith('geosi_') or 'qgis_bridge' in m]
             for mod in mods_to_remove:
                 del sys.modules[mod]
 
-            # Now import fresh (all submodules will load from disk)
-            import geosi_engine
-            self.engine = geosi_engine.GeoSI()
+            # Use absolute imports strictly to avoid split-brain module caching
+            from geosi_engine import GeoSI
+            from geosi_engine.base import register_backend
+            self.engine = GeoSI()
             
-            # ✅ Register QGIS backend so tools can execute
+            # ✅ Register QGIS backend directly against the global module
             import qgis_bridge
-            qgis_bridge.install()
+            register_backend("qgis", qgis_bridge._run_qgis_algorithm)
             
             # Inject conversation manager into agent and parser
             if hasattr(self.engine, 'agent') and self.engine.agent:
@@ -408,9 +410,47 @@ Be concise, friendly, and use emojis to make responses clear. Ask clarifying que
                         self._msg(f"  • {layer_name} ({score:.0%} match)", kind="info")
         else:
             self._msg(result.get("answer", "Done."), kind="success")
+            # Safely add generated layers to the QGIS canvas on the main thread
+            self._add_outputs_to_canvas(result.get("results", {}))
 
         if result.get("reasoning"):
             self._msg(result["reasoning"], kind="info")
+
+    def _add_outputs_to_canvas(self, results: dict):
+        """Safely load execution outputs into the QGIS Layers panel."""
+        try:
+            from qgis.core import QgsProject, QgsProcessingUtils, QgsMapLayer, QgsProcessingContext
+            project = QgsProject.instance()
+            context = QgsProcessingContext()
+            context.setProject(project)
+            
+            for step_id, step_output in results.items():
+                if not isinstance(step_output, dict):
+                    continue
+                
+                for key, val in step_output.items():
+                    if isinstance(val, QgsMapLayer):
+                        if not project.mapLayer(val.id()):
+                            val.setName(f"geosi_{step_id}")
+                            project.addMapLayer(val)
+                    elif isinstance(val, str):
+                        # The string might be a layer ID, path, or QGIS uri
+                        layer = QgsProcessingUtils.mapLayerFromString(val, context)
+                        if not (layer and layer.isValid()):
+                            # Fallback: check if it's a direct file path
+                            import os
+                            if os.path.exists(val):
+                                from qgis.core import QgsVectorLayer, QgsRasterLayer
+                                if val.lower().endswith(('.tif', '.tiff', '.img', '.asc')):
+                                    layer = QgsRasterLayer(val, f"{step_id}_raster")
+                                else:
+                                    layer = QgsVectorLayer(val, f"{step_id}_vector", "ogr")
+
+                        if layer and layer.isValid() and not project.mapLayer(layer.id()):
+                            layer.setName(f"{step_id}_{key.lower()}")
+                            project.addMapLayer(layer)
+        except Exception as e:
+            self._msg(f"Could not automatically load layers: {e}", kind="warn")
 
     def _on_error(self, err: str):
         self.run_btn.setEnabled(True)

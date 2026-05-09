@@ -175,7 +175,7 @@ class ExecutionEngine:
         # Extract final output layers that are ready to be returned to the user
         result_layers = {}
         for name, result in step_outputs.items():
-            if isinstance(result, ToolResult) and isinstance(result.output, Layer):
+            if isinstance(result, ToolResult):
                 result_layers[name] = result.output
 
         # Set final status: SUCCESS if all steps passed, PARTIAL if some failed

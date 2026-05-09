@@ -65,7 +65,7 @@ _INTENT_KEYWORDS: Dict[IntentType, Dict[str, int]] = {
         "spatial join": 3, "join": 3, "attribute join": 3, "overlap": 2,
         "symmetric difference": 3, "erase": 2, "split": 2, "extract": 2,
         "subset": 3, "crop": 3, "shapefile from": 2, "region from": 2,
-        "area from": 2,
+        "area from": 2, "filter": 3,
     },
     IntentType.GEOMETRY: {
         "centroid": 3, "simplify": 3, "smooth": 2, "dissolve": 3,
@@ -187,6 +187,7 @@ _OPERATION_MAP: Dict[str, List[str]] = {
     "reproject": ["reproject", "transform crs", "change projection"],
     "export_geojson": ["export geojson", "save geojson", "to geojson"],
     "geocode": ["geocode", "address to"],
+    "extract_by_attribute": ["filter", "select where", "find where", "attribute equals"],
     "join_attributes": ["join", "attribute join", "join with", "link with"],
 }
 
@@ -202,7 +203,7 @@ def _default_cache_path() -> Path:
     else:
         # Prefer the QGIS profile directory if it exists, otherwise temp.
         qgis_profile = (
-            Path.home() / ".local/share/QGIS/QGIS3/profiles/default/geosi"
+            Path.home() / "Library/Application Support/QGIS/QGIS4/profiles/default/geosi"
         )
         base = qgis_profile if qgis_profile.parent.exists() else Path(
             tempfile.gettempdir()

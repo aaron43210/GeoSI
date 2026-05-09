@@ -35,7 +35,24 @@ def _run_qgis_algorithm(algorithm_id: str, parameters: dict) -> ToolResult:
             message="This tool must be run from inside QGIS.",
         )
     try:
-        result = processing.run(algorithm_id, parameters)
+        from geosi_engine.models import Layer
+        
+        # Unwrap GeoSI Layer objects back to actual QgsMapLayer objects
+        # This is CRITICAL for thread safety: passing a string name forces QGIS to 
+        # search QgsProject (a GUI singleton) from a background thread, causing a crash.
+        unwrapped_params = {}
+        for k, v in parameters.items():
+            if isinstance(v, Layer):
+                if hasattr(v, "features") and v.features is not None:
+                    unwrapped_params[k] = v.features
+                elif v.filepath:
+                    unwrapped_params[k] = v.filepath
+                else:
+                    unwrapped_params[k] = v.name
+            else:
+                unwrapped_params[k] = v
+                
+        result = processing.run(algorithm_id, unwrapped_params)
         return ToolResult(
             success=True,
             output=result,

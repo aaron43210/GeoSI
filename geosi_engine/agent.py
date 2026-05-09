@@ -230,7 +230,7 @@ class GeoSIAgent:
             "clip", "buffer", "intersect", "union", "difference",
             "dissolve", "centroid", "convex_hull", "simplify",
             "slope", "aspect", "hillshade", "contour",
-            "ndvi", "ndwi", "reproject", "join_attributes",
+            "ndvi", "ndwi", "reproject", "join_attributes", "extract_by_attribute",
         }
         if operation in well_understood_ops:
             logger.info(f"Operation '{operation}' is well-understood, using rule-based planner")
@@ -321,6 +321,7 @@ class GeoSIAgent:
             "slope": "slope", "aspect": "aspect", "hillshade": "hillshade",
             "contour": "contour", "ndvi": "ndvi", "ndwi": "ndwi",
             "join_attributes": "join_attributes",
+            "extract_by_attribute": "extract_by_attribute",
         }
         if operation in op_to_tool:
             tool_names = [op_to_tool[operation]]
@@ -414,6 +415,28 @@ class GeoSIAgent:
                             params["OVERLAY"] = layer
                             description_parts.append(f"clipped to {layer}")
                             break
+
+            elif tool_name == "reproject":
+                # Extract TARGET_CRS from the query (e.g. "EPSG:32643")
+                import re
+                match = re.search(r'(?i)(EPSG:\d+)', request.query or "")
+                if match:
+                    params["TARGET_CRS"] = match.group(1).upper()
+                    description_parts.append(f"to {params['TARGET_CRS']}")
+
+            elif tool_name == "extract_by_attribute":
+                # Extracting attributes needs FIELD and VALUE
+                filters = request.parameters.get("filters", [])
+                if filters:
+                    params["FIELD"] = filters[0]["field"]
+                    params["VALUE"] = filters[0]["value"]
+                    op_sym = filters[0].get("op", "=")
+                    # Note: QGIS native:extractbyattribute uses an operator code 
+                    # but we can pass the string to our custom tool if needed.
+                    # Standard QGIS uses 0 for =, 1 for !=, etc.
+                    # We'll default to = for simplicity in rules.
+                    params["OPERATOR"] = 0 
+                    description_parts.append(f"where {params['FIELD']} {op_sym} {params['VALUE']}")
 
             elif tool_name == "join_attributes":
                 # Join attributes needs INPUT_2 (the table to join)
