@@ -32,3 +32,4 @@ geosi_plugin/geosi_engine/
 *.pdf
 *.pptx
 *.zip
+.env
