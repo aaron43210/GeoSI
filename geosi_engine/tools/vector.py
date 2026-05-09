@@ -94,7 +94,7 @@ class JoinAttributesTool(QGISProcessingTool):
             name="join_attributes",
             display_name="Join Attributes by Field",
             description="Join tabular data to a layer, auto-detecting common fields if missing.",
-            qgis_algorithm="native:joinattributesbyfieldvalue",
+            qgis_algorithm="native:joinattributestable",
             category="vector",
             tags=["join", "attribute", "merge", "table"],
             parameters=[
