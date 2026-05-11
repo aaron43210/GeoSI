@@ -587,5 +587,260 @@ class ToolService:
     def _error_response(self, error: str, message: str = "") -> OperationResponse:
         return OperationResponse(success=False, message=message, error=error)
 
+    def export_analysis_as_shapefile(
+        self,
+        query: str,
+        filename: str,
+        output_dir: str = "outputs",
+    ) -> Dict[str, Any]:
+        """Execute analysis query and export result as shapefile with companion files."""
+        try:
+            import geopandas as gpd
+        except ImportError:
+            return {
+                "success": False,
+                "message": "GeoPandas not installed",
+                "error": "GeoPandas is required for shapefile export",
+                "output_file": None,
+                "files": None,
+                "features_count": None,
+                "geometry_type": None,
+            }
+        
+        try:
+            # Create output directory
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # Run the analysis query
+            analysis_result = self.analyze(query)
+            
+            if not analysis_result.get("success", False):
+                return {
+                    "success": False,
+                    "message": "Analysis failed",
+                    "error": analysis_result.get("error", "Unknown error"),
+                    "output_file": None,
+                    "files": None,
+                    "features_count": None,
+                    "geometry_type": None,
+                }
+            
+            # Extract entities from the query parsing
+            entities = analysis_result.get("entities", {})
+            
+            # Get the tool name from the first step to understand what operation was performed
+            steps = analysis_result.get("steps", [])
+            if not steps:
+                return {
+                    "success": False,
+                    "message": "No steps in analysis plan",
+                    "error": "Analysis produced no executable steps",
+                    "output_file": None,
+                    "files": None,
+                    "features_count": None,
+                    "geometry_type": None,
+                }
+            
+            first_step = steps[0]
+            tool_name = first_step.get("tool_name", "")
+            params = first_step.get("parameters", {})
+            
+            # Get the primary input layer (usually INPUT or first layer parameter)
+            primary_layer_name = params.get("INPUT") or entities.get("primary_layer")
+            
+            # Special case: for clip, buffer, etc - get the actual layer object from state
+            # and perform the operation using GeoPandas
+            
+            gdf_output = None
+            
+            if tool_name == "clip" and "OVERLAY" in params:
+                # Clip operation: clip primary to overlay
+                primary_layer = self.state.get_layer(primary_layer_name)
+                overlay_layer_name = params.get("OVERLAY")
+                overlay_layer = self.state.get_layer(overlay_layer_name)
+                
+                if not primary_layer or not overlay_layer:
+                    return {
+                        "success": False,
+                        "message": "Missing input layers for clip",
+                        "error": f"Could not find layers: {primary_layer_name}, {overlay_layer_name}",
+                        "output_file": None,
+                        "files": None,
+                        "features_count": None,
+                        "geometry_type": None,
+                    }
+                
+                # Convert to GeoDataFrames
+                try:
+                    gdf_primary = self._layer_to_geodataframe(primary_layer)
+                    gdf_overlay = self._layer_to_geodataframe(overlay_layer)
+                    
+                    # Perform spatial intersection (clip)
+                    gdf_output = gpd.clip(gdf_primary, gdf_overlay)
+                except Exception as e:
+                    return {
+                        "success": False,
+                        "message": "Error performing clip operation",
+                        "error": str(e),
+                        "output_file": None,
+                        "files": None,
+                        "features_count": None,
+                        "geometry_type": None,
+                    }
+            
+            elif tool_name == "buffer" and "DISTANCE" in params:
+                # Buffer operation
+                primary_layer = self.state.get_layer(primary_layer_name)
+                
+                if not primary_layer:
+                    return {
+                        "success": False,
+                        "message": "Missing input layer for buffer",
+                        "error": f"Could not find layer: {primary_layer_name}",
+                        "output_file": None,
+                        "files": None,
+                        "features_count": None,
+                        "geometry_type": None,
+                    }
+                
+                try:
+                    gdf_primary = self._layer_to_geodataframe(primary_layer)
+                    distance = float(params.get("DISTANCE", 100))
+                    
+                    # Create buffer
+                    gdf_output = gdf_primary.copy()
+                    gdf_output["geometry"] = gdf_output.geometry.buffer(distance)
+                except Exception as e:
+                    return {
+                        "success": False,
+                        "message": "Error performing buffer operation",
+                        "error": str(e),
+                        "output_file": None,
+                        "files": None,
+                        "features_count": None,
+                        "geometry_type": None,
+                    }
+            
+            else:
+                # For other operations, try to get the primary layer
+                primary_layer = self.state.get_layer(primary_layer_name) if primary_layer_name else None
+                
+                if primary_layer:
+                    try:
+                        gdf_output = self._layer_to_geodataframe(primary_layer)
+                    except Exception as e:
+                        return {
+                            "success": False,
+                            "message": "Error converting layer to GeoDataFrame",
+                            "error": str(e),
+                            "output_file": None,
+                            "files": None,
+                            "features_count": None,
+                            "geometry_type": None,
+                        }
+                else:
+                    return {
+                        "success": False,
+                        "message": "No primary layer identified",
+                        "error": f"Could not identify primary layer from query",
+                        "output_file": None,
+                        "files": None,
+                        "features_count": None,
+                        "geometry_type": None,
+                    }
+            
+            # Export to shapefile
+            if gdf_output is None or len(gdf_output) == 0:
+                return {
+                    "success": False,
+                    "message": "No features in output",
+                    "error": "The analysis result produced no features",
+                    "output_file": None,
+                    "files": None,
+                    "features_count": None,
+                    "geometry_type": None,
+                }
+            
+            # Save to shapefile (auto-creates .shp, .shx, .dbf, .prj, .cpg)
+            output_path = os.path.join(output_dir, filename)
+            gdf_output.to_file(output_path, driver='ESRI Shapefile')
+            
+            # GeoPandas creates a directory with the filename, so get actual file paths
+            # List all files created in the output directory or subdirectory
+            created_files = []
+            companion_extensions = ['.shp', '.shx', '.dbf', '.prj', '.cpg', '.xml']
+            
+            # Check if it created a subdirectory
+            if os.path.isdir(output_path):
+                # List files in the subdirectory
+                for ext in companion_extensions:
+                    filepath = os.path.join(output_path, f"{filename}{ext}")
+                    if os.path.exists(filepath):
+                        created_files.append(filepath)
+                shp_file = os.path.join(output_path, f"{filename}.shp")
+            else:
+                # Files created directly in output_dir
+                for ext in companion_extensions:
+                    filepath = f"{output_path}{ext}"
+                    if os.path.exists(filepath):
+                        created_files.append(filepath)
+                shp_file = f"{output_path}.shp"
+            
+            geom_types = gdf_output.geometry.type.unique() if len(gdf_output) > 0 else ["Unknown"]
+            geom_type = geom_types[0] if len(geom_types) > 0 else "Unknown"
+            
+            return {
+                "success": True,
+                "message": f"✅ Shapefile exported successfully: {filename}.shp ({len(gdf_output)} features)",
+                "error": None,
+                "output_file": shp_file,
+                "files": created_files,
+                "features_count": len(gdf_output),
+                "geometry_type": geom_type,
+            }
+        
+        except Exception as exc:
+            import traceback
+            return {
+                "success": False,
+                "message": "Export operation failed",
+                "error": f"{type(exc).__name__}: {str(exc)}\n{traceback.format_exc()}",
+                "output_file": None,
+                "files": None,
+                "features_count": None,
+                "geometry_type": None,
+            }
+    
+    def _layer_to_geodataframe(self, layer: Layer) -> Any:
+        """Convert a Layer model to a GeoDataFrame."""
+        import geopandas as gpd
+        from shapely.geometry import shape
+        
+        if hasattr(layer, 'to_geodataframe') and callable(layer.to_geodataframe):
+            return layer.to_geodataframe()
+        
+        # If features is a GeoDataFrame already, return it
+        if hasattr(layer, 'features') and isinstance(layer.features, gpd.GeoDataFrame):
+            return layer.features
+        
+        # Try to construct GeoDataFrame from features
+        if hasattr(layer, 'features') and hasattr(layer.features, '__iter__'):
+            features_list = []
+            for feature in layer.features:
+                if hasattr(feature, '__dict__'):
+                    features_list.append(feature.__dict__)
+                else:
+                    features_list.append(feature)
+            
+            if features_list:
+                gdf = gpd.GeoDataFrame(features_list)
+                if 'geometry' not in gdf.columns and layer.geometry_type:
+                    # Try to get geometry from features another way
+                    pass
+                return gdf
+        
+        # Last resort: assume features is already a GeoDataFrame or compatible
+        return gpd.GeoDataFrame(layer.features)
+
 
 tool_service = ToolService()

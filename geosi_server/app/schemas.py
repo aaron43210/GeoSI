@@ -272,3 +272,26 @@ class OperationResponse(BaseModel):
     error: Optional[str] = None
     layer: Optional[LayerResponse] = None
     data: Optional[Dict[str, Any]] = None
+
+
+class ExportRequest(BaseModel):
+    """Request body for exporting analysis results as shapefile."""
+
+    query: str = Field(..., description="Natural language query to analyze")
+    filename: str = Field(..., description="Output filename (without extension)")
+    output_dir: Optional[str] = Field(
+        "outputs",
+        description="Output directory for the shapefile"
+    )
+
+
+class ExportResponse(BaseModel):
+    """Response for shapefile export operation."""
+
+    success: bool
+    message: str = ""
+    error: Optional[str] = None
+    output_file: Optional[str] = None
+    files: Optional[List[str]] = None
+    features_count: Optional[int] = None
+    geometry_type: Optional[str] = None

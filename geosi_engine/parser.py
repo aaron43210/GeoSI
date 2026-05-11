@@ -75,11 +75,11 @@ _INTENT_KEYWORDS: Dict[IntentType, Dict[str, int]] = {
         "extract vertices": 2, "line to polygon": 2, "polygon to line": 2,
     },
     IntentType.RASTER: {
-        "raster": 3, "pixel": 2, "band": 2, "ndvi": 3, "ndwi": 3,
+        "raster": 3, "pixel": 2, "band": 2, "ndvi": 5, "ndwi": 5,
         "ndbi": 3, "evi": 3, "savi": 3, "zonal": 3, "reclassify": 3,
         "raster calculator": 3, "composite": 2, "mosaic": 3,
         "nodata": 2, "resample": 2, "interpolate raster": 3,
-        "vegetative index": 3, "water index": 3, "satellite": 2,
+        "vegetative index": 5, "water index": 5, "satellite": 2,
     },
     IntentType.TERRAIN: {
         "slope": 3, "aspect": 3, "hillshade": 3, "elevation": 2,

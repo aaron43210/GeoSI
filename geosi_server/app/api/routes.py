@@ -21,6 +21,8 @@ from geosi_server.app.schemas import (
     CleanLayerRequest,
     DigitizeLayerRequest,
     DissolveRequest,
+    ExportRequest,
+    ExportResponse,
     GeocodeRequest,
     IntersectRequest,
     InterpolationRequest,
@@ -338,3 +340,14 @@ def run_validate(request: ValidateRequest) -> ValidateResponse:
         required_fields=request.required_fields,
     )
     return ValidateResponse(**result)
+
+
+@router.post("/export", response_model=ExportResponse, tags=["export"])
+def export_analysis_result(request: ExportRequest) -> ExportResponse:
+    """Execute analysis query and export result as shapefile with all companion files."""
+    result = tool_service.export_analysis_as_shapefile(
+        query=request.query,
+        filename=request.filename,
+        output_dir=request.output_dir,
+    )
+    return ExportResponse(**result)
