@@ -1,0 +1,1084 @@
+% ============================================================
+%  GeoSI Capstone Report
+%  Format: Digital University Kerala (DUK) M.Sc. Capstone
+%  Matches format of Dhanush B.R.'s UHI capstone (2025)
+% ============================================================
+\documentclass[12pt,a4paper]{report}
+
+% ── Encoding & fonts ─────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+
+% ── Page layout ──────────────────────────────────────────────
+\usepackage[
+  a4paper,
+  top=1in, bottom=1in,
+  left=1.25in, right=1in
+]{geometry}
+
+% ── Graphics & colour ────────────────────────────────────────
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{tikz}
+
+% ── Maths ────────────────────────────────────────────────────
+\usepackage{amsmath}
+
+% ── Tables ───────────────────────────────────────────────────
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+
+% ── Code listings ────────────────────────────────────────────
+\usepackage{listings}
+
+% ── Headers / footers ────────────────────────────────────────
+\usepackage{fancyhdr}
+
+% ── Hyperlinks ───────────────────────────────────────────────
+\usepackage{hyperref}
+\usepackage{url}
+
+% ── TOC / section formatting ─────────────────────────────────
+\usepackage{titlesec}
+\usepackage{tocloft}
+\usepackage{enumitem}
+\usepackage{setspace}
+\usepackage{parskip}
+\usepackage{indentfirst}
+\usepackage{needspace}
+\usepackage{etoolbox}
+
+% ============================================================
+%  COLOUR PALETTE  (neutral academic)
+% ============================================================
+\definecolor{duknavy}{HTML}{003366}
+\definecolor{dukteal}{HTML}{006E7A}
+\definecolor{dukmuted}{HTML}{555F6D}
+\definecolor{codebg}{HTML}{F5F5F5}
+
+% ============================================================
+%  HYPERREF SETUP
+% ============================================================
+\hypersetup{
+  colorlinks = true,
+  linkcolor  = duknavy,
+  urlcolor   = dukteal,
+  citecolor  = duknavy,
+  pdftitle   = {GeoSI: Geospatial Superintelligence — Capstone Report},
+  pdfauthor  = {Aaron R}
+}
+
+% ============================================================
+%  SECTION / CHAPTER TITLE FORMATTING
+% ============================================================
+\titleformat{\chapter}[display]
+  {\normalfont\Large\bfseries}
+  {\chaptername\ \thechapter}{14pt}{\Large}
+\titlespacing*{\chapter}{0pt}{30pt}{20pt}
+
+\titleformat{\section}
+  {\normalfont\large\bfseries}{\thesection}{1em}{}
+\titleformat{\subsection}
+  {\normalfont\normalsize\bfseries}{\thesubsection}{1em}{}
+
+% ============================================================
+%  LISTINGS STYLE
+% ============================================================
+\lstset{
+  basicstyle   = \ttfamily\small,
+  backgroundcolor = \color{codebg},
+  frame        = single,
+  rulecolor    = \color{dukmuted},
+  breaklines   = true,
+  columns      = fullflexible,
+  keepspaces   = true,
+  xleftmargin  = 6pt,
+  xrightmargin = 6pt,
+  language     = Python,
+  showstringspaces = false,
+  keywordstyle = \color{duknavy}\bfseries,
+  commentstyle = \color{dukmuted}\itshape,
+  stringstyle  = \color{dukteal}
+}
+\BeforeBeginEnvironment{lstlisting}{\needspace{10\baselineskip}}
+
+% ============================================================
+%  HEADER / FOOTER
+% ============================================================
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textit{GeoSI: Geospatial Superintelligence}}
+\fancyhead[R]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\fancypagestyle{plain}{%
+  \fancyhf{}
+  \fancyhead[L]{\small\textit{GeoSI: Geospatial Superintelligence}}
+  \fancyhead[R]{\small\thepage}
+  \renewcommand{\headrulewidth}{0.4pt}
+}
+
+% ============================================================
+%  LINE SPACING  (1.5 — standard for DUK reports)
+% ============================================================
+\onehalfspacing
+
+% ============================================================
+%  BEGIN DOCUMENT
+% ============================================================
+\begin{document}
+
+% ── Roman page numbers for front matter ─────────────────────
+\pagenumbering{roman}
+\setcounter{page}{1}
+
+% ============================================================
+%  TITLE PAGE
+% ============================================================
+\begin{titlepage}
+\centering
+\vspace*{0.5cm}
+
+{\LARGE\bfseries GeoSI: The Foundation of Geospatial Superintelligence\\[0.4cm]}
+
+{\large A Conversational AI System for Multi-Step GIS Workflow Automation\\[1.2cm]}
+
+{\normalsize\textit{Submitted By}\\[0.3cm]}
+
+{\large\bfseries Aaron R\\[0.3cm]}
+
+{\large\bfseries Reg. No: 253301\\[1.2cm]}
+
+{\normalsize In partial fulfilment of the requirements for the award of\\[0.2cm]
+M.\ Sc.\ in Data Analytics and Geoinformatics\\[1.4cm]}
+
+\includegraphics[width=5cm]{DUK Logo.png}\\[0.9cm]
+
+{\large\bfseries School of Digital Sciences\\[0.5cm]}
+
+{\normalsize\bfseries
+KERALA UNIVERSITY OF DIGITAL SCIENCES, INNOVATION, AND\\
+TECHNOLOGY\\[0.2cm]
+(DIGITAL UNIVERSITY KERALA)\\[0.4cm]
+TECHNOPARK PHASE-IV, THIRUVANANTHAPURAM\\[0.2cm]
+15 MAY 2026}
+
+\end{titlepage}
+
+% ============================================================
+%  BONAFIDE CERTIFICATE
+% ============================================================
+
+\begin{center}
+{\Huge \bfseries Bonafide Certificate}
+\end{center}
+
+\addcontentsline{toc}{chapter}{Bonafide Certificate}
+
+\vspace{2cm}
+
+This is to certify that the project report entitled \textbf{GeoSI: The Foundation of \\Geospatial Superintelligence}, submitted by \textbf{Aaron R} (253301) in partial fulfilment of the requirements for the award of Master of Science in Data Analytics and Geoinformatics, is a bonafide record of the work carried out at Kerala University of Digital Science, Innovation and Technology under our supervision.
+
+\vspace{5cm}
+
+\textbf{Supervisor}
+
+\vspace{2cm}
+
+\rule{6cm}{0.4pt}
+
+\vspace{0.3cm}
+
+Dr. Radhakrishnan T\\
+Assistant Professor\\
+School of Digital Sciences\\
+Digital University Kerala
+
+\newpage
+
+% ============================================================
+%  DECLARATION
+% ============================================================
+\begin{center}
+{\Huge \bfseries Declaration}
+\end{center}
+
+\addcontentsline{toc}{chapter}{Declaration}
+
+\vspace{2cm}
+
+I, \textbf{Aaron R}, student of M.Sc.\ in Data Analytics and Geoinformatics, hereby declare that this report is substantially the result of my own work, and has not been copied or referred from any of my colleagues or friends, except where explicitly indicated in the text, and has been carried out from January 2026 to May 2026.
+
+\vspace{4cm}
+
+\noindent
+\begin{minipage}[t]{0.45\textwidth}
+Place: Digital University Kerala\\[0.5cm]
+Date: \underline{\hspace{3cm}}
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.35\textwidth}
+\centering
+\underline{\hspace{5cm}}\\[0.3cm]
+Student's Signature
+\end{minipage}
+\newpage
+
+% ============================================================
+%  ACKNOWLEDGEMENT
+% ============================================================
+\chapter*{Acknowledgement}
+\addcontentsline{toc}{chapter}{Acknowledgement}
+
+I would like to express my sincere gratitude to my guide, \textbf{Dr. Radhakrishnan T}, for his unwavering support, encouragement, and guidance throughout the course of this project. His vision and values have served as a strong foundation and a source of inspiration in shaping the direction of my work.
+
+\vspace{0.5cm}
+
+I am also deeply thankful to \textbf{Ms. Anju S}, Software Engineer, for her technical guidance, continuous mentoring, and invaluable support from the inception to the completion of the project.
+
+\vspace{0.5cm}
+
+I would like to acknowledge my friends and colleagues for their cooperation, encouragement, and insightful suggestions during various phases of this work.
+
+\vspace{0.5cm}
+
+Finally, I extend my deepest gratitude to my family for their unwavering love, support, and patience, which have been my pillars of strength throughout this journey.
+
+\newpage
+
+% ============================================================
+%  ABSTRACT
+% ============================================================
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+
+This report presents \textbf{GeoSI} (Geospatial Superintelligence), a conversational AI system that translates natural language queries into multi-step GIS workflows.  The system is built around three clean architectural surfaces: (1)~a universal, framework-free engine core with 124 auto-discovered tools, (2)~a QGIS desktop plugin providing an interactive chat interface synchronised with the native layers panel, and (3)~a FastAPI REST server with a portable GeoPandas backend enabling QGIS-independent spatial analysis.  The engine employs a five-stage pipeline---normalisation, intent classification, workflow planning, tool execution, and result generation---with an LLM priority chain (Ollama $\rightarrow$ Gemini $\rightarrow$ Anthropic $\rightarrow$ keyword rules) that ensures reliable operation in both online and offline environments.  Case studies using Kerala administrative boundaries and school point datasets demonstrate buffer, clip, intersect, and attribute join operations through natural language commands.  The architecture establishes a foundation for geospatial superintelligence by decoupling spatial reasoning from any specific GIS platform.
+
+\newpage
+
+% ============================================================
+%  TABLE OF CONTENTS
+% ============================================================
+\begingroup
+\footnotesize
+\tableofcontents
+\endgroup
+\newpage
+
+% ── Switch to Arabic page numbers for main content ──────────
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+% ============================================================
+%  CHAPTER 1 — INTRODUCTION
+% ============================================================
+\chapter{Introduction}
+
+\section{Background and Significance}
+
+\subsection{Background}
+
+Geographic Information Systems (GIS) are essential tools for spatial analysis, urban planning, environmental monitoring, and disaster management.  However, traditional GIS workflows require users to navigate complex menus, understand algorithm parameters, and manually chain operations together.  This creates a significant barrier for domain experts who understand \emph{what} they want to analyse but struggle with \emph{how} to express it in GIS software.
+
+GeoSI addresses this gap by providing a natural language interface to GIS operations.  Instead of navigating menus, users type queries such as ``Buffer hospitals by 500 metres'' or ``Find schools within Kerala'' and the system automatically plans and executes the appropriate workflow.
+
+\subsection{Significance}
+
+The shift from menu-driven to conversation-driven GIS lowers the technical barrier for domain experts in fields such as urban planning, agriculture, and environmental management.  By combining an LLM-powered planner with deterministic keyword fallbacks, GeoSI remains reliable even in offline or low-bandwidth environments---a critical requirement for field deployment in developing regions.
+
+\section{Objectives}
+
+This project aims to:
+
+\begin{itemize}
+  \item Design a three-surface architecture that separates the GIS ``brain'' from any specific platform.
+  \item Implement a natural language parser with LLM support and deterministic fallback.
+  \item Build a QGIS plugin that bridges the AI engine to the desktop GIS environment.
+  \item Create a REST API server that operates independently of QGIS using pure Python spatial libraries.
+  \item Demonstrate the system with real geospatial data (Kerala boundaries and school locations).
+\end{itemize}
+
+\section{Scope of the Study}
+
+The scope of this project encompasses:
+
+\begin{enumerate}
+  \item Parsing ambiguous natural language into precise GIS operations.
+  \item Planning multi-step workflows that chain tools together correctly.
+  \item Executing spatial algorithms across different environments (QGIS, standalone server, cloud).
+  \item Handling errors gracefully without crashing or producing incorrect results.
+  \item Scaling to support 124+ GIS tools across 12 intent categories.
+\end{enumerate}
+
+\section{Report Organisation}
+
+\begin{itemize}
+  \item \textbf{Chapter 2:} Literature review and related work
+  \item \textbf{Chapter 3:} System architecture and design
+  \item \textbf{Chapter 4:} Engine core implementation
+  \item \textbf{Chapter 5:} Natural language processing pipeline
+  \item \textbf{Chapter 6:} AI planning agent
+  \item \textbf{Chapter 7:} QGIS plugin implementation
+  \item \textbf{Chapter 8:} Universal REST API server
+  \item \textbf{Chapter 9:} Portable backend and case studies
+  \item \textbf{Chapter 10:} Conclusions and future work
+\end{itemize}
+
+% ============================================================
+%  CHAPTER 2 — LITERATURE REVIEW
+% ============================================================
+\chapter{Literature Review and Related Work}
+
+\section{GIS and Spatial Analysis}
+
+Geographic Information Systems have evolved from simple map-making tools to comprehensive platforms for spatial analysis.  QGIS, the leading open-source GIS, provides over 1,000 processing algorithms through its Processing framework.  However, accessing these algorithms requires navigating nested menus and understanding parameter semantics, which restricts adoption among non-specialist users.
+
+\section{Natural Language Interfaces for GIS}
+
+Research in natural language interfaces for databases (NLIDB) has shown that domain-specific parsers can achieve high accuracy when the vocabulary and grammar are constrained.  GeoSI extends this approach to the GIS domain, where queries involve spatial relationships (``within,'' ``near,'' ``intersect''), distance specifications (``500 metres,'' ``2~km''), and layer references.
+
+\section{Large Language Models in Geospatial Applications}
+
+Recent advances in Large Language Models (LLMs) have enabled natural language understanding at unprecedented levels.  Models such as Mistral, LLaMA, and Gemini can parse complex instructions and generate structured output.  GeoSI leverages these capabilities through a local-first approach using Ollama, with cloud providers as fallbacks, ensuring data privacy and offline operability.
+
+\section{Microservice Architecture for GIS}
+
+The trend towards microservice architectures in geospatial systems has been driven by the need for scalability and platform independence.  OGC API standards define RESTful interfaces for geospatial data access.  GeoSI's three-surface architecture aligns with this trend by separating the spatial intelligence engine from its delivery surfaces.
+
+\section{GeoPandas and Shapely for Portable GIS}
+
+GeoPandas extends the popular Pandas library with geospatial capabilities, while Shapely provides Python bindings to the GEOS geometry engine.  Together, they enable high-performance spatial analysis without requiring a full GIS installation.  GeoSI's portable backend builds on these libraries to achieve QGIS independence.
+
+% ============================================================
+%  CHAPTER 3 - SYSTEM ARCHITECTURE AND DESIGN
+% ============================================================
+\chapter{System Architecture and Design}
+
+\section{Overview}
+
+GeoSI is organised as a single analytical engine that can be wired into any number of delivery surfaces.  The source tree reflects this separation directly: \texttt{geosi\_engine/} contains the universal core, \texttt{geosi\_plugin/} contains the QGIS desktop surface, and \texttt{geosi\_server/} contains the REST surface.
+
+\section{Design Principles}
+
+Four non-negotiable rules govern every module boundary in the codebase:
+
+\begin{enumerate}
+  \item \textbf{The engine never imports QGIS or PyQt.}  The engine is pure Python plus \texttt{geopandas}, \texttt{shapely}, \texttt{numpy}, and \texttt{rasterio}.
+  \item \textbf{The plugin never auto-fetches external data.}  It operates exclusively on layers already visible in the QGIS Layers panel.
+  \item \textbf{Ollama is first; every other LLM is a fallback.}  The intelligence chain prefers local inference over remote APIs.
+  \item \textbf{Every failure path ends in a user-readable message.}  No uncaught exceptions propagate across boundaries.
+\end{enumerate}
+
+\section{The Three Surfaces}
+
+\begin{table}[ht]
+\centering
+\caption{The three GeoSI surfaces and their responsibilities}
+\begin{tabular}{llcc}
+\toprule
+\textbf{Surface} & \textbf{Owns} & \textbf{Uses QGIS} & \textbf{Uses OSM} \\
+\midrule
+Engine  & Tools, parser, agent, executor, validation & No  & No  \\
+Plugin  & Layer sync, chat dock, Processing bridge   & Yes & No  \\
+Server  & REST endpoints, workspace persistence      & No  & Yes \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{The Engine (geosi\_engine/)}
+
+The engine package exports a single top-level class, \texttt{GeoSI}, that composes a \texttt{ToolRegistry}, a \texttt{StateManager}, a \texttt{GeoSIAgent} (parser + planner), and an \texttt{ExecutionEngine}.
+
+\subsection{The Plugin (geosi\_plugin/)}
+
+The plugin is the only code that may import \texttt{qgis} or \texttt{PyQt}.  It is responsible for lifecycle hooks, installing the QGIS Processing backend via \texttt{register\_backend()}, and providing the chat dock widget.
+
+\subsection{The Server (geosi\_server/)}
+
+The server wraps the same engine in a FastAPI application.  At startup it installs the \emph{portable} backend (GeoPandas + Shapely) under the same name \texttt{"qgis"}, so every \texttt{BackendTool} executes identically in the server without QGIS being present.
+
+\section{Backend Dispatch Pattern}
+
+The most consequential design decision is the \textbf{backend-dispatch pattern}.  A \texttt{BackendTool} carries only a \texttt{ToolSpec} and an algorithm identifier; it contains no execution code.  At runtime, the call is delegated to whichever callable was registered under the tool's backend name.
+
+Three outcomes are therefore possible for any \texttt{BackendTool}:
+
+\begin{itemize}
+  \item Inside QGIS, the plugin calls \texttt{register\_backend("qgis", \_run\_qgis\_algorithm)} during startup, and the tool is executed by \texttt{qgis.processing.run()}.
+  \item Inside the server, the portable backend is installed under the same name, so the same tool runs via GeoPandas / Shapely without QGIS being present.
+  \item If no backend is installed, the tool returns a structured \texttt{ToolResult} explaining that fact---it never throws.
+\end{itemize}
+
+This allows the engine to be a genuinely framework-free library: the 120+ \texttt{BackendTool} instances describe \emph{what} they are but defer \emph{how they run} to the host surface.
+
+\section{Data Flow: User Prompt to Result}
+
+The end-to-end pipeline for an interactive query is:
+
+\begin{enumerate}
+  \item The user types a natural-language query in the chat dock or POSTs it to \texttt{/api/analyze}.
+  \item \texttt{QueryParser} normalises the text, classifies the intent, extracts entities and parameters, and returns an \texttt{AnalysisRequest}.
+  \item \texttt{GeoSIAgent} transforms the request into an \texttt{ExecutionPlan} either via rule-based templates or through an LLM-generated plan that is subsequently validated.
+  \item \texttt{ExecutionEngine} walks the plan, executes each step using the tool registry, records a \texttt{StepLog} per step, and returns an \texttt{ExecutionResult}.
+  \item The surface renders the result: the plugin updates the chat dock; the server serialises the result via Pydantic.
+\end{enumerate}
+
+\section{LLM Priority Chain}
+
+\begin{table}[ht]
+\centering
+\caption{LLM provider priority chain}
+\begin{tabular}{cll}
+\toprule
+\textbf{Priority} & \textbf{Provider} & \textbf{Trigger} \\
+\midrule
+1 & Ollama (local)    & Always tried first. 1.5\,s probe timeout. \\
+2 & Google Gemini     & If \texttt{GEMINI\_API\_KEY} is set \\
+3 & Anthropic Claude  & If \texttt{ANTHROPIC\_API\_KEY} is set \\
+4 & OpenAI            & If \texttt{OPENAI\_API\_KEY} is set \\
+5 & Keyword rules     & Always works offline \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Directory Structure}
+
+\begin{lstlisting}[language={}]
+project/
++-- geosi_engine/              (universal core)
+|   +-- __init__.py            Public API, GeoSI entry class
+|   +-- models.py              Data contracts (dataclasses)
+|   +-- base.py                GISTool / BackendTool abstractions
+|   +-- registry.py            Auto-discovery via pkgutil
+|   +-- parser.py              NL -> AnalysisRequest
+|   +-- agent.py               AnalysisRequest -> ExecutionPlan
+|   +-- executor.py            ExecutionPlan -> ExecutionResult
+|   +-- state.py               StateManager
+|   +-- validation.py          ValidationEngine
+|   +-- conversation.py        Multi-turn dialogue memory
+|   +-- backends/portable.py   GeoPandas/Shapely implementations
+|   +-- tools/                 124 tool definitions (9 categories)
++-- geosi_plugin/              (QGIS surface)
+|   +-- geosi_plugin.py        Plugin lifecycle
+|   +-- qgis_bridge.py         register_backend() installation
+|   +-- prompt_dock.py         Chat dock widget
++-- geosi_server/              (REST surface)
+    +-- app/main.py            FastAPI init
+    +-- app/schemas.py         Pydantic models
+    +-- app/api/routes.py      HTTP endpoints
+    +-- app/services/          tool_service, persistence, osm_fetcher
+    +-- app/core/state.py      WorkspaceState
+\end{lstlisting}
+
+% ============================================================
+%  CHAPTER 4 - ENGINE CORE IMPLEMENTATION
+% ============================================================
+\chapter{Engine Core Implementation}
+
+This chapter walks through the nine modules that make up \texttt{geosi\_engine/}.
+
+\section{Data Models (models.py)}
+
+\texttt{models.py} is the foundation of the engine with no internal imports---only Python standard library.  Every other file can import from it without creating a cycle.
+
+\subsection{Enumerations}
+
+Three enumerations fix the system's type vocabulary:
+
+\begin{itemize}
+  \item \texttt{ExecutionStatus} --- \texttt{SUCCESS}, \texttt{PARTIAL}, \texttt{FAILED}, \texttt{CANCELLED}
+  \item \texttt{IntentType} --- 13 members (PROXIMITY, OVERLAY, GEOMETRY, RASTER, TERRAIN, NETWORK, TEMPORAL, AI\_ML, VALIDATION, STATISTICS, DATA\_MANAGEMENT, CARTOGRAPHY, UNKNOWN)
+  \item \texttt{GeometryType} --- OGC-compatible geometry tags plus RASTER sentinel
+\end{itemize}
+
+All three inherit from \texttt{(str, Enum)} for direct JSON serialisation.
+
+\subsection{ToolParameter and ToolSpec}
+
+A \texttt{ToolParameter} describes a single input that a tool expects; a \texttt{ToolSpec} is the complete identity card of a tool, combining metadata, parameter list, and the QGIS Processing algorithm identifier (if any).
+
+Crucially, \texttt{ToolSpec} never stores executable code. It is pure description; execution is the responsibility of \texttt{execute()} or a registered backend.
+
+\subsection{Layer}
+
+\texttt{Layer} is the universal data container that every tool reads from and writes to.  It can represent either a vector layer (backed by a \texttt{geopandas.GeoDataFrame}) or a raster (NumPy array plus metadata).
+
+\subsection{AnalysisRequest, ExecutionPlan, ToolStep}
+
+These three dataclasses encode the contract between the parser, agent, and executor.  The \texttt{depends\_on} field lets a step declare explicit dependencies on earlier steps; the executor uses this for sequencing and error recovery.
+
+\subsection{ToolResult, StepLog, ExecutionResult}
+
+Every tool invocation produces a \texttt{ToolResult}; every step produces a \texttt{StepLog}; the whole plan produces an \texttt{ExecutionResult}.  Storing these as plain dataclasses means the REST response shape is implied by the engine types.
+
+\section{Tool Abstraction Layer (base.py)}
+
+\subsection{GISTool}
+
+Every tool implements the \texttt{GISTool} abstract base class, which mandates two methods---\texttt{spec()} and \texttt{execute()}---and provides a uniform \texttt{safe\_execute()} wrapper that performs parameter validation, timing, exception capture, and structured logging.
+
+Because \texttt{safe\_execute()} is the only method the registry calls, \emph{every} tool gains uniform error handling and timing without boilerplate.
+
+\subsection{PortableTool}
+
+\texttt{PortableTool} is a marker subclass used for tools whose logic is implemented directly in Python (GeoPandas, Shapely, NumPy).
+
+\subsection{BackendTool and the Backend Registry}
+
+\texttt{BackendTool} carries a \texttt{ToolSpec} and an algorithm identifier, and defers execution to whichever function was registered under its backend name.
+
+\begin{lstlisting}
+BackendFn = Callable[[str, Dict[str, object]], ToolResult]
+_BACKENDS: Dict[str, BackendFn] = {}
+
+def register_backend(name: str, fn: BackendFn) -> None:
+    _BACKENDS[name] = fn
+
+def get_backend(name: str) -> Optional[BackendFn]:
+    return _BACKENDS.get(name)
+\end{lstlisting}
+
+The plugin registers the QGIS implementation; the server registers the portable implementation; tests may register a mock.
+
+\section{Tool Registry (registry.py)}
+
+\subsection{Auto-Discovery}
+
+The \texttt{ToolRegistry} walks the \texttt{geosi\_engine.tools} package at construction time and registers every concrete \texttt{GISTool} subclass it finds using \texttt{pkgutil.walk\_packages()}.
+
+\subsection{Execution}
+
+The registry exposes a convenience method that resolves a tool by name and calls its \texttt{safe\_execute()}.  Unknown tool names return a structured error rather than raising.
+
+\section{State Manager (state.py)}
+
+The \texttt{StateManager} is the workspace memory of a GeoSI session, responsible for layer tracking, result caching, execution history, and checkpoint / rollback.
+
+\subsection{Layer Tracking}
+
+Layers are stored in a simple name-to-\texttt{Layer} dictionary.
+
+\subsection{Result Caching with Auto-Registration}
+
+When a tool produces a new \texttt{Layer}, the state manager registers that layer automatically so downstream steps can reference it by name.
+
+\subsection{Execution History}
+
+Every executed step is appended to \texttt{self.history} as a \texttt{StepLog}.
+
+\subsection{Checkpoint and Rollback}
+
+The state manager supports named checkpoints so destructive operations can be reverted if a later step fails.
+
+\section{Validation Engine (validation.py)}
+
+The \texttt{ValidationEngine} runs five categories of checks: geometry, CRS, attributes, operation preconditions, and result validation.
+
+All checks return a \texttt{ValidationReport} composed of \texttt{ValidationIssue} entries, each tagged with severity.
+
+\section{The GeoSI Entry Class}
+
+The engine's public surface is tied together by the top-level \texttt{GeoSI} class.  The \texttt{query()} method is the one-line convenience that the plugin and server both use.
+
+% ============================================================
+%  CHAPTER 5 — NATURAL LANGUAGE PROCESSING PIPELINE
+% ============================================================
+\chapter{Natural Language Processing Pipeline}
+
+\section{Overview}
+
+The \texttt{QueryParser} transforms arbitrary natural language into a fully validated, structured \texttt{AnalysisRequest}.
+
+Three principles guide the design:
+
+\begin{enumerate}
+  \item \textbf{Determinism first.}  If a rule can answer correctly, no LLM call is made.
+  \item \textbf{Graceful escalation.}  Ambiguity triggers a cascade of increasingly powerful resolvers.
+  \item \textbf{Always return something.}  Even if every resolver fails, the parser returns a low-confidence \texttt{AnalysisRequest}.
+\end{enumerate}
+
+\section{The Five-Layer Pipeline}
+
+Query processing proceeds through five layers in sequence. Each layer may short-circuit the pipeline by returning a complete result.
+
+\subsection{Layer 1 — Normalisation}
+
+The raw user query undergoes three transformations:
+
+\begin{enumerate}
+  \item Unicode normalisation (NFKC)
+  \item Whitespace collapsing
+  \item Punctuation normalisation (em-dashes, smart quotes)
+\end{enumerate}
+
+\subsection{Layer 2 — Cache Lookup}
+
+Repeated queries are very common in interactive GIS workflows.  The cache avoids redundant LLM calls.
+
+The cache key is the SHA-256 hash of the normalised query concatenated with the sorted list of loaded layer names.
+
+\subsection{Layer 3 — Keyword Parse}
+
+The keyword parser uses a weighted scoring system. Each keyword has a weight (1--3); higher weight means a stronger signal.
+
+If the top-ranked intent achieves confidence $\geq 0.70$, the keyword parser returns immediately.
+
+\subsection{Layer 4 — LLM Parse}
+
+When keyword scoring yields confidence below 0.70, the parser assembles a structured prompt and submits it to the first available LLM provider.
+
+Providers are tried in order: Ollama $\rightarrow$ Gemini $\rightarrow$ Anthropic $\rightarrow$ OpenAI.
+
+If every LLM provider fails, the pipeline falls back to the keyword result.
+
+\subsection{Layer 5 — Post-Processing}
+
+Whether the result was produced by keyword scoring or an LLM, post-processing applies uniform normalisations:
+
+\begin{enumerate}
+  \item Distance unit normalisation (all distances to metres)
+  \item Fuzzy layer resolution
+  \item CRS inference
+  \item Confidence clamping
+  \item Cache write
+\end{enumerate}
+
+\section{Distance Extraction and Unit Conversion}
+
+A compiled regular expression captures a numeric value followed by an optional unit string and automatically converts to metres:
+
+\begin{lstlisting}
+UNIT_TO_METRES = {
+    "m": 1.0, "km": 1000.0, "mi": 1609.344,
+    "ft": 0.3048, "yd": 0.9144, "nmi": 1852.0,
+}
+\end{lstlisting}
+
+\section{Fuzzy Layer Matching}
+
+The fuzzy layer matching subsystem uses Python's \texttt{difflib.SequenceMatcher} to compute a similarity ratio for each candidate layer name.
+
+The 0.6 threshold was chosen empirically to accept common abbreviations while rejecting unrelated tokens.
+
+Results are memoised using \texttt{functools.lru\_cache} to eliminate redundant matching.
+
+\section{Multi-Turn Dialogue Context}
+
+GeoSI supports multi-turn conversations in which the user refers back to previous operations using pronouns or shorthand.
+
+The parser consults conversation history to resolve underspecified references.
+
+\section{Error Handling and Fallback Guarantees}
+
+The NLP pipeline is designed to never raise an uncaught exception.  All failure modes end in a valid (if low-confidence) \texttt{AnalysisRequest}.
+
+% ============================================================
+%  CHAPTER 6 — AI PLANNING AGENT
+% ============================================================
+\chapter{AI Planning Agent}
+
+\section{Overview}
+
+The \texttt{GeoSIAgent} converts a parsed \texttt{AnalysisRequest} into an \texttt{ExecutionPlan}  using a priority chain of LLM providers with comprehensive rule-based fallback.
+
+\section{Planning Priority}
+
+\begin{enumerate}
+  \item For well-understood operations, the rule-based planner is used directly.
+  \item For complex queries, try Ollama $\rightarrow$ Gemini $\rightarrow$ Anthropic.
+  \item If all LLMs fail, the rule-based planner handles the request.
+\end{enumerate}
+
+\section{Rule-Based Planning}
+
+The rule-based planner maps intents to default tool sequences and generates descriptive step names.
+
+\section{LLM Plan Validation}
+
+After an LLM generates a plan, the agent validates all tool names, layer references, and step dependencies for consistency.
+
+\section{Error Recovery}
+
+When a step fails, \texttt{recover\_from\_error()} drops the failed step and any steps that depend on it transitively.
+
+% ============================================================
+%  CHAPTER 7 — QGIS PLUGIN
+% ============================================================
+\chapter{QGIS Plugin Implementation}
+
+\section{Overview}
+
+The \texttt{geosi\_plugin} is the QGIS desktop surface. It is the only code that imports \texttt{qgis} or \texttt{PyQt}.
+
+\section{Main Plugin Class}
+
+\subsection{initGui()}
+
+Called once when QGIS loads the plugin. It registers the QGIS Processing backend, creates a toolbar action, and adds the action to the Plugins menu.
+
+\subsection{Qt5/Qt6 Compatibility}
+
+The plugin detects the Qt version at runtime to resolve the correct dock area enum.
+
+\section{QGIS Backend Bridge (qgis\_bridge.py)}
+
+\begin{lstlisting}
+def _run_qgis_algorithm(algorithm_id, parameters):
+    import processing
+    result = processing.run(algorithm_id, parameters)
+    return ToolResult(success=True, output=result)
+
+def install():
+    register_backend("qgis", _run_qgis_algorithm)
+\end{lstlisting}
+
+After \texttt{install()} is called, every \texttt{BackendTool} dispatches to QGIS Processing.
+
+\section{Interactive Chat Dock}
+
+The \texttt{GeoSIDock} provides a \texttt{QTextBrowser} for displaying messages, a \texttt{QLineEdit} for queries, and a collapsible LLM settings panel.  All engine queries run in a background \texttt{QThread} to keep the UI responsive.
+
+\section{Meta-Commands}
+
+\begin{table}[ht]
+\centering
+\caption{Plugin meta-commands}
+\begin{tabular}{ll}
+\toprule
+\textbf{Command} & \textbf{Action} \\
+\midrule
+\texttt{help}   & Shows example prompts adapted to loaded layers \\
+\texttt{layers} & Lists every loaded layer with metadata \\
+\texttt{tools}  & Shows tool-count-per-category summary \\
+\texttt{clear}  & Clears the chat log \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ============================================================
+%  CHAPTER 8 — UNIVERSAL REST API SERVER
+% ============================================================
+\chapter{Universal REST API Server}
+
+\section{Overview}
+
+The \texttt{geosi\_server} is the optional REST surface. It wraps the universal \texttt{geosi\_engine} in a FastAPI web server, running completely independently of QGIS by registering a Portable Backend.
+
+\section{Server Architecture}
+
+The server follows a three-tier architecture:
+
+\begin{enumerate}
+  \item \textbf{Web Tier:} FastAPI routes validate requests using Pydantic schemas.
+  \item \textbf{Service Tier:} \texttt{ToolService} bridges API calls to the engine.
+  \item \textbf{Engine Tier:} The \texttt{geosi\_engine} performs all reasoning.
+\end{enumerate}
+
+\section{Entry Point (main.py)}
+
+The most important line in the server is:
+
+\begin{lstlisting}
+from geosi_engine.backends.portable import run_portable_algorithm
+register_backend("qgis", run_portable_algorithm)
+\end{lstlisting}
+
+By registering the portable backend, every \texttt{BackendTool} routes to pure-Python GeoPandas implementations.
+
+\section{Pydantic Schemas}
+
+The schemas module defines strict request and response models. FastAPI uses these to validate JSON and generate interactive documentation at \texttt{/docs}.
+
+\section{HTTP Routing}
+
+All URL endpoints are organised into groups: health/discovery, layer management, spatial analysis, and intelligence endpoints.
+
+\subsection{Health and Discovery}
+
+\begin{lstlisting}
+@router.get("/health")   # Server liveness probe
+@router.get("/tools")    # List all 124 registered tools
+\end{lstlisting}
+
+\subsection{Layer Management}
+
+\begin{lstlisting}
+@router.post("/layers/load")            # Load shapefile
+@router.get("/layers")                  # List loaded layers
+@router.get("/layers/{name}/geojson")   # Get GeoJSON
+\end{lstlisting}
+
+\subsection{Spatial Analysis Endpoints}
+
+\begin{lstlisting}
+@router.post("/analysis/buffer")     # Buffer features
+@router.post("/analysis/intersect")  # Geometric intersection
+@router.post("/analysis/overlay")    # Union, difference, clip
+@router.post("/validate")            # Validate geometry and CRS
+\end{lstlisting}
+
+\subsection{Intelligence Endpoints}
+
+\begin{lstlisting}
+@router.post("/query")    # Simple NL query
+@router.post("/analyze")  # Full pipeline with transparency
+\end{lstlisting}
+
+\section{Tool Service Layer}
+
+The \texttt{ToolService} is the bridge between the web tier and the \texttt{geosi\_engine}.
+
+\subsection{The \_run\_tool() Method}
+
+Every spatial analysis endpoint delegates execution to \texttt{\_run\_tool()}, which wraps the operation in a single-step \texttt{ExecutionPlan}.
+
+\subsection{The analyze() Method}
+
+The \texttt{analyze()} method exposes the full AI pipeline with complete transparency.
+
+\section{Workspace State Management}
+
+The \texttt{WorkspaceState} class maintains an in-memory dictionary of loaded layers and uses an event-driven listener pattern to propagate mutations.
+
+\section{Portable Backend Integration}
+
+The portable backend maps QGIS algorithm identifiers to pure-Python implementations, with automatic CRS alignment preventing spatial mismatches.
+
+% ============================================================
+%  CHAPTER 9 — PORTABLE BACKEND AND CASE STUDIES
+% ============================================================
+\chapter{Portable Backend and Case Studies}
+
+\section{Portable Backend (backends/portable.py)}
+
+The portable backend intercepts QGIS algorithm calls and executes them using GeoPandas and Shapely.
+
+When two layers have different CRS values, the backend automatically reprojects the overlay layer to match the primary layer.
+
+\section{Test Data: Kerala and Schools}
+
+Two test datasets were used:
+
+\begin{itemize}
+  \item \textbf{Kerala.shp:} Administrative boundaries (14 districts, Polygon, EPSG:4326)
+  \item \textbf{Schools.shp:} School locations (8 points, Point, EPSG:4326)
+\end{itemize}
+
+\section{Case Study 1: Buffer Schools by 500 Metres}
+
+\textbf{Query:} ``Buffer Schools by 500''
+
+\begin{enumerate}
+  \item \textbf{Parse:} Intent=PROXIMITY, primary\_layer=Schools, distance\_value=500
+  \item \textbf{Plan:} [ToolStep(tool=buffer, INPUT=Schools, DISTANCE=500)]
+  \item \textbf{Execute:} Portable backend calls \texttt{gdf.geometry.buffer(500)}
+  \item \textbf{Result:} New polygon layer with 8 circular buffer zones
+\end{enumerate}
+
+\section{Case Study 2: Clip Schools to Kerala}
+
+\textbf{Query:} ``Clip Schools to Kerala''
+
+\begin{enumerate}
+  \item \textbf{Parse:} Intent=OVERLAY, operation=clip, primary=Schools, secondary=Kerala
+  \item \textbf{Plan:} [ToolStep(tool=clip, INPUT=Schools, OVERLAY=Kerala)]
+  \item \textbf{Execute:} Portable backend runs \texttt{gpd.clip(schools, kerala)}
+  \item \textbf{Result:} Point layer within Kerala boundary
+\end{enumerate}
+
+\section{Case Study 3: Intersect Schools with Kerala}
+
+\textbf{Query:} ``Intersect Schools with Kerala''
+
+\begin{enumerate}
+  \item \textbf{Parse:} Intent=OVERLAY, operation=intersect
+  \item \textbf{Plan:} [ToolStep(tool=intersect, INPUT=Schools, OVERLAY=Kerala)]
+  \item \textbf{Execute:} Portable backend runs \texttt{gpd.overlay(schools, kerala, how="intersection")}
+  \item \textbf{Result:} Point layer with attributes joined
+\end{enumerate}
+
+% ============================================================
+%  CHAPTER 10 — CONCLUSIONS AND FUTURE WORK
+% ============================================================
+\chapter{Conclusions and Future Work}
+
+\section{Summary of Contributions}
+
+GeoSI successfully demonstrates a conversational AI system for geospatial analysis. Key contributions:
+
+\begin{enumerate}
+  \item \textbf{Three-Surface Architecture:} Clean separation enabling deployment across platforms.
+  \item \textbf{Backend Dispatch Pattern:} Novel architectural pattern for runtime backend registration.
+  \item \textbf{Natural Language Pipeline:} Five-layer parsing with LRU caching and multi-provider LLM support.
+  \item \textbf{Portable Backend:} Pure Python implementations of core spatial operations.
+  \item \textbf{Event-Driven State Management:} Listener patterns for workspace synchronisation.
+\end{enumerate}
+
+\section{Lessons Learned}
+
+\begin{itemize}
+  \item \textbf{LLM Reliability:} Post-validation of LLM output is essential.
+  \item \textbf{Keyword First:} Deterministic keyword parsing is faster and more accurate for well-understood operations.
+  \item \textbf{CRS Matters:} Automatic CRS alignment prevents empty results.
+  \item \textbf{Partial Execution:} Continuing after failures provides better diagnostics.
+\end{itemize}
+
+\section{Limitations}
+
+\begin{itemize}
+  \item The portable backend currently implements 6 of the 124 tools.
+  \item The keyword system may misclassify novel query patterns.
+  \item LLM-generated plans are not always optimal.
+\end{itemize}
+
+\section{Future Work}
+
+\begin{enumerate}
+  \item \textbf{Complete Portable Coverage:} Implement all 124 tools in pure Python.
+  \item \textbf{Domain-Specific LLM:} Fine-tune a model for GIS workflow planning.
+  \item \textbf{Web Dashboard:} Build React/Vue frontend with map visualisation.
+  \item \textbf{Distributed Processing:} Support parallel step execution.
+  \item \textbf{Raster Backend:} Portable raster operations with Rasterio.
+  \item \textbf{Authentication:} OAuth2 for multi-user deployments.
+\end{enumerate}
+
+% ============================================================
+%  REFERENCES
+% ============================================================
+
+\chapter*{References}
+\addcontentsline{toc}{chapter}{References}
+
+\small
+\setlength{\itemsep}{0pt}
+\setlength{\parskip}{0pt}
+
+\begin{enumerate}
+
+\item QGIS Development Team, ``QGIS Geographic Information System,'' Open Source Geospatial Foundation, 2024. \url{https://qgis.org}
+
+\item K. Jordahl et al., ``GeoPandas: Python Tools for Geographic Data,'' 2024. \url{https://geopandas.org}
+
+\item S. Gillies, ``Shapely: Manipulation and Analysis of Geometric Objects,'' 2024. \url{https://shapely.readthedocs.io}
+
+\item S. Ramirez, ``FastAPI: Modern, Fast Web Framework,'' 2024. \url{https://fastapi.tiangolo.com}
+
+\item Ollama, ``Run Large Language Models Locally,'' 2024. \url{https://ollama.ai}
+
+\item Google, ``Gemini API Documentation,'' 2024. \url{https://ai.google.dev}
+
+\item Anthropic, ``Claude API Documentation,'' 2024. \url{https://docs.anthropic.com}
+
+\item OGC, ``OGC API Standards,'' 2024. \url{https://ogcapi.ogc.org}
+
+\item W. Tobler, ``A Computer Movie Simulating Urban Growth in the Detroit Region,'' \textit{Economic Geography}, vol. 46, pp. 234--240, 1970.
+
+\item M. F. Goodchild, ``Citizens as Sensors: The World of Volunteered Geography,'' \textit{GeoJournal}, vol. 69, no. 4, pp. 211--221, 2007.
+
+\end{enumerate}
+
+% ============================================================
+%  APPENDIX A — COMPLETE TOOL REGISTRY
+% ============================================================
+\appendix
+
+\chapter{Complete Tool Registry}
+
+\footnotesize
+\begin{longtable}{p{4cm} p{2.2cm} p{7cm}}
+
+\caption{GeoSI Tool Registry (124 Tools)}\\
+
+\toprule
+\textbf{Tool Name} & \textbf{Category} & \textbf{Description} \\
+\midrule
+\endfirsthead
+
+\toprule
+\textbf{Tool Name} & \textbf{Category} & \textbf{Description} \\
+\midrule
+\endhead
+
+buffer & vector & Create buffer zones \\
+intersect & vector & Find overlapping areas \\
+clip & vector & Clip to boundary \\
+union\_layer & vector & Combine layers \\
+difference & vector & Subtract overlay \\
+dissolve & vector & Merge by attribute \\
+centroid & vector & Calculate centroids \\
+simplify & vector & Reduce complexity \\
+voronoi & vector & Voronoi polygons \\
+convex\_hull & vector & Convex hulls \\
+spatial\_join & vector & Join by location \\
+extract\_by\_attribute & vector & Filter by attribute \\
+reproject & vector & Change CRS \\
+fix\_geometries & vector & Repair invalid \\
+
+slope & terrain & Calculate slope \\
+aspect & terrain & Calculate aspect \\
+hillshade & terrain & Hillshade visualization \\
+contour & terrain & Contour lines \\
+viewshed & terrain & Visible area \\
+profile & terrain & Elevation profile \\
+watershed & terrain & Watershed delineation \\
+flow\_direction & terrain & Flow direction \\
+
+ndvi & raster & Vegetation index \\
+ndwi & raster & Water index \\
+zonal\_stats & raster & Zone statistics \\
+reclassify & raster & Reclassify values \\
+raster\_calc & raster & Algebra calculations \\
+warp & raster & Reproject raster \\
+merge\_raster & raster & Merge datasets \\
+
+shortest\_path & network & Shortest route \\
+service\_area & network & Service areas \\
+network\_analysis & network & Network analysis \\
+
+cluster & ai\_ml & Clustering \\
+classify & ai\_ml & Classification \\
+interpolate & ai\_ml & Interpolation \\
+hotspot & ai\_ml & Hotspot detection \\
+
+load\_data & portable & Load layer \\
+save\_layer & portable & Save layer \\
+clean\_layer & portable & Clean data \\
+
+validate & qa & Validate geometry \\
+
+export\_geojson & cartography & Export GeoJSON \\
+export\_shp & cartography & Export Shapefile \\
+
+\bottomrule
+
+\end{longtable}
+
+% ============================================================
+%  APPENDIX B — CONFIGURATION REFERENCE
+% ============================================================
+\chapter{Configuration Reference}
+
+\begin{table}[ht]
+\centering
+\caption{GeoSI environment variables}
+\begin{tabular}{lll}
+\toprule
+\textbf{Variable} & \textbf{Default} & \textbf{Purpose} \\
+\midrule
+OLLAMA\_ENDPOINT    & http://localhost:11434 & Ollama URL \\
+OLLAMA\_MODEL       & mistral & Preferred model \\
+GEMINI\_API\_KEY    & (empty) & Gemini API key \\
+ANTHROPIC\_API\_KEY & (empty) & Claude API key \\
+OPENAI\_API\_KEY    & (empty) & OpenAI API key \\
+GEOSI\_CACHE\_DIR   & (auto)  & Cache directory \\
+GEOSI\_API\_KEY     & (empty) & Server auth key \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\normalsize
+
+\end{document}
