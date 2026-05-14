@@ -2,24 +2,43 @@
 name=GeoSI — Geospatial Superintelligence
 qgisMinimumVersion=3.22
 qgisMaximumVersion=4.99
-description=Next-gen AI agent for QGIS. Experience Quantum Geospatial Superintelligence with natural language workflows, advanced spatial reasoning, and a premium modern interface.
+description=Quantum AI agent for QGIS. Multi-step workflow automation with 128 GIS tools. Supports natural language processing, advanced spatial analysis, and terrain workflows.
 version=1.0.0
-author= AARON R
-email= aaronr.ds25@duk.ac.in
-about=GeoSI Quantum is a state-of-the-art AI agent that lives inside QGIS. Transform your GIS workflows with a single prompt. From complex raster arithmetic to multi-step vector analysis, GeoSI Quantum handles the complexity so you can focus on insights.
+author=AARON R
+email=aaronr.ds25@duk.ac.in
+about=GeoSI Quantum is a state-of-the-art AI agent that lives inside QGIS. Transform your GIS workflows with a single prompt. From complex raster arithmetic to multi-step vector analysis, watershed delineation, hydrological modeling, and 128+ spatial analysis tools. GeoSI handles the complexity so you can focus on insights.
 tracker=https://github.com/geosi/geosi-qgis-plugin/issues
 repository=https://github.com/geosi/geosi-qgis-plugin
 hasProcessingProvider=no
-tags=ai,agent,quantum,gis,superintelligence,vector,raster,spatial,processing,qgis4
+tags=ai,agent,quantum,gis,superintelligence,vector,raster,spatial,processing,qgis4,watershed,hydrology,terrain,workflow,automation,auto-loading
 homepage=https://github.com/geosi/geosi-qgis-plugin
 category=Analysis
 icon=icon.png
 experimental=False
 deprecated=False
 changelog=
-    1.1.0 - Quantum Update
-    - Premium UI Overhaul (Dark Mode, Modern Typography)
-    - Qt6 Compatibility for QGIS 4
-    - Enhanced Attribute Join Support
-    - Optimized Keyword Parser (Word Boundary Matching)
-    - Real-time AI Insight boxes
+    1.0.0 - Intelligent Layer Auto-Loading
+    - ✨ Automatic layer loading to QGIS Layers Panel
+    - 🎯 Smart format detection (raster/vector)
+    - 📊 GeoSI Layer → QGIS layer conversion
+    - 🔄 Results instantly visible after analysis
+    - 📈 Real-time user feedback for each layer
+    - 🛡️ Enhanced error handling & validation
+    - 📚 Comprehensive auto-loading documentation
+    - Quantum Hydrology & Complex Workflows Update
+    - 🌊 NEW: Complete Watershed Analysis workflow (5-step pipeline)
+    - 🌊 Flow direction calculation (D8 algorithm)
+    - 🌊 Flow accumulation and watershed delineation
+    - ⚙️ Multi-step complex workflow orchestration framework
+    - 📊 128 total GIS tools available
+    - 🎨 Premium UI with Dark Mode and Modern Typography
+    - 🔄 Full Qt6 Compatibility for QGIS 4
+    - 🔗 Enhanced Attribute Join Support
+    - 🔍 Optimized Keyword Parser (Word Boundary Matching)
+    - 📈 Real-time AI Insight boxes
+    - 🚀 Improved QGIS backend dispatch system
+    - Initial Release
+    - Core AI agent framework
+    - 127 essential GIS tools
+    - Ollama integration (local LLM support)
+    - Natural language query parsing

@@ -175,6 +175,8 @@ _OPERATION_MAP: Dict[str, List[str]] = {
     "dissolve": ["dissolve"],
     "convex_hull": ["convex hull"],
     "voronoi": ["voronoi", "thiessen"],
+    "watershed": ["watershed", "watershed analysis", "flow accumulation", "flow direction",
+                  "catchment", "drainage basin", "pour point", "delineate"],
     "slope": ["slope"],
     "aspect": ["aspect"],
     "hillshade": ["hillshade"],
@@ -183,7 +185,7 @@ _OPERATION_MAP: Dict[str, List[str]] = {
     "cluster": ["cluster", "kmeans", "dbscan"],
     "hotspot": ["hotspot", "getis", "moran"],
     "shortest_path": ["shortest path", "shortest route", "fastest route"],
-    "service_area": ["service area", "isochrone", "catchment"],
+    "service_area": ["service area", "isochrone"],
     "reproject": ["reproject", "transform crs", "change projection"],
     "export_geojson": ["export geojson", "save geojson", "to geojson"],
     "geocode": ["geocode", "address to"],
@@ -503,6 +505,17 @@ class QueryParser:
                 break
         if operation:
             parameters["operation"] = operation
+
+        # Extract pour point / coordinate references
+        # Matches patterns like: "at point 77.5, 8.5", "at 77.5 8.5", "coordinates 77.5, 8.5"
+        coord_match = re.search(
+            r'(?:at\s+(?:point\s+)?|pour\s+point\s+|coordinates?\s+|point\s+)'
+            r'(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)',
+            lowered
+        )
+        if coord_match:
+            parameters["point_x"] = float(coord_match.group(1))
+            parameters["point_y"] = float(coord_match.group(2))
 
         # Fuzzy-match available layers to primary, secondary, and additional
         entities = self._extract_layers(query, available_layers)

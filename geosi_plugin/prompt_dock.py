@@ -418,39 +418,92 @@ Be concise, friendly, and use emojis to make responses clear. Ask clarifying que
 
     def _add_outputs_to_canvas(self, results: dict):
         """Safely load execution outputs into the QGIS Layers panel."""
+        print(f"GeoSI [_add_outputs_to_canvas]: called with {len(results)} result(s): {list(results.keys())}")
         try:
-            from qgis.core import QgsProject, QgsProcessingUtils, QgsMapLayer, QgsProcessingContext
+            from qgis.core import QgsProject, QgsVectorLayer, QgsRasterLayer
+            import os
+            
             project = QgsProject.instance()
-            context = QgsProcessingContext()
-            context.setProject(project)
+            layers_added = []
+            
+            def _is_geosi_layer(obj):
+                """Duck-type check for GeoSI Layer (avoids isinstance module identity issues)."""
+                return (hasattr(obj, 'filepath') and hasattr(obj, 'layer_type') and hasattr(obj, 'name'))
+            
+            def _load_file(filepath, name):
+                """Load a file path as a QGIS layer."""
+                if not filepath or not os.path.isfile(filepath):
+                    print(f"GeoSI: file not found: {filepath}")
+                    return False
+                print(f"GeoSI: loading '{filepath}' as '{name}'")
+                try:
+                    if filepath.lower().endswith(('.tif', '.tiff', '.img', '.asc', '.sdat', '.nc')):
+                        ql = QgsRasterLayer(filepath, name)
+                    else:
+                        ql = QgsVectorLayer(filepath, name, "ogr")
+                    if ql and ql.isValid():
+                        project.addMapLayer(ql)
+                        layers_added.append(name)
+                        self._msg(f"✅ Loaded: {name}", kind="success")
+                        print(f"GeoSI: ✅ '{name}' added to project")
+                        return True
+                    else:
+                        self._msg(f"⚠️ Invalid layer: {name}", kind="warn")
+                        print(f"GeoSI: ⚠️ invalid: {filepath}")
+                except Exception as e:
+                    self._msg(f"⚠️ Load failed: {name}: {e}", kind="warn")
+                    print(f"GeoSI: exception: {e}")
+                return False
             
             for step_id, step_output in results.items():
-                if not isinstance(step_output, dict):
-                    continue
+                out_type = type(step_output).__name__
+                print(f"GeoSI: step='{step_id}' type={out_type}")
                 
-                for key, val in step_output.items():
-                    if isinstance(val, QgsMapLayer):
-                        if not project.mapLayer(val.id()):
-                            val.setName(f"geosi_{step_id}")
-                            project.addMapLayer(val)
-                    elif isinstance(val, str):
-                        # The string might be a layer ID, path, or QGIS uri
-                        layer = QgsProcessingUtils.mapLayerFromString(val, context)
-                        if not (layer and layer.isValid()):
-                            # Fallback: check if it's a direct file path
-                            import os
-                            if os.path.exists(val):
-                                from qgis.core import QgsVectorLayer, QgsRasterLayer
-                                if val.lower().endswith(('.tif', '.tiff', '.img', '.asc')):
-                                    layer = QgsRasterLayer(val, f"{step_id}_raster")
-                                else:
-                                    layer = QgsVectorLayer(val, f"{step_id}_vector", "ogr")
-
-                        if layer and layer.isValid() and not project.mapLayer(layer.id()):
-                            layer.setName(f"{step_id}_{key.lower()}")
-                            project.addMapLayer(layer)
+                # Case 1: GeoSI Layer (duck-typed)
+                if _is_geosi_layer(step_output):
+                    name = step_output.name or step_id
+                    fp = step_output.filepath or ''
+                    print(f"GeoSI: Layer detected: name='{name}' path='{fp}' ltype='{step_output.layer_type}'")
+                    _load_file(fp, name)
+                
+                # Case 2: dict (raw processing output)
+                elif isinstance(step_output, dict):
+                    print(f"GeoSI: dict keys={list(step_output.keys())}")
+                    for key, val in step_output.items():
+                        lname = f"{step_id}_{key}"
+                        print(f"GeoSI:   k='{key}' vtype={type(val).__name__}")
+                        if _is_geosi_layer(val):
+                            _load_file(val.filepath or '', val.name or lname)
+                        elif isinstance(val, str) and os.path.isfile(val):
+                            _load_file(val, lname)
+                        elif hasattr(val, 'source') and callable(getattr(val, 'source', None)):
+                            try:
+                                src = val.source()
+                                if os.path.isfile(src):
+                                    _load_file(src, lname)
+                                elif hasattr(val, 'isValid') and val.isValid():
+                                    project.addMapLayer(val)
+                                    layers_added.append(lname)
+                            except Exception as e:
+                                print(f"GeoSI:   source() error: {e}")
+                
+                # Case 3: string file path
+                elif isinstance(step_output, str) and os.path.isfile(step_output):
+                    _load_file(step_output, step_id)
+                
+                else:
+                    print(f"GeoSI: unhandled type '{out_type}' for step '{step_id}'")
+            
+            if layers_added:
+                self._msg(f"🗺️ {len(layers_added)} layer(s) added to Layers Panel", kind="success")
+            else:
+                print("GeoSI: WARNING — no layers loaded")
+                if results:
+                    self._msg("⚠️ Output could not be loaded. Check Python console.", kind="warn")
         except Exception as e:
-            self._msg(f"Could not automatically load layers: {e}", kind="warn")
+            import traceback
+            self._msg(f"⚠️ Layer loading error: {e}", kind="warn")
+            print(f"GeoSI LAYER LOAD ERROR:\n{traceback.format_exc()}")
 
     def _on_error(self, err: str):
         self.run_btn.setEnabled(True)

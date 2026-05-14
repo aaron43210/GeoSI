@@ -1,0 +1,495 @@
+% ============================================================
+%  ADD-ON CONTENT FOR GeoSI_Master_Report.tex
+%  ── Place this chapter BEFORE "Conclusions and Future Work"
+%  ── i.e., as Chapter 10 (renumber Conclusions to Chapter 11)
+% ============================================================
+
+
+% ============================================================
+%  CHAPTER 10 — NATIVE HYDROLOGICAL ANALYSIS
+% ============================================================
+\chapter{Native Hydrological Analysis Pipeline}
+
+\section{Overview}
+
+A key extension to GeoSI is the implementation of a dependency-free, native
+hydrological analysis pipeline within the \texttt{WatershedWorkflowTool}
+(\texttt{geosi\_engine/tools/complex.py}).  Traditional hydrological analysis in
+QGIS requires external providers such as GRASS GIS or SAGA, which are often
+difficult to install and not available on all platforms.  GeoSI replaces these
+external dependencies with a pure NumPy and GDAL implementation of the D8 flow
+direction algorithm, enabling watershed delineation and pour-point catchment
+analysis to run natively on any platform with only \texttt{osgeo.gdal} and
+\texttt{numpy}.
+
+\section{D8 Flow Direction Algorithm}
+
+The D8 (Deterministic Eight-Neighbour) algorithm assigns a single flow direction
+to each cell in a Digital Elevation Model (DEM) based on the steepest downhill
+slope among its eight neighbours.
+
+\subsection{Mathematical Formulation}
+
+For a cell at position $(r, c)$ with elevation $z_{r,c}$, the slope to each
+neighbour $(r + \Delta r,\; c + \Delta c)$ is computed as:
+
+\[
+S_{(\Delta r, \Delta c)} = \frac{z_{r,c} - z_{r+\Delta r,\; c+\Delta c}}{d_{(\Delta r,\Delta c)}}
+\]
+
+\noindent where $d$ is the distance to the neighbour: $d = 1$ for cardinal
+directions (N, S, E, W) and $d = \sqrt{2}$ for diagonal directions (NE, SE, SW,
+NW).  The flow direction is assigned as the D8 code of the neighbour with the
+maximum positive slope.
+
+\subsection{D8 Direction Encoding}
+
+GeoSI uses the standard D8 encoding:
+
+\begin{table}[ht]
+\centering
+\caption{D8 flow direction codes}
+\begin{tabular}{cccccccc}
+\toprule
+\textbf{E} & \textbf{SE} & \textbf{S} & \textbf{SW} & \textbf{W} & \textbf{NW} & \textbf{N} & \textbf{NE} \\
+\midrule
+1 & 2 & 4 & 8 & 16 & 32 & 64 & 128 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Vectorised Implementation}
+
+Rather than looping over every pixel in Python (which would be prohibitively slow
+for large DEMs), GeoSI uses a vectorised sliding-window approach with NumPy:
+
+\begin{lstlisting}
+# Compute slope to all 8 neighbours simultaneously
+for i, (dc, dr, code) in enumerate(D8_OFFSETS):
+    neighbor = dem_padded[1+dr:rows+1+dr, 1+dc:cols+1+dc]
+    dist = math.sqrt(2) if abs(dc)+abs(dr)==2 else 1.0
+    slope = (center - neighbor) / (dist * pixel_size)
+    slopes[:, :, i] = slope
+    codes[i] = code
+
+# Assign direction = code of steepest downhill neighbour
+best = np.argmax(slopes, axis=2)
+flow_dir = np.array(codes)[best]
+flow_dir[np.max(slopes, axis=2) <= 0] = 0  # pits / flats
+\end{lstlisting}
+
+This processes the entire DEM in a single pass with no Python-level pixel loops,
+achieving near-C performance on large rasters.
+
+\section{Flow Accumulation}
+
+Flow accumulation counts the number of upstream cells that drain through each
+cell.  GeoSI computes this using a topological sort by elevation:
+
+\begin{enumerate}
+  \item Sort all pixels in descending elevation order.
+  \item Initialise an accumulation grid with value 1 for every cell.
+  \item Iterate from highest to lowest: for each cell, add its accumulation
+        value to the cell it flows into (determined by its D8 direction).
+\end{enumerate}
+
+This avoids the deep recursion that would cause Python's stack to overflow on
+large DEMs.  The topological sort runs in $O(n \log n)$ where $n$ is the total
+number of pixels, and the accumulation pass runs in $O(n)$.
+
+\begin{lstlisting}
+# Topological sort: process cells from highest to lowest
+sorted_indices = np.argsort(-dem_filled.ravel())
+accumulation = np.ones(dem_filled.shape, dtype=np.float64)
+
+for idx in sorted_indices:
+    r, c = divmod(idx, cols)
+    direction = flow_dir[r, c]
+    if direction == 0:
+        continue
+    dr, dc = D8_DECODE[direction]
+    nr, nc = r + dr, c + dc
+    if 0 <= nr < rows and 0 <= nc < cols:
+        accumulation[nr, nc] += accumulation[r, c]
+\end{lstlisting}
+
+\section{Watershed Delineation}
+
+Watersheds are delineated by thresholding the flow accumulation grid.  Cells
+with accumulation above the user-specified threshold are marked as part of the
+drainage network, then converted to vector polygons using GDAL's
+\texttt{Polygonize} function.
+
+\begin{lstlisting}
+# Threshold to create binary watershed mask
+mask = (accumulation >= threshold).astype(np.uint8)
+
+# Vectorise using GDAL
+gdal.Polygonize(mask_band, mask_band, output_layer, 0)
+\end{lstlisting}
+
+\section{Pour-Point Catchment Delineation}
+
+The most significant hydrological feature is pour-point catchment delineation:
+given a specific coordinate (the ``pour point''), the tool identifies all upstream
+cells that drain into that point.
+
+\subsection{Pour Point Snapping}
+
+Users rarely click exactly on the mathematical stream channel.  The algorithm
+first snaps the input coordinate to the cell with the highest flow accumulation
+within a configurable search radius:
+
+\begin{lstlisting}
+# Search window around the pour point
+sub_fa = fa_data[min_y:max_y, min_x:max_x]
+max_idx = np.unravel_index(np.argmax(sub_fa), sub_fa.shape)
+snap_py = min_y + max_idx[0]
+snap_px = min_x + max_idx[1]
+\end{lstlisting}
+
+\subsection{Reverse D8 Upstream Trace}
+
+Starting from the snapped pour point, the algorithm performs an iterative
+depth-first search (DFS) upstream.  For each of the eight neighbours, it checks
+whether that neighbour's D8 flow direction points \emph{towards} the current
+cell.  If so, the neighbour is part of the catchment:
+
+\begin{lstlisting}
+# Reverse D8 neighbour lookup
+# If neighbour at (dx, dy) has flow code = required_code,
+# it flows INTO the current cell
+neighbours = [
+    (0, -1, 4),    # N neighbour must flow S (code 4)
+    (1, -1, 8),    # NE neighbour must flow SW (code 8)
+    (1,  0, 16),   # E neighbour must flow W (code 16)
+    (1,  1, 32),   # SE neighbour must flow NW (code 32)
+    (0,  1, 64),   # S neighbour must flow N (code 64)
+    (-1, 1, 128),  # SW neighbour must flow NE (code 128)
+    (-1, 0, 1),    # W neighbour must flow E (code 1)
+    (-1,-1, 2)     # NW neighbour must flow SE (code 2)
+]
+
+stack = [(snap_px, snap_py)]
+catchment_mask[snap_py, snap_px] = 1
+
+while stack:
+    cx, cy = stack.pop()
+    for dx, dy, required_code in neighbours:
+        nx, ny = cx + dx, cy + dy
+        if 0 <= nx < cols and 0 <= ny < rows:
+            if catchment_mask[ny, nx] == 0:
+                if flow_dir[ny, nx] == required_code:
+                    catchment_mask[ny, nx] = 1
+                    stack.append((nx, ny))
+\end{lstlisting}
+
+The use of an explicit stack (rather than recursion) prevents stack overflow on
+large DEMs where catchments may contain millions of pixels.
+
+\subsection{Multiple Pour Points from Shapefile}
+
+The tool supports reading pour points from a vector layer (e.g., a point
+shapefile) using OGR.  When a \texttt{POUR\_POINT\_LAYER} parameter is provided,
+the tool reads all point geometries from the file and runs a separate catchment
+delineation for each point:
+
+\begin{lstlisting}
+def _resolve_pour_points(self, kwargs):
+    points = []
+    pp_layer = kwargs.get("POUR_POINT_LAYER")
+    if pp_layer is not None:
+        ds = ogr.Open(pp_layer.filepath)
+        layer = ds.GetLayer(0)
+        for feature in layer:
+            geom = feature.GetGeometryRef()
+            points.append((geom.GetX(), geom.GetY()))
+    # Fallback: explicit X/Y coordinates
+    if not points:
+        pt_x = kwargs.get("POUR_POINT_X")
+        pt_y = kwargs.get("POUR_POINT_Y")
+        if pt_x is not None and pt_y is not None:
+            points.append((float(pt_x), float(pt_y)))
+    return points
+\end{lstlisting}
+
+\section{Unified Workflow Pipeline}
+
+The \texttt{WatershedWorkflowTool} orchestrates the entire pipeline as a single
+tool invocation with up to six steps:
+
+\begin{table}[ht]
+\centering
+\caption{WatershedWorkflowTool execution pipeline}
+\begin{tabular}{clp{7cm}}
+\toprule
+\textbf{Step} & \textbf{Operation} & \textbf{Output} \\
+\midrule
+1 & Preprocess DEM        & Filled DEM with no-data values interpolated \\
+2 & D8 Flow Direction     & 8-bit raster with flow codes (1--128) \\
+3 & Flow Accumulation     & Float64 raster with upstream cell counts \\
+4 & Watershed Mask        & Binary raster (above/below threshold) \\
+5 & Polygonise            & GeoJSON vector of watershed boundaries \\
+6 & Catchment (optional)  & Catchment mask + polygon for each pour point \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Steps 1--5 always execute.  Step 6 runs only when pour point coordinates or a
+pour point layer are provided.
+
+\section{Natural Language Integration}
+
+The parser and agent were updated to support watershed queries from the GeoSI
+plugin chat panel:
+
+\subsection{Parser Updates}
+
+The \texttt{\_OPERATION\_MAP} in \texttt{parser.py} was extended with a new
+\texttt{"watershed"} entry:
+
+\begin{lstlisting}
+"watershed": ["watershed", "watershed analysis",
+              "flow accumulation", "flow direction",
+              "catchment", "drainage basin",
+              "pour point", "delineate"],
+\end{lstlisting}
+
+A coordinate extraction regex was added to parse pour point coordinates from
+natural language:
+
+\begin{lstlisting}
+coord_match = re.search(
+    r'(?:at\s+(?:point\s+)?|pour\s+point\s+|'
+    r'coordinates?\s+|point\s+)'
+    r'(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)',
+    lowered
+)
+\end{lstlisting}
+
+\subsection{Agent Updates}
+
+The agent's \texttt{op\_to\_tool} mapping was extended:
+
+\begin{lstlisting}
+"watershed": "watershed_workflow",
+\end{lstlisting}
+
+When the parser detects pour point coordinates or a secondary layer (point
+shapefile), the agent passes them as \texttt{POUR\_POINT\_X}/\texttt{Y} or
+\texttt{POUR\_POINT\_LAYER} parameters.
+
+\subsection{Supported Prompts}
+
+\begin{table}[ht]
+\centering
+\caption{Supported natural language prompts for hydrological analysis}
+\begin{tabular}{lp{6cm}}
+\toprule
+\textbf{Prompt} & \textbf{Behaviour} \\
+\midrule
+``Perform watershed analysis on DEM'' & Full 5-step watershed (no catchment) \\
+``Watershed analysis on DEM at point 77.5, 8.5'' & Watershed + catchment at (77.5, 8.5) \\
+``Watershed analysis on DEM with points'' & Watershed + catchment for each point in the \texttt{points} layer \\
+``Find catchment at 77.5, 8.5 on DEM'' & Watershed + catchment at (77.5, 8.5) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Case Study: Watershed and Catchment on Kerala DEM}
+
+The pipeline was tested on a 3601$\times$3601 pixel DEM (SRTM 1-arc-second)
+covering Kerala (bounds: 76.99--78.00\textdegree E, 8.00--9.00\textdegree N).
+
+\subsection{Execution Results}
+
+\begin{table}[ht]
+\centering
+\caption{Watershed workflow execution on Kerala DEM (threshold=5000)}
+\begin{tabular}{lcr}
+\toprule
+\textbf{Output Layer} & \textbf{Type} & \textbf{Size} \\
+\midrule
+\texttt{dem\_filled}            & GeoTIFF & 25.9\,MB \\
+\texttt{flow\_direction}        & GeoTIFF & 12.9\,MB \\
+\texttt{flow\_accumulation}     & GeoTIFF & 51.8\,MB \\
+\texttt{watershed\_mask}        & GeoTIFF & 12.9\,MB \\
+\texttt{watershed\_polygons}    & GeoJSON & 185\,B \\
+\texttt{catchment\_mask}        & GeoTIFF & 12.9\,MB \\
+\texttt{catchment\_polygon}     & GeoJSON & 5.7\,KB \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+All seven layers were successfully generated and loaded into the QGIS Layers
+panel via the GeoSI plugin in approximately 25 seconds total execution time.
+
+\subsection{QGIS Plugin Execution}
+
+The watershed workflow was triggered from the GeoSI plugin chat panel using the
+prompt: ``Perform watershed analysis on DEM with a.shp'' (where \texttt{a.shp}
+contained a single pour point).  The plugin successfully:
+
+\begin{enumerate}
+  \item Parsed the query as \texttt{intent=TERRAIN}, \texttt{operation=watershed}.
+  \item Resolved \texttt{DEM} as the primary layer and \texttt{a.shp} as the pour
+        point layer.
+  \item Executed all six pipeline steps using the native D8 algorithm.
+  \item Loaded all seven output layers into the QGIS Layers panel automatically.
+\end{enumerate}
+
+\section{Design Decisions}
+
+\begin{enumerate}
+  \item \textbf{No external dependencies.}  The pipeline uses only
+        \texttt{osgeo.gdal} (bundled with QGIS) and \texttt{numpy}.  No GRASS,
+        SAGA, or WhiteboxTools installation is required.
+  \item \textbf{Iterative stack, not recursion.}  The upstream trace uses an
+        explicit Python list as a stack to prevent \texttt{RecursionError} on
+        large catchments.
+  \item \textbf{Topological sort for accumulation.}  Sorting by descending
+        elevation guarantees correct accumulation without recursive descent.
+  \item \textbf{Multi-point support.}  Reading pour points from a shapefile
+        enables batch catchment delineation in a single tool invocation.
+  \item \textbf{Unified tool.}  Watershed and catchment are combined into one
+        \texttt{WatershedWorkflowTool} rather than separate tools, reducing
+        user friction and ensuring the flow direction/accumulation grids are
+        computed only once.
+\end{enumerate}
+
+
+% ============================================================
+%  ADDITIONAL CONTENT FROM Connections.md
+%  ── Suggested placement: Section in Chapter 3 (Architecture)
+%     or as a new section in Chapter 6 (Agent)
+% ============================================================
+
+% --- Paste the following into Chapter 3, Section "Data Flow" ---
+
+% \section{Detailed Data Flow: Prompt to Result}
+%
+% The complete data flow from user input to rendered output traverses
+% every major component of the architecture:
+%
+% \begin{enumerate}
+%   \item User types in \texttt{prompt\_dock.py} \texttt{QLineEdit}.
+%   \item \texttt{GeoSIDock.\_run\_query()} handles meta-commands
+%         (\texttt{help}, \texttt{layers}, \texttt{tools}, \texttt{clear}).
+%   \item \texttt{GeoSIDock.\_sync\_qgis\_layers()} copies
+%         \texttt{QgsProject.mapLayers()} into the engine's state.
+%   \item \texttt{\_QueryWorker} thread calls \texttt{GeoSI.query(text)}.
+%   \item \texttt{agent.parse(text, state)} $\rightarrow$ \texttt{QueryParser}
+%         $\rightarrow$ \texttt{AnalysisRequest}.
+%   \item \texttt{agent.validate\_layers\_exist(req)} $\rightarrow$ returns
+%         error if layer not found.
+%   \item \texttt{agent.plan(req)} $\rightarrow$ \texttt{ExecutionPlan}
+%         (Ollama-first).
+%   \item \texttt{executor.run(plan)} $\rightarrow$ walks each
+%         \texttt{ToolStep}, dispatching via \texttt{BackendTool} $\rightarrow$
+%         \texttt{processing.run()}.
+%   \item \texttt{ExecutionResult} returns to
+%         \texttt{GeoSIDock.\_on\_result()}.
+%   \item Chat dock renders answer, reasoning, and suggestions.
+% \end{enumerate}
+
+
+% --- Paste the following into Chapter 3 or Appendix ---
+
+% \section{Layer Not Found Flow}
+%
+% When a user references a layer that is not loaded in the QGIS Layers panel,
+% the engine responds with a clear error message listing available layers:
+%
+% \begin{lstlisting}[language={}]
+% parser.parse("Buffer hospitals by 500m", ["Assets", "Kerala"])
+%   -> request.entities["primary_layer"] = "hospitals"
+%
+% agent.validate_layers_exist(request, state)
+%   -> primary "hospitals" not in available layers
+%   -> find_similar_layers("hospitals", ["Assets","Kerala"]) == []
+%   -> returns (False, "Layer 'hospitals' not found.
+%                      Available layers: Assets, Kerala")
+%
+% agent.plan(...)   -> empty ExecutionPlan with error as reasoning
+% executor.run(...) -> ExecutionResult(success=False, answer=error)
+% prompt_dock       -> renders the error in red, lists loaded layers
+% \end{lstlisting}
+%
+% The plugin \textbf{never} fetches data from OSM.  The user is always told
+% to load the layer first.
+
+
+% --- Paste the following into Chapter 6 (Agent) ---
+
+% \section{Common Workflow Examples}
+%
+% \subsection{Workflow: Buffer + Intersect}
+%
+% \begin{lstlisting}[language={}]
+% User: "Find residential zones within 500m of hospitals"
+%
+% parser:  intent=PROXIMITY,
+%          entities={primary:hospitals, secondary:residential}
+%          parameters={distance_value:500, distance_unit:meters}
+% agent:   plan = [buffer(hospitals, 500),
+%                  intersect(prev_output, residential)]
+% exec:    buffer output registered as step_1_output;
+%          intersect reads step_1_output + residential;
+%          final Layer stored in state.
+% \end{lstlisting}
+%
+% \subsection{Workflow: Raster NDVI}
+%
+% \begin{lstlisting}[language={}]
+% User: "Calculate NDVI from Sentinel2_red and Sentinel2_nir"
+%
+% parser:  intent=RASTER, operation=ndvi
+% agent:   plan = [ndvi(RED=Sentinel2_red, NIR=Sentinel2_nir)]
+% exec:    BackendTool dispatches to "qgis" backend ->
+%          processing.run("native:rastercalc", {...}) -> NDVI raster.
+% \end{lstlisting}
+
+
+% --- Paste into Appendix or Chapter 3 ---
+
+% \section{Quick Reference: Key Classes and Methods}
+%
+% \begin{table}[ht]
+% \centering
+% \caption{GeoSI quick reference — key classes and entry points}
+% \begin{tabular}{lll}
+% \toprule
+% \textbf{Need} & \textbf{Class / Module} & \textbf{Key Method} \\
+% \midrule
+% Run NL query          & \texttt{geosi\_engine.GeoSI}   & \texttt{.query(text)} \\
+% List tools            & \texttt{ToolRegistry}          & \texttt{.list\_tools()} \\
+% Run a tool directly   & \texttt{ToolRegistry}          & \texttt{.execute\_tool(name)} \\
+% Parse text only       & \texttt{QueryParser}           & \texttt{.parse(text, layers)} \\
+% Plan only             & \texttt{GeoSIAgent}            & \texttt{.plan(request)} \\
+% Execute only          & \texttt{ExecutionEngine}       & \texttt{.run(plan)} \\
+% Install QGIS backend  & \texttt{qgis\_bridge}          & \texttt{.install()} \\
+% Chat dock UI          & \texttt{GeoSIDock}             & \texttt{\_run\_query()} \\
+% \bottomrule
+% \end{tabular}
+% \end{table}
+
+
+% --- Add to References ---
+
+% \item O'Callaghan, J. F. and Mark, D. M., ``The Extraction of Drainage
+% Networks from Digital Elevation Data,'' \textit{Computer Vision, Graphics,
+% and Image Processing}, vol. 28, pp. 323--344, 1984.
+%
+% \item Jenson, S. K. and Domingue, J. O., ``Extracting Topographic Structure
+% from Digital Elevation Data for Geographic Information System Analysis,''
+% \textit{Photogrammetric Engineering and Remote Sensing}, vol. 54, no. 11,
+% pp. 1593--1600, 1988.
+%
+% \item GDAL/OGR Contributors, ``GDAL/OGR Geospatial Data Abstraction
+% Library,'' Open Source Geospatial Foundation, 2024.\\
+% Available: \url{https://gdal.org}
+
+
+% --- Add to Tool Registry Appendix ---
+
+% watershed\_workflow & terrain & Native D8 watershed + catchment delineation \\

@@ -1,7 +1,30 @@
 # -*- coding: utf-8 -*-
 """
-GeoSI — Main Plugin Class
-Registers toolbar button and AI prompt dock widget in QGIS.
+GeoSI — Geospatial Superintelligence QGIS Plugin
+
+Version: 1.0.0 (Intelligent Layer Auto-Loading)
+Status: Production-ready for QGIS 3.22 - 4.99
+
+Features:
+    - 128 advanced GIS tools via natural language
+    - ✨ Automatic layer loading to QGIS Layers Panel
+    - Complete Watershed Analysis workflow (5-step hydrological pipeline)
+    - Multi-step workflow orchestration with instant result visibility
+    - Ollama/Claude/Gemini LLM support
+    - Qt5/Qt6 compatible (QGIS 3.x and 4.x support)
+    - Dark mode premium UI
+
+Architecture:
+    - Universal engine (no QGIS imports in core)
+    - Plugin-specific bridge for QGIS Processing dispatch
+    - Intelligent layer converter (GeoSI Layer → QGIS layer)
+    - Framework-independent: works in plugin, server, Jupyter, CLI
+
+QGIS 4 Compatibility:
+    - Full Qt6 support with Qt5 fallbacks
+    - Tested on QGIS 3.22, 4.0+ 
+    - Automatic Qt version detection
+    - No deprecated QGIS APIs
 """
 import os
 from qgis.PyQt.QtCore import Qt

@@ -31,7 +31,7 @@ _DEFAULT_PLANS: Dict[IntentType, List[str]] = {
     IntentType.OVERLAY:         ["intersect"],
     IntentType.GEOMETRY:        ["clean_layer"],
     IntentType.RASTER:          ["raster_calc"],
-    IntentType.TERRAIN:         ["slope"],
+    IntentType.TERRAIN:         ["watershed_workflow"],
     IntentType.NETWORK:         ["shortest_path"],
     IntentType.AI_ML:           ["kmeans_cluster", "hotspot_analysis"],
     IntentType.CARTOGRAPHY:     ["export_geojson"],
@@ -229,7 +229,7 @@ class GeoSIAgent:
         well_understood_ops = {
             "clip", "buffer", "intersect", "union", "difference",
             "dissolve", "centroid", "convex_hull", "simplify",
-            "slope", "aspect", "hillshade", "contour",
+            "slope", "aspect", "hillshade", "contour", "watershed", "catchment",
             "ndvi", "ndwi", "reproject", "join_attributes", "extract_by_attribute",
         }
         if operation in well_understood_ops:
@@ -318,6 +318,7 @@ class GeoSIAgent:
             "difference": "difference", "symmetric_difference": "symmetric_difference",
             "buffer": "buffer", "dissolve": "dissolve", "centroid": "centroid",
             "simplify": "simplify", "reproject": "reproject",
+            "watershed": "watershed_workflow",
             "slope": "slope", "aspect": "aspect", "hillshade": "hillshade",
             "contour": "contour", "ndvi": "ndvi", "ndwi": "ndwi",
             "join_attributes": "join_attributes",
@@ -472,6 +473,27 @@ class GeoSIAgent:
                     params["SEARCH_TERM"] = search_term
                     description_parts.append(f"searching for '{search_term}' in attribute table")
 
+            elif tool_name == "watershed_workflow":
+                # Pass pour point coordinates if the user provided them
+                pt_x = request.parameters.get("point_x")
+                pt_y = request.parameters.get("point_y")
+                if pt_x is not None and pt_y is not None:
+                    params["POUR_POINT_X"] = pt_x
+                    params["POUR_POINT_Y"] = pt_y
+                    description_parts.append(f"with pour point ({pt_x}, {pt_y})")
+                # Pass pour point layer (e.g. point.shp) if a secondary layer was mentioned
+                secondary = request.entities.get("secondary_layer")
+                if secondary:
+                    params["POUR_POINT_LAYER"] = secondary
+                    description_parts.append(f"with pour points from {secondary}")
+
+            elif tool_name == "catchment_delineation":
+                primary = request.entities.get("primary_layer") or request.entities.get("layer")
+                secondary = request.entities.get("secondary_layer") or primary
+                params["FLOW_DIRECTION"] = primary
+                params["FLOW_ACCUMULATION"] = secondary
+                params["POINT_X"] = request.parameters.get("point_x", 0)
+                params["POINT_Y"] = request.parameters.get("point_y", 0)
             elif tool_name in ["slope", "aspect", "hillshade", "contour"]:
                 # Terrain tools usually just need input DEM
                 pass
