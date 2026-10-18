@@ -34,6 +34,7 @@ Data Structures
 
 import os
 import json
+import re
 import logging
 from typing import Dict, List, Optional, Any, Tuple
 from difflib import SequenceMatcher
@@ -76,6 +77,7 @@ _OPERATION_TO_ALGORITHM: Dict[str, str] = {
     "symmetric_difference": "native_symmetricaldifference",
     "dissolve":             "native_dissolve",
     "centroid":             "native_centroids",
+    "fix_geometries":       "native_fixgeometries",
     "simplify":             "native_simplifygeometries",
     "convex_hull":          "native_convexhull",
     "voronoi":              "native_voronoipolygons",
@@ -152,6 +154,7 @@ class GeoSIAgent:
         )
         self._ollama_endpoint = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
         self._ollama_model = self._detect_ollama_model()
+        self._tool_retriever = None  # created lazily; see _relevant_tools()
         self._anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
         self._gemini_key = (
             os.environ.get("GEMINI_API_KEY")
@@ -174,8 +177,10 @@ class GeoSIAgent:
             resp = requests.get(f"{self._ollama_endpoint}/api/tags", timeout=1.5)
             if resp.status_code == 200:
                 models = [m.get("name") for m in resp.json().get("models", [])]
-                if models and model not in models:
-                    for pref in ["llama3.2:3b", "qwen2.5-coder:14b", "mistral"]:
+                # Embedding-only models cannot generate plans
+                models = [m for m in models if m and "embed" not in m]
+                if models and model not in models and f"{model}:latest" not in models:
+                    for pref in ["llama3.2:3b", "llama3:latest", "qwen2.5-coder:14b", "mistral"]:
                         if pref in models:
                             return pref
                     return models[0]
@@ -228,7 +233,7 @@ class GeoSIAgent:
         operation = request.parameters.get("operation", "")
         well_understood = {
             "clip", "buffer", "intersect", "union", "difference",
-            "dissolve", "centroid", "convex_hull", "simplify",
+            "dissolve", "centroid", "convex_hull", "simplify", "voronoi", "fix_geometries",
             "slope", "aspect", "hillshade", "contour",
             "ndvi", "ndwi", "reproject", "join_attributes",
             "extract_by_attribute",
@@ -471,6 +476,51 @@ class GeoSIAgent:
 
     # ── LLM-based planning ─────────────────────────────────────────────
 
+    _STOPWORDS = frozenset(
+        "a an the of in on to by for from with and or each every all into "
+        "within inside using use layer layers my me please create make get "
+        "find show calculate compute run do".split()
+    )
+
+    def _relevant_tools(self, query: str, top_k: int = 12) -> List[str]:
+        """
+        Pick the tools to show the LLM: semantic search over tool
+        descriptions with the Ollama embedding model, falling back to
+        keyword overlap when no embedding model is available.
+        """
+        if self._tool_retriever is None:
+            from geosi_engine.tool_retriever import ToolRetriever
+            self._tool_retriever = ToolRetriever(self.registry, endpoint=self._ollama_endpoint)
+        ranked = self._tool_retriever.rank(query, top_k=top_k)
+        return ranked or self._rank_tools_for_query(query)[:top_k]
+
+    def _rank_tools_for_query(self, query: str) -> List[str]:
+        """
+        Rank tool names by keyword overlap with the query.
+
+        Name/display-name/tag hits weigh 3, description hits 1; native QGIS
+        algorithms get a small boost as the most reliable providers.
+        Complexity: O(N * W) for N tools and W query words.
+        """
+        words = {
+            w.rstrip("s") if len(w) > 3 else w
+            for w in re.findall(r"[a-z]+", query.lower())
+            if w not in self._STOPWORDS and len(w) > 2
+        }
+        if not words:
+            return []
+        scored = []
+        for spec in self.registry.list_tools():
+            title = " ".join([spec.name, spec.display_name, *spec.tags]).lower()
+            desc = spec.description.lower()
+            score = sum(3 for w in words if w in title) + sum(1 for w in words if w in desc)
+            if score:
+                if spec.name.startswith(("native_", "qgis_")):
+                    score += 0.5
+                scored.append((score, spec.name))
+        scored.sort(key=lambda s: (-s[0], s[1]))
+        return [name for _, name in scored]
+
     def _get_prompt(self, request: AnalysisRequest) -> str:
         """Build the LLM prompt with tool catalog and knowledge context."""
         tool_catalog = []
@@ -479,12 +529,21 @@ class GeoSIAgent:
                 "name": spec.name,
                 "description": spec.description[:200],  # Token budget
                 "parameters": [
-                    {"name": p.name, "type": p.param_type}
+                    {"name": p.name, "type": p.param_type, "required": p.required}
                     for p in spec.parameters[:8]  # Limit params per tool
                 ],
             })
 
-        # If catalog is too large for LLM context, only send top categories
+        # If catalog is too large for LLM context (e.g. 700+ QGIS algorithms),
+        # send the tools whose name/description best match the query words.
+        # Taking the first N alphabetically would mostly offer GDAL raster tools.
+        if len(tool_catalog) > 100:
+            ranked = self._relevant_tools(request.query)
+            if ranked:
+                keep = set(ranked[:12])  # small local models choose better from few
+                tool_catalog = [t for t in tool_catalog if t["name"] in keep]
+                tool_catalog.sort(key=lambda t: ranked.index(t["name"]))
+
         if len(tool_catalog) > 100:
             # Send only the most relevant tools based on intent
             intent_categories = {
@@ -512,10 +571,13 @@ class GeoSIAgent:
         return f"""You are GeoSI, an advanced geospatial workflow planner.
 
 CRITICAL RULES:
-1. ONLY use tool names from the "Available tools" list below.
+1. ONLY use tool names from the "Available tools" list below. Tools are
+   listed most relevant first; prefer the first tool that does the job.
 2. ONLY reference layer names from the "Available layers" list below.
 3. NEVER use load_spatial_data. ALL layers are ALREADY loaded.
-4. Every step MUST use exactly one tool with its exact parameter names.
+4. Every step MUST use exactly one tool with its exact parameter names,
+   and MUST set every parameter marked "required": true.
+5. Use as few steps as possible.
 {knowledge_section}
 Available tools:
 {json.dumps(tool_catalog, indent=2)}
@@ -549,7 +611,13 @@ Return ONLY valid JSON:
         context = self.conversation.get_context(include_system=True)
         response = requests.post(
             f"{self._ollama_endpoint}/api/generate",
-            json={"model": self._ollama_model, "prompt": context, "stream": False, "temperature": 0.0},
+            json={
+                "model": self._ollama_model,
+                "prompt": context,
+                "stream": False,
+                "format": "json",
+                "options": {"temperature": 0.0},
+            },
             timeout=120,
         )
         response.raise_for_status()
@@ -588,24 +656,41 @@ Return ONLY valid JSON:
         )
 
     def _validate_plan_layers(self, plan: ExecutionPlan, available_layers: list) -> bool:
-        """Check that all layer references in an LLM plan actually exist."""
-        if not available_layers or not plan.steps:
+        """
+        Check that an LLM plan only uses known tools and real layers.
+
+        Only parameters the tool declares as layers are checked, so values
+        such as "EPSG:4326" or "1000m" are not mistaken for layer names.
+        Outputs of earlier steps count as layers for later steps.
+        """
+        if not plan.steps:
             return True
-        available_set = set(available_layers)
+        known = set(available_layers or [])
         for step in plan.steps:
+            tool = self.registry.get_tool(step.tool_name)
+            if tool is None:
+                logger.warning(f"LLM plan uses unknown tool: '{step.tool_name}'")
+                return False
+            spec_params = tool.spec().parameters
+            # Small models often lowercase QGIS keys ("input" for INPUT);
+            # map them to the real names and drop keys the tool doesn't have
+            # (outputs are assigned by the bridge).
+            by_lower = {p.name.lower(): p.name for p in spec_params}
+            step.parameters = {
+                by_lower[k.lower()]: v
+                for k, v in (step.parameters or {}).items()
+                if k.lower() in by_lower
+            }
+            layer_params = {p.name for p in spec_params if p.param_type == "layer"}
             for key, value in (step.parameters or {}).items():
-                if isinstance(value, str) and value not in available_set:
-                    try:
-                        float(value)
-                        continue
-                    except (ValueError, TypeError):
-                        pass
-                    if value.lower() in ("memory:", "temporary_output", "true", "false"):
-                        continue
-                    if value.startswith("step_") and "_output" in value:
-                        continue
-                    logger.warning(f"LLM plan references unknown layer: '{value}'")
-                    return False
+                if key not in layer_params or not isinstance(value, str):
+                    continue
+                if value in known or (value.startswith("step_") and "_output" in value):
+                    continue
+                logger.warning(f"LLM plan references unknown layer: '{value}' ({key})")
+                return False
+            if step.output_name:
+                known.add(step.output_name)
         return True
 
     # ── Plan validation & error recovery ───────────────────────────────

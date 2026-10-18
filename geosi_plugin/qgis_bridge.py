@@ -259,6 +259,18 @@ def auto_discover_qgis_tools(registry) -> int:
                 continue
             seen_ids.add(alg_id)
 
+            # ── Skip algorithms that cannot run here (e.g. GRASS or SAGA
+            # not installed) so the LLM is never offered them ─────────
+            try:
+                can_run = alg.canExecute()
+                if isinstance(can_run, tuple):
+                    can_run = can_run[0]
+            except Exception:
+                can_run = True
+            if not can_run:
+                skipped_count += 1
+                continue
+
             # ── Extract algorithm metadata ─────────────────────────────
             display_name = alg.displayName() or alg_id
             description = (
@@ -323,6 +335,11 @@ def auto_discover_qgis_tools(registry) -> int:
                         default_val = str(raw_default)
                 except Exception:
                     pass
+                # QGIS fills non-optional params that have a default itself
+                # (e.g. native:buffer SEGMENTS=5), so only params with no
+                # default must come from the plan.
+                if default_val is not None:
+                    is_required = False
 
                 tool_params.append(ToolParameter(
                     name=param.name(),
@@ -472,6 +489,47 @@ def _detect_layer_type(algorithm_id: str) -> str:
 #   - This avoids accessing QgsProject (a GUI singleton) from a worker thread
 # ═══════════════════════════════════════════════════════════════════════════
 
+def _normalize_params(algorithm_id: str, params: dict) -> dict:
+    """
+    Make LLM-written parameters acceptable to processing.run():
+        - keys matched to the algorithm's real names case-insensitively
+          ("input" → INPUT); keys the algorithm doesn't have are dropped
+        - destination values from the plan are ignored; every destination
+          other than OUTPUT (e.g. REPORT) is set to TEMPORARY_OUTPUT
+        - enum values given as option text ("Envelope") become the index
+    """
+    try:
+        from qgis.core import QgsApplication
+        alg = QgsApplication.processingRegistry().algorithmById(algorithm_id)
+    except Exception:
+        alg = None
+    if alg is None:
+        return params
+
+    defs = {p.name().lower(): p for p in alg.parameterDefinitions()}
+    out = {}
+    for key, value in params.items():
+        param = defs.get(str(key).lower())
+        if param is None:
+            logger.info(f"Dropping unknown parameter {key!r} for {algorithm_id}")
+            continue
+        if param.type() == "enum" and isinstance(value, str) and not value.strip().isdigit():
+            options = [o.lower() for o in param.options()]
+            wanted = value.strip().lower()
+            match = next((i for i, o in enumerate(options) if o == wanted or wanted in o), None)
+            if match is None:
+                continue  # let QGIS use the default instead of failing
+            value = match
+        if param.isDestination():
+            continue  # outputs are always chosen by the bridge, not the plan
+        out[param.name()] = value
+
+    for param in alg.destinationParameterDefinitions():
+        if param.name() not in out and param.name() != "OUTPUT":
+            out[param.name()] = "TEMPORARY_OUTPUT"
+    return out
+
+
 def _run_qgis_algorithm(algorithm_id: str, parameters: dict) -> ToolResult:
     """
     Execute a QGIS Processing algorithm with automatic parameter unwrapping
@@ -528,6 +586,8 @@ def _run_qgis_algorithm(algorithm_id: str, parameters: dict) -> ToolResult:
                     unwrapped_params[k] = v.name
             else:
                 unwrapped_params[k] = v
+
+        unwrapped_params = _normalize_params(algorithm_id, unwrapped_params)
 
         # ── Step 4: Redirect in-memory outputs to temp files ───────────
         output_file = None

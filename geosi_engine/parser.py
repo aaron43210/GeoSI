@@ -175,6 +175,8 @@ _OPERATION_MAP: Dict[str, List[str]] = {
     "dissolve": ["dissolve"],
     "convex_hull": ["convex hull"],
     "voronoi": ["voronoi", "thiessen"],
+    "fix_geometries": ["fix geometries", "fix geometry", "repair geometries",
+                       "repair geometry", "invalid geometries", "make valid"],
     "watershed": ["watershed", "watershed analysis", "flow accumulation", "flow direction",
                   "catchment", "drainage basin", "pour point", "delineate"],
     "slope": ["slope"],
@@ -190,6 +192,8 @@ _OPERATION_MAP: Dict[str, List[str]] = {
     "export_geojson": ["export geojson", "save geojson", "to geojson"],
     "geocode": ["geocode", "address to"],
     "extract_by_attribute": ["filter", "select where", "find where", "attribute equals"],
+    "spatial_join": ["spatial join", "join by location", "falls in", "falls within",
+                     "located in", "lies in", "lies within"],
     "join_attributes": ["join", "attribute join", "join with", "link with"],
 }
 
@@ -197,6 +201,10 @@ _OPERATION_MAP: Dict[str, List[str]] = {
 # ---------------------------------------------------------------------------
 # Local cache (in-memory LRU + optional JSON file). No network required.
 # ---------------------------------------------------------------------------
+
+# Bump when parsing rules change so stale cached parses are not reused.
+_CACHE_VERSION = 2
+
 
 def _default_cache_path() -> Path:
     override = os.environ.get("GEOSI_CACHE_DIR")
@@ -214,7 +222,7 @@ def _default_cache_path() -> Path:
         base.mkdir(parents=True, exist_ok=True)
     except Exception:
         base = Path(tempfile.gettempdir())
-    return base / "parser_cache.json"
+    return base / f"parser_cache_v{_CACHE_VERSION}.json"
 
 
 class _LocalCache:
@@ -432,7 +440,7 @@ class QueryParser:
             total = 0
             for kw, weight in keywords.items():
                 # Use word boundaries to prevent false positives (e.g., 'tri' in 'distribution')
-                if re.search(rf"\b{re.escape(kw)}\b", lowered):
+                if re.search(rf"\b{re.escape(kw)}(?:e?s)?\b", lowered):
                     total += weight
             if total:
                 scores[intent] = total
@@ -500,7 +508,7 @@ class QueryParser:
         # Identify the operation to perform (buffer, clip, slope, etc.)
         operation = None
         for op_name, aliases in _OPERATION_MAP.items():
-            if any(re.search(rf"\b{re.escape(alias)}\b", lowered) for alias in aliases):
+            if any(re.search(rf"\b{re.escape(alias)}(?:e?s)?\b", lowered) for alias in aliases):
                 operation = op_name
                 break
         if operation:
