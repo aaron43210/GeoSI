@@ -56,3 +56,7 @@ Thumbs.db
 
 # Tool-specific temporary configs
 puppeteer-config.json
+
+# Plugin packaging output
+dist/
+*.zip

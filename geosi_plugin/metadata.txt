@@ -2,9 +2,9 @@
 name=GeoSI
 qgisMinimumVersion=3.28
 description=Geospatial Superintelligence — Conversational GIS AI with dynamic QGIS tool discovery
-version=2.0.0
+version=0.1.0
 author=Aaron R
-email=aaron@geosi.dev
+email=aaronr43210@gmail.com
 about=GeoSI v2 dynamically discovers ALL QGIS Processing algorithms at startup and makes them available to an LLM-powered conversational interface. No hardcoded tools — 1000+ algorithms auto-registered.
 tracker=https://github.com/aaron/geosi/issues
 repository=https://github.com/aaron/geosi

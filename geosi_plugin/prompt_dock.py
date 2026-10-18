@@ -74,7 +74,7 @@ class GeoSIDock:
         # ── Create the dock widget ─────────────────────────────────────
         self.dock = QDockWidget("GeoSI — Geospatial AI", iface.mainWindow())
         self.dock.setAllowedAreas(
-            Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea
+            Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea
         )
 
         # ── Central widget with vertical layout ────────────────────────

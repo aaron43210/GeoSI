@@ -1,0 +1,168 @@
+name: QGIS Plugin
+
+# ════════════════════════════════════════════════════════════════════
+# GeoSI QGIS plugin — package, test on Linux / macOS / Windows, release
+#   package   → validate metadata.txt, build geosi_plugin-<version>.zip
+#   qgis-docker → load the zip in official QGIS images (LTR + latest)
+#   qgis-conda  → load the zip in conda-forge QGIS on all three OSes
+#   release   → on a v* tag: GitHub pre-release + optional plugins.qgis.org upload
+# ════════════════════════════════════════════════════════════════════
+
+on:
+  push:
+    branches: [main, geosi, geosiui]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: plugin-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: "Package plugin"
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate metadata
+        run: python scripts/package_plugin.py --check
+
+      - name: Check plugin sources compile (Python 3.9+ syntax)
+        run: |
+          python - <<'EOF'
+          import ast, pathlib, sys
+          bad = []
+          for pkg in ("geosi_plugin", "geosi_engine", "geosi_knowledge", "geosi_data", "geosi_rag"):
+              for f in pathlib.Path(pkg).rglob("*.py"):
+                  try:
+                      ast.parse(f.read_text(encoding="utf-8"), feature_version=(3, 9))
+                  except SyntaxError as e:
+                      bad.append(f"{f}:{e.lineno}: {e.msg}")
+          print("\n".join(bad) or "all sources parse")
+          sys.exit(1 if bad else 0)
+          EOF
+
+      - name: Build zip
+        run: python scripts/package_plugin.py
+
+      - name: Read version
+        id: meta
+        run: |
+          python - >> "$GITHUB_OUTPUT" <<'EOF'
+          import configparser
+          c = configparser.ConfigParser(interpolation=None)
+          c.read("geosi_plugin/metadata.txt", encoding="utf-8")
+          print("version=" + c["general"]["version"])
+          EOF
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: geosi-plugin
+          path: dist/geosi_plugin-*.zip
+          if-no-files-found: error
+
+  qgis-docker:
+    name: "QGIS ${{ matrix.tag }} (Linux, Docker)"
+    needs: package
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        tag: [ltr, latest]
+    container:
+      image: qgis/qgis:${{ matrix.tag }}
+    env:
+      QT_QPA_PLATFORM: offscreen
+      XDG_RUNTIME_DIR: /tmp/runtime-root
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: geosi-plugin
+          path: dist
+
+      - name: Load plugin in QGIS
+        run: python3 tests/plugin_smoke.py "dist/geosi_plugin-*.zip"
+
+  qgis-conda:
+    name: "QGIS conda-forge (${{ matrix.os }})"
+    needs: package
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash -el {0}
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: geosi-plugin
+          path: dist
+
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          channels: conda-forge
+          activate-environment: qgis
+          python-version: "3.12"
+
+      - name: Install QGIS
+        run: conda install -y qgis
+
+      - name: Load plugin in QGIS
+        run: python tests/plugin_smoke.py "dist/geosi_plugin-*.zip"
+
+  release:
+    name: "Release"
+    needs: [package, qgis-docker, qgis-conda]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      QGIS_PLUGIN_USER: ${{ secrets.QGIS_PLUGIN_USER }}
+      QGIS_PLUGIN_PASSWORD: ${{ secrets.QGIS_PLUGIN_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: geosi-plugin
+          path: dist
+
+      - name: Check tag matches metadata version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$tag" != "${{ needs.package.outputs.version }}" ]; then
+            echo "Tag v$tag does not match metadata.txt version ${{ needs.package.outputs.version }}"
+            exit 1
+          fi
+
+      - name: GitHub pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          files: dist/geosi_plugin-*.zip
+          generate_release_notes: true
+
+      - name: Upload to plugins.qgis.org
+        if: env.QGIS_PLUGIN_USER != ''
+        run: python3 scripts/upload_plugin.py dist/geosi_plugin-*.zip

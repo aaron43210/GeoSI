@@ -28,3 +28,12 @@ The ultimate goal of GeoSI is to **eliminate the manual bottleneck in geospatial
 * [Architecture Deep Dive](architecture.md)
 * [Codebase Connections & Module Mapping](connections.md)
 * [Agent Definitions & Communication](agents.md)
+
+## QGIS Plugin (experimental)
+The `geosi_plugin/` folder is a QGIS plugin (QGIS 3.28+ and QGIS 4 / Qt6, Linux, macOS and Windows). The engine packages are bundled into the plugin zip, so users install nothing else.
+
+* **Build:** `python scripts/package_plugin.py` → `dist/geosi_plugin-<version>.zip` (`--check` validates `metadata.txt` only).
+* **Install locally:** QGIS → *Plugins → Manage and Install Plugins → Install from ZIP*. Enable *Show also experimental plugins* in Settings.
+* **Smoke test:** `QT_QPA_PLATFORM=offscreen python tests/plugin_smoke.py "dist/geosi_plugin-*.zip"` using QGIS's Python.
+* **CI/CD:** `.github/workflows/plugin.yml` builds the zip, loads it in QGIS LTR + latest (Docker) and conda-forge QGIS on Ubuntu, macOS and Windows. Pushing a tag `v<version>` matching `metadata.txt` creates a GitHub pre-release with the zip and, if the `QGIS_PLUGIN_USER` / `QGIS_PLUGIN_PASSWORD` secrets (OSGeo ID) are set, uploads it to plugins.qgis.org.
+* **LLM provider:** configure Ollama or an API key via environment variables (see `.env.example`); without one, planning falls back to rules.

@@ -5,7 +5,19 @@ GeoSI Plugin — classFactory Entry Point
 
 QGIS calls classFactory(iface) when loading any plugin.
 This returns the main plugin object that manages the lifecycle.
+
+In the packaged plugin the engine packages (geosi_engine, geosi_knowledge,
+...) are bundled next to this file, so the plugin directory is put on
+sys.path before anything imports them.
 """
+
+import os
+import sys
+
+_PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
+for _path in (_PLUGIN_DIR, os.path.dirname(_PLUGIN_DIR)):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
 
 
 def classFactory(iface):
@@ -18,5 +30,5 @@ def classFactory(iface):
     Returns:
         GeoSIPlugin instance that manages initGui() / unload()
     """
-    from geosi_plugin.geosi_plugin import GeoSIPlugin
+    from .geosi_plugin import GeoSIPlugin
     return GeoSIPlugin(iface)
