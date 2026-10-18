@@ -1,0 +1,170 @@
+# GeoSI v2 — Kubernetes Deployment (FR-9.2)
+# ════════════════════════════════════════════════════════════════════
+# Stateless FastAPI workers — scale with HPA
+# Secrets are externalized via ConfigMap + Secret references
+# ════════════════════════════════════════════════════════════════════
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: geosi-server
+  namespace: geosi
+  labels:
+    app: geosi-server
+    version: "2.0.0"
+    component: backend
+spec:
+  replicas: 2                  # Initial replicas; HPA manages scale
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: geosi-server
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0        # Zero-downtime rolling updates
+      maxSurge: 1
+
+  template:
+    metadata:
+      labels:
+        app: geosi-server
+        version: "2.0.0"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      # Non-root security context (mirrors Dockerfile.server)
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+
+      # Init container: run Alembic migrations before server starts
+      initContainers:
+        - name: alembic-migrate
+          image: ghcr.io/zapserve/geosi/geosi-server:latest
+          command: ["python", "-m", "alembic", "upgrade", "head"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: geosi-secrets
+                  key: database-url
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+
+      containers:
+        - name: geosi-server
+          image: ghcr.io/zapserve/geosi/geosi-server:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              name: http
+              protocol: TCP
+
+          # ── Environment — all secrets via secretKeyRef ────────────
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: geosi-secrets
+                  key: database-url
+            - name: NEO4J_URI
+              valueFrom:
+                configMapKeyRef:
+                  name: geosi-config
+                  key: neo4j-uri
+            - name: NEO4J_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: geosi-config
+                  key: neo4j-user
+            - name: NEO4J_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: geosi-secrets
+                  key: neo4j-password
+            - name: QDRANT_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: geosi-config
+                  key: qdrant-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: geosi-secrets
+                  key: redis-url
+            - name: GEOSI_API_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: geosi-secrets
+                  key: api-keys
+            - name: GEOSI_ADMIN_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: geosi-secrets
+                  key: admin-keys
+            - name: GEOSI_MCP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: geosi-secrets
+                  key: mcp-token
+            - name: GEOSI_OTEL_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: geosi-config
+                  key: otel-endpoint
+            - name: GEOSI_ENV
+              value: "production"
+
+          # ── Resource limits ────────────────────────────────────────
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
+
+          # ── Probes ─────────────────────────────────────────────────
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            failureThreshold: 30
+            periodSeconds: 10
+
+          # ── Security context per container ─────────────────────────
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
+
+      # ── Pod disruption ─────────────────────────────────────────────
+      terminationGracePeriodSeconds: 30

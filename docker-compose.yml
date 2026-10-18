@@ -1,0 +1,212 @@
+# GeoSI v2 — Docker Compose (Full Stack, FR-9.1)
+# ════════════════════════════════════════════════════════════════════
+# Run:  docker compose up -d
+# Stop: docker compose down -v
+#
+# Services:
+#   geosi_server   — FastAPI backend (port 8000)
+#   postgres       — PostGIS 3.4 (port 5432)
+#   qdrant         — Vector DB (port 6333)
+#   neo4j          — Knowledge Graph (port 7474/7687)
+#   redis          — Session cache / Celery broker (port 6379)
+#   nginx          — Reverse proxy (port 80/443)
+#   otel_collector — OpenTelemetry collector (port 4317)
+# ════════════════════════════════════════════════════════════════════
+
+version: "3.9"
+
+# ── Shared network ─────────────────────────────────────────────────
+networks:
+  geosi_net:
+    driver: bridge
+
+# ── Named volumes (persistent data) ────────────────────────────────
+volumes:
+  postgres_data:
+  qdrant_data:
+  neo4j_data:
+  neo4j_logs:
+  redis_data:
+
+# ── Services ────────────────────────────────────────────────────────
+services:
+
+  # ── PostGIS ──────────────────────────────────────────────────────
+  postgres:
+    image: postgis/postgis:16-3.4-alpine
+    container_name: geosi_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-geosi}
+      POSTGRES_USER: ${POSTGRES_USER:-geosi}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-geosi} -d ${POSTGRES_DB:-geosi}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - geosi_net
+    ports:
+      - "5432:5432"
+
+  # ── Qdrant Vector DB ──────────────────────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:v1.12.1
+    container_name: geosi_qdrant
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - geosi_net
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+
+  # ── Neo4j Knowledge Graph ─────────────────────────────────────────
+  neo4j:
+    image: neo4j:5.20-community
+    container_name: geosi_neo4j
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: "${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:?NEO4J_PASSWORD is required}"
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_memory_heap_initial__size: 512m
+      NEO4J_dbms_memory_heap_max__size: 1G
+      NEO4J_dbms_memory_pagecache_size: 512m
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "${NEO4J_USER:-neo4j}", "-p", "${NEO4J_PASSWORD}", "RETURN 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    networks:
+      - geosi_net
+    ports:
+      - "7474:7474"   # HTTP Browser
+      - "7687:7687"   # Bolt
+
+  # ── Redis ──────────────────────────────────────────────────────────
+  redis:
+    image: redis:7.2-alpine
+    container_name: geosi_redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required in .env}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - geosi_net
+    ports:
+      - "6379:6379"
+
+  # ── OTel Collector ────────────────────────────────────────────────
+  otel_collector:
+    image: otel/opentelemetry-collector-contrib:0.102.0
+    container_name: geosi_otel
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-config.yaml:/etc/otelcol/config.yaml:ro
+    networks:
+      - geosi_net
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "8888:8888"   # Prometheus metrics
+
+  # ── GeoSI Server ──────────────────────────────────────────────────
+  geosi_server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+      target: runtime
+    container_name: geosi_server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Database
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-geosi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-geosi}"
+      # Qdrant
+      QDRANT_URL: "http://qdrant:6333"
+      # Neo4j
+      NEO4J_URI: "bolt://neo4j:7687"
+      NEO4J_USER: "${NEO4J_USER:-neo4j}"
+      NEO4J_PASSWORD: "${NEO4J_PASSWORD}"
+      # Redis
+      REDIS_URL: "redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0"
+      # Auth
+      GEOSI_API_KEYS: "${GEOSI_API_KEYS:?GEOSI_API_KEYS is required}"
+      GEOSI_ADMIN_KEYS: "${GEOSI_ADMIN_KEYS:?GEOSI_ADMIN_KEYS is required}"
+      GEOSI_MCP_TOKEN: "${GEOSI_MCP_TOKEN:-}"
+      GEOSI_ALLOWED_ORIGINS: "${GEOSI_ALLOWED_ORIGINS:-http://localhost:3000}"
+      # LLM providers
+      OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      # OTel
+      GEOSI_OTEL_ENDPOINT: "http://otel_collector:4317"
+      GEOSI_SERVICE_NAME: "geosi-server"
+      GEOSI_ENV: "${GEOSI_ENV:-production}"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - geosi_net
+    expose:
+      - "8000"
+
+  # ── Nginx Reverse Proxy ────────────────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: geosi_nginx
+    restart: unless-stopped
+    depends_on:
+      geosi_server:
+        condition: service_healthy
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - geosi_net
+    ports:
+      - "80:80"
+      - "443:443"
+
+  # ── Alembic migrations (one-shot) ────────────────────────────────
+  alembic_migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+      target: runtime
+    container_name: geosi_alembic
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-geosi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-geosi}"
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    networks:
+      - geosi_net
+    restart: on-failure

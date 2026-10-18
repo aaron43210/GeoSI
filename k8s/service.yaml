@@ -1,0 +1,128 @@
+# GeoSI v2 — Kubernetes Service + ConfigMap + HPA (FR-9.2)
+# ════════════════════════════════════════════════════════════════════
+
+---
+# ── Namespace ──────────────────────────────────────────────────────
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: geosi
+  labels:
+    app.kubernetes.io/name: geosi
+    app.kubernetes.io/version: "2.0.0"
+
+---
+# ── Service (ClusterIP + LoadBalancer) ────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: geosi-server
+  namespace: geosi
+  labels:
+    app: geosi-server
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8000"
+spec:
+  type: LoadBalancer               # Use ClusterIP for internal-only
+  selector:
+    app: geosi-server
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
+      protocol: TCP
+    - name: https
+      port: 443
+      targetPort: 8000
+      protocol: TCP
+  sessionAffinity: None            # Stateless — no sticky sessions needed
+
+---
+# ── ConfigMap ──────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: geosi-config
+  namespace: geosi
+data:
+  neo4j-uri: "bolt://neo4j-service:7687"
+  neo4j-user: "neo4j"
+  qdrant-url: "http://qdrant-service:6333"
+  otel-endpoint: "http://otel-collector:4317"
+  geosi-env: "production"
+  geosi-allowed-origins: "https://app.geosi.io,https://plugin.geosi.io"
+  # Performance tuning
+  geosi-session-pool-max: "50"
+  geosi-eval-batch-size: "10"
+  neo4j-cb-threshold: "5"
+  neo4j-cb-reset-s: "60"
+
+---
+# ── Secret template (values must be set before applying) ──────────
+# kubectl create secret generic geosi-secrets \
+#   --from-literal=database-url='postgresql://...' \
+#   --from-literal=neo4j-password='...' \
+#   --from-literal=redis-url='redis://...' \
+#   --from-literal=api-keys='key1,key2' \
+#   --from-literal=admin-keys='adminkey' \
+#   --from-literal=mcp-token='...' \
+#   -n geosi
+#
+# DO NOT store actual secret values in this file.
+
+---
+# ── HPA — Horizontal Pod Autoscaler ──────────────────────────────
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: geosi-server-hpa
+  namespace: geosi
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: geosi-server
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    # Scale on CPU utilisation
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    # Scale on memory utilisation
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30      # React quickly to load spikes
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 30               # Add 2 pods per 30s max
+    scaleDown:
+      stabilizationWindowSeconds: 300     # Wait 5m before scaling down
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60              # Remove 1 pod per 60s max
+
+---
+# ── PodDisruptionBudget — guarantee ≥1 pod during rolling updates ─
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: geosi-server-pdb
+  namespace: geosi
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: geosi-server

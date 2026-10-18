@@ -1,0 +1,70 @@
+# GeoSI v2 — OpenTelemetry Collector Configuration
+# ════════════════════════════════════════════════════════════════════
+# Required by docker-compose.yml for the otel_collector service.
+# Without this file, `docker compose up` will fail on the otel_collector service.
+#
+# To send traces to an external backend (Jaeger, Grafana Tempo, etc.),
+# uncomment the relevant exporter section below.
+# ════════════════════════════════════════════════════════════════════
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    # Flush every 5 seconds or when 512 spans are buffered — whichever comes first
+    timeout: 5s
+    send_batch_size: 512
+
+  memory_limiter:
+    # Prevent OTel collector from consuming unbounded memory
+    limit_mib: 256
+    check_interval: 1s
+
+exporters:
+  # Default: log traces to stdout for local development visibility
+  debug:
+    verbosity: normal
+
+  # ── Uncomment to forward to Jaeger ──────────────────────────────
+  # otlp/jaeger:
+  #   endpoint: jaeger:4317
+  #   tls:
+  #     insecure: true
+
+  # ── Uncomment to forward to Grafana Tempo ───────────────────────
+  # otlp/tempo:
+  #   endpoint: tempo:4317
+  #   tls:
+  #     insecure: true
+
+  # ── Uncomment to expose Prometheus metrics scrape endpoint ──────
+  # prometheus:
+  #   endpoint: "0.0.0.0:8889"
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+  pprof:
+    endpoint: 0.0.0.0:1777
+
+service:
+  extensions: [health_check, pprof]
+
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [debug]
+
+    # Uncomment if you add metrics instrumentation later:
+    # metrics:
+    #   receivers: [otlp]
+    #   processors: [memory_limiter, batch]
+    #   exporters: [debug]

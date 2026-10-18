@@ -1,0 +1,24 @@
+sequenceDiagram
+    participant User
+    participant Supervisor
+    participant Planner
+    participant GraphRAG
+    participant Validator
+    participant Executor
+    participant Verifier
+
+    User->>Supervisor: "Buffer hospitals by 5km and find intersecting flood zones"
+    Supervisor->>Planner: Route request
+    Planner->>GraphRAG: Query "hospital buffer QGIS methodology"
+    GraphRAG-->>Planner: RRF Merged Result (Qdrant + Neo4j)
+    Planner->>Validator: Draft ToolSteps (Buffer, Spatial Join)
+    Validator-->>Planner: Approve ToolSteps
+    Planner-->>User: [Human-in-the-Loop] Request Approval
+    User->>Planner: Approve Execution Plan
+    Planner->>Executor: Execute Steps
+    Executor->>Executor: Run PyQGIS native:buffer
+    Executor->>Executor: Run native:joinattributesbylocation
+    Executor->>Verifier: Pass output layers
+    Verifier->>Verifier: Check CRS match, topology, raster stats
+    Verifier-->>Supervisor: Verification passed
+    Supervisor-->>User: Final Output Map & Report

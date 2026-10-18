@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GeoSI — GIS Agent Console</title>
+
+<!-- MapLibre GL JS (open-source, no API key) — pinned for reproducible builds.
+     For fully offline/air-gapped deploys, vendor these two files into static/vendor/. -->
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+<link rel="stylesheet" href="/ui/styles.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">◆</span>
+    <div>
+      <h1>GeoSI</h1>
+      <span class="sub">Conversational GIS Agent — plan · execute · visualize</span>
+    </div>
+  </div>
+  <div class="conn">
+    <span id="status-dot" class="dot" title="Not connected"></span>
+    <input id="key" type="password" placeholder="API key (Bearer token)" autocomplete="off" />
+  </div>
+</header>
+
+<div class="workspace">
+  <!-- ── Chat panel (left) ─────────────────────────────────────────── -->
+  <section id="chat-panel" class="panel chat">
+    <div class="panel-head">
+      <h2>Assistant</h2>
+      <button id="chat-clear" class="ghost" title="Clear conversation">Clear</button>
+    </div>
+    <div id="transcript" class="transcript"></div>
+    <div class="composer">
+      <textarea id="prompt" rows="1"
+        placeholder="e.g. buffer the roads by 500m then clip to the boundary"></textarea>
+      <button id="send" class="primary">Send</button>
+    </div>
+    <div class="composer-hint">
+      Routes through the Supervisor pipeline · mutating steps need your approval.
+    </div>
+  </section>
+
+  <!-- ── Map / 3D viz (center) ─────────────────────────────────────── -->
+  <section id="map-panel" class="panel map">
+    <div id="map"></div>
+    <div class="map-tools">
+      <div class="seg">
+        <button data-basemap="vector" class="seg-btn active">Vector</button>
+        <button data-basemap="osm" class="seg-btn">Streets</button>
+        <button data-basemap="dark" class="seg-btn">Dark</button>
+      </div>
+      <div class="seg">
+        <button id="btn-2d" class="seg-btn active">2D</button>
+        <button id="btn-3d" class="seg-btn">3D</button>
+      </div>
+      <button id="btn-terrain" class="tool-btn" title="Toggle 3D terrain">⛰ Terrain</button>
+      <button id="btn-fit" class="tool-btn" title="Zoom to all layers">⤢ Fit</button>
+    </div>
+    <div id="map-badge" class="map-badge"></div>
+  </section>
+
+  <!-- ── Layer panel (right) ───────────────────────────────────────── -->
+  <aside id="layer-panel" class="panel layers">
+    <div class="panel-head">
+      <h2>Layers</h2>
+      <div class="head-actions">
+        <button id="layers-refresh" class="ghost" title="Reload session layers">↻</button>
+        <label class="ghost upload" title="Add a GeoJSON file">
+          +GeoJSON<input id="geojson-file" type="file" accept=".geojson,.json" hidden />
+        </label>
+      </div>
+    </div>
+    <div id="layer-list" class="layer-list"></div>
+    <div id="layer-empty" class="layer-empty">
+      No layers yet. Run a task or add a GeoJSON file — outputs appear here.
+    </div>
+  </aside>
+</div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="/ui/js/api.js"></script>
+<script src="/ui/js/mapview.js"></script>
+<script src="/ui/js/layers.js"></script>
+<script src="/ui/js/chat.js"></script>
+<script src="/ui/js/app.js"></script>
+</body>
+</html>

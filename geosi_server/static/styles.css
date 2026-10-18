@@ -1,0 +1,141 @@
+/* GeoSI GIS Agent Console — production three-panel layout */
+:root {
+  --bg: #0d1117; --panel: #161b22; --panel2: #1c2330; --elev: #21283400;
+  --fg: #e6edf3; --muted: #8b98a9; --accent: #4ea1ff; --accent2: #7c5cff;
+  --ok: #3fb950; --warn: #d29922; --err: #f85149; --border: #2d3748;
+  --radius: 10px; --shadow: 0 6px 24px rgba(0,0,0,.35);
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg); color: var(--fg);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+h1, h2 { margin: 0; }
+button, input, textarea { font: inherit; color: var(--fg); }
+button { cursor: pointer; border: none; border-radius: 8px; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ── Top bar ─────────────────────────────────────────────────────── */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px; background: var(--panel);
+  border-bottom: 1px solid var(--border); z-index: 10;
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand .logo { color: var(--accent); font-size: 22px; }
+.brand h1 { font-size: 16px; font-weight: 700; letter-spacing: .3px; }
+.brand .sub { font-size: 11px; color: var(--muted); }
+.conn { display: flex; align-items: center; gap: 10px; }
+.conn #key {
+  width: 240px; background: var(--panel2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px;
+}
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+.dot.ok { background: var(--ok); } .dot.err { background: var(--err); }
+
+/* ── Workspace grid ──────────────────────────────────────────────── */
+.workspace {
+  flex: 1; display: grid; grid-template-columns: 360px 1fr 300px;
+  min-height: 0;
+}
+.panel { min-height: 0; display: flex; flex-direction: column; background: var(--panel); }
+.panel.chat { border-right: 1px solid var(--border); }
+.panel.layers { border-left: 1px solid var(--border); }
+.panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px; border-bottom: 1px solid var(--border);
+}
+.panel-head h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
+.head-actions { display: flex; gap: 6px; align-items: center; }
+button.ghost {
+  background: var(--panel2); color: var(--fg); border: 1px solid var(--border);
+  padding: 5px 9px; font-size: 12px;
+}
+button.ghost:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); color: #04121f; font-weight: 700; padding: 9px 16px; }
+button.primary:hover { filter: brightness(1.08); }
+.upload { cursor: pointer; display: inline-flex; align-items: center; }
+
+/* ── Chat panel ──────────────────────────────────────────────────── */
+.transcript { flex: 1; overflow-y: auto; padding: 14px; }
+.msg { margin-bottom: 14px; }
+.msg .who { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+.bubble {
+  background: var(--panel2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 11px 13px;
+  white-space: pre-wrap; word-wrap: break-word;
+}
+.msg.user .bubble { background: #16263a; border-color: var(--accent); }
+.plan { margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 9px; }
+.plan h4 { margin: 0 0 6px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+.step { font-size: 13px; padding: 3px 0; display: flex; gap: 8px; align-items: center; }
+.pill { font-size: 10px; padding: 1px 7px; border-radius: 20px; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+.pill.mutating { color: var(--warn); border-color: var(--warn); }
+.pill.destructive { color: var(--err); border-color: var(--err); }
+.pill.read_only { color: var(--ok); border-color: var(--ok); }
+.results { margin-top: 8px; font-size: 12.5px; color: var(--muted); }
+.results div { padding: 2px 0; }
+.approval { margin-top: 10px; background: #2a2410; border: 1px solid var(--warn); border-radius: 8px; padding: 10px 12px; }
+.approval .act { display: flex; gap: 8px; margin-top: 8px; }
+.approval code { color: var(--warn); }
+.err { color: var(--err); }
+.composer { display: flex; gap: 8px; padding: 12px 14px 4px; border-top: 1px solid var(--border); }
+.composer textarea {
+  flex: 1; resize: none; max-height: 160px; background: var(--panel2);
+  border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
+}
+.composer textarea::placeholder { color: var(--muted); }
+.composer-hint { padding: 4px 14px 12px; font-size: 10.5px; color: var(--muted); }
+
+/* ── Map panel ───────────────────────────────────────────────────── */
+.panel.map { position: relative; }
+#map { position: absolute; inset: 0; }
+.map-tools {
+  position: absolute; top: 12px; left: 12px; display: flex; gap: 8px;
+  flex-wrap: wrap; z-index: 5;
+}
+.seg { display: flex; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; box-shadow: var(--shadow); }
+.seg-btn { background: transparent; color: var(--muted); padding: 7px 12px; font-size: 12px; border-radius: 0; }
+.seg-btn.active { background: var(--accent); color: #04121f; font-weight: 700; }
+.tool-btn { background: var(--panel); color: var(--fg); border: 1px solid var(--border); padding: 7px 12px; font-size: 12px; box-shadow: var(--shadow); }
+.tool-btn.active { background: var(--accent2); color: #fff; border-color: var(--accent2); }
+.map-badge {
+  position: absolute; bottom: 12px; left: 12px; z-index: 5; font-size: 11px;
+  color: var(--muted); background: rgba(13,17,23,.8); border: 1px solid var(--border);
+  border-radius: 6px; padding: 4px 8px; display: none;
+}
+
+/* ── Layer panel ─────────────────────────────────────────────────── */
+.layer-list { flex: 1; overflow-y: auto; padding: 8px; }
+.layer-empty { padding: 16px; font-size: 12px; color: var(--muted); text-align: center; }
+.layer-card {
+  background: var(--panel2); border: 1px solid var(--border); border-radius: 8px;
+  padding: 9px 10px; margin-bottom: 8px;
+}
+.layer-card .row1 { display: flex; align-items: center; gap: 8px; }
+.layer-card .swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; cursor: pointer; border: 1px solid rgba(255,255,255,.2); }
+.layer-card .lname { font-weight: 600; font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.layer-card .gtype { font-size: 10px; color: var(--muted); }
+.layer-card .meta { font-size: 10.5px; color: var(--muted); margin: 4px 0 6px; }
+.layer-card .ctrls { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.icon-btn {
+  background: transparent; border: 1px solid var(--border); color: var(--muted);
+  width: 26px; height: 24px; font-size: 12px; border-radius: 6px; padding: 0;
+}
+.icon-btn:hover { color: var(--fg); border-color: var(--accent); }
+.icon-btn.on { color: var(--accent); border-color: var(--accent); }
+.layer-card input[type=range] { flex: 1; min-width: 60px; accent-color: var(--accent); }
+.chk3d { font-size: 10.5px; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; }
+
+/* ── Responsive: stack on narrow viewports ───────────────────────── */
+@media (max-width: 1100px) {
+  .workspace { grid-template-columns: 300px 1fr; }
+  .panel.layers { display: none; }
+}
+.maplibregl-popup-content { background: var(--panel); color: var(--fg); border: 1px solid var(--border); font-size: 12px; }
+.maplibregl-popup-content strong { color: var(--accent); }
+.maplibregl-ctrl-group { background: var(--panel) !important; }
+
+

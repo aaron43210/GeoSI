@@ -1,0 +1,149 @@
+[project]
+name = "geosi"
+version = "2.0.0-dev"
+description = "GeoSI — Autonomous Geospatial Intelligence Platform"
+requires-python = ">=3.11,<3.13"
+readme = "README.md"
+
+dependencies = [
+    # --- Web / API ---
+    "fastapi>=0.115.12",
+    "uvicorn[standard]==0.34.0",
+    "pydantic==2.10.4",
+    "python-jose[cryptography]==3.3.0",   # JWT auth (G2 fix)
+    "passlib[bcrypt]==1.7.4",
+    "python-multipart==0.0.20",
+
+    # --- Data layer ---
+    "sqlalchemy==2.0.36",
+    "geoalchemy2==0.16.0",
+    "psycopg2-binary==2.9.10",
+    "alembic==1.14.0",                    # replaces create_all() (G9 fix)
+    "neo4j==5.27.0",                      # Phase 9
+
+    # --- Knowledge / RAG layer (KEEP existing pins where already correct) ---
+    "qdrant-client==1.12.1",
+    "sentence-transformers==3.3.1",
+    "rank-bm25==0.2.2",
+
+    # --- GIS libraries ---
+    "geopandas==1.0.1",
+    "shapely==2.0.6",
+    "fiona==1.10.1",
+    "rasterio==1.4.3",
+    "pyproj==3.7.0",
+
+    # --- AI / ML libraries ---
+    "torch==2.5.1",
+    "scikit-learn==1.6.0",
+    "numpy==2.2.1",
+    "pandas==2.2.3",
+
+    # --- LLM providers ---
+    "anthropic==0.42.0",
+    "google-genai==0.3.0",
+    "ollama==0.4.4",                      # Local LLM support
+    "fastmcp>=2.1.2",                     # MCP tooling framework (bumped to fix websockets conflict)
+
+    # --- Observability (Phase 2) ---
+    "opentelemetry-api==1.29.0",
+    "opentelemetry-sdk==1.29.0",
+    "opentelemetry-exporter-otlp==1.29.0",
+
+    # --- Evaluation (Phase 2) ---
+    "ragas==0.2.9",
+
+    # --- Utilities ---
+    "python-dotenv==1.0.1",
+    "structlog==24.4.0",
+    "tenacity==9.0.0",                    # retry/circuit-breaker support for Supervisor
+    "pyahocorasick==2.1.0",               # O(T) multi-pattern scan for guardrails (vs O(P×T))
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff==0.8.4",
+    "mypy==1.14.0",
+    "pytest==8.3.4",
+    "pytest-cov==6.0.0",
+    "pytest-asyncio==0.25.0",
+    "pytest-mock==3.14.0",
+    "httpx==0.28.1",                      # FastAPI test client
+    "pre-commit==4.0.1",
+    "types-requests==2.32.0.20241016",
+]
+
+[build-system]
+requires = ["scikit-build-core>=0.8.0", "pybind11>=2.12.0"]
+build-backend = "scikit_build_core.build"
+
+# ---------------------------------------------------------------------------
+# Ruff — lint + import sort
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["geosi_engine", "geosi_rag", "geosi_knowledge", "geosi_data", "geosi_server", "geosi_mcp", "geosi_eval"]
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "W",      # pycodestyle / pyflakes
+    "I",                 # isort
+    "B",                 # bugbear (catches things like mutable default args)
+    "S",                 # bandit-style security rules — will flag f-string SQL, eval() (G4/G12)
+    "UP",                # pyupgrade
+    "C90",               # mccabe complexity
+]
+ignore = ["E501"]  # line length handled by formatter
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]  # allow assert in tests
+
+[tool.ruff.lint.mccabe]
+max-complexity = 12
+
+[tool.ruff.format]
+quote-style = "double"
+
+# ---------------------------------------------------------------------------
+# Mypy — type checking
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+exclude = ["migrations/", "tests/fixtures/"]
+
+[[tool.mypy.overrides]]
+module = ["qgis.*", "processing.*", "osgeo.*"]
+ignore_missing_imports = true  # QGIS bindings have no type stubs
+
+# ---------------------------------------------------------------------------
+# Pytest — unit + coverage
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra -q"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "unit: fast, isolated unit tests",
+    "integration: requires PostGIS/Qdrant/etc",
+    "agent: agent-specific behavior tests (permission, guardrail, schema validation)",
+]
+
+[tool.coverage.run]
+branch = true
+omit = ["*/migrations/*", "*/tests/*"]
+
+[tool.coverage.report]
+# Per-agent module target from PRD §14: >= 70% coverage per agent
+fail_under = 70
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

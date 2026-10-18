@@ -1,0 +1,96 @@
+# syntax=docker/dockerfile:1.7
+# ════════════════════════════════════════════════════════════════════
+# GeoSI v2 — FastAPI Server (Multi-stage)
+# ════════════════════════════════════════════════════════════════════
+# Stage 1: Build — install all dependencies including build tools
+# Stage 2: Runtime — minimal image, no build tools, non-root user
+# ════════════════════════════════════════════════════════════════════
+
+# ── Stage 1: Builder ──────────────────────────────────────────────
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+
+# Install system build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    libgdal-dev \
+    gdal-bin \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy dependency manifests first (cache-friendly layer ordering)
+COPY pyproject.toml ./
+COPY requirements.txt ./
+
+# Install into a local prefix for easy copy to runtime stage
+RUN pip install --upgrade pip && \
+    pip install --prefix=/install --no-cache-dir \
+        fastapi==0.115.6 \
+        uvicorn[standard]==0.34.0 \
+        pydantic==2.10.4 \
+        python-jose[cryptography]==3.3.0 \
+        passlib[bcrypt]==1.7.4 \
+        python-multipart==0.0.20 \
+        sqlalchemy==2.0.36 \
+        geoalchemy2==0.16.0 \
+        psycopg2-binary==2.9.10 \
+        alembic==1.14.0 \
+        neo4j==5.27.0 \
+        qdrant-client==1.12.1 \
+        sentence-transformers==3.3.1 \
+        rank-bm25==0.2.2 \
+        geopandas==1.0.1 \
+        shapely==2.0.6 \
+        fiona==1.10.1 \
+        rasterio==1.4.3 \
+        pyproj==3.7.0 \
+        opentelemetry-sdk \
+        opentelemetry-exporter-otlp \
+        opentelemetry-instrumentation-fastapi
+
+# ── Stage 2: Runtime ─────────────────────────────────────────────
+FROM python:3.11-slim AS runtime
+
+LABEL maintainer="aaron@zapserve.in" \
+      version="2.0.0-dev" \
+      description="GeoSI v2 FastAPI Server"
+
+# Runtime system dependencies only
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    libgdal32 \
+    gdal-bin \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy installed packages from builder
+COPY --from=builder /install /usr/local
+
+# Create non-root user (security best practice)
+RUN groupadd -r geosi && useradd -r -g geosi -d /app -s /sbin/nologin geosi
+
+WORKDIR /app
+
+# Copy application source
+COPY --chown=geosi:geosi geosi_server/   ./geosi_server/
+COPY --chown=geosi:geosi geosi_engine/   ./geosi_engine/
+COPY --chown=geosi:geosi geosi_data/     ./geosi_data/
+COPY --chown=geosi:geosi geosi_mcp/      ./geosi_mcp/
+COPY --chown=geosi:geosi geosi_rag/      ./geosi_rag/
+COPY --chown=geosi:geosi geosi_knowledge/ ./geosi_knowledge/
+COPY --chown=geosi:geosi alembic/        ./alembic/
+COPY --chown=geosi:geosi alembic.ini     ./
+
+USER geosi
+
+# Health check — calls our /health endpoint
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+
+EXPOSE 8000
+
+# Use exec form for proper signal handling (PID 1 = uvicorn)
+CMD ["python", "-m", "uvicorn", "geosi_server.app:app", \
+     "--host", "0.0.0.0", "--port", "8000", \
+     "--workers", "1", "--loop", "uvloop", \
+     "--log-config", "/dev/null"]

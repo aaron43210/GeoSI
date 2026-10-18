@@ -1,0 +1,13 @@
+# GeoSI v2 — QGIS plugin compatibility requirements
+# This is a minimal set for QGIS Plugin Repository packaging only.
+# Everything else is in pyproject.toml.
+geopandas>=1.0.1
+shapely>=2.0.6
+rasterio>=1.4.3
+sqlalchemy>=2.0.36
+qdrant-client>=1.12.1
+sentence-transformers>=3.3.1
+fastapi>=0.115.6
+uvicorn[standard]>=0.34.0
+pydantic>=2.10.4
+python-dotenv>=1.0.1

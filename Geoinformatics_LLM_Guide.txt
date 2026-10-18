@@ -1,0 +1,650 @@
+GEOINFORMATICS
+DOMAIN-SPECIFIC LLM
+Complete Technical Guide: Fine-Tuning + RAG Hybrid Pipeline
+Approach
+Fine-Tuning + RAG Hybrid
+Domain
+Geographic Information Science
+
+
+1. Introduction
+Building a domain-specific Large Language Model (LLM) for Geoinformatics requires a carefully designed pipeline that combines two powerful techniques: fine-tuning and Retrieval-Augmented Generation (RAG). This document provides a complete, end-to-end technical workflow to guide you through every stage — from data collection to deployment.
+
+1.1 Why Combine Fine-Tuning and RAG?
+Fine-tuning alone improves the model's understanding of geospatial language, concepts, and tasks — but it cannot keep up with ever-growing spatial datasets, new publications, or dynamic geospatial APIs. RAG solves this by letting the model retrieve relevant, up-to-date information at inference time without retraining.
+
+Technique
+What It Solves
+Fine-Tuning
+Geospatial vocabulary, spatial reasoning, GIS tool syntax (PostGIS, GDAL, QGIS API)
+RAG
+Dynamic knowledge retrieval from documents, datasets, and live APIs at query time
+Hybrid (both)
+Deep domain expertise + factual accuracy + scalability with new geo data
+
+1.2 Target Use Cases
+	•	Natural language to PostGIS / SQL query generation
+	•	Remote sensing image QA and interpretation
+	•	Coordinate reference system (CRS) reasoning and transformation
+	•	Automated GIS workflow scripting (QGIS, ArcGIS, GDAL)
+	•	Toponym recognition and georeferencing
+	•	Satellite imagery analysis and NDVI/NDWI explanation
+	•	Spatial relationship detection and site selection
+	•	GeoJSON / Shapefile description and validation
+
+
+2. System Architecture Overview
+The complete Geoinformatics LLM system has two parallel pipelines: an offline pipeline for training the fine-tuned model, and an online pipeline for serving queries at runtime with RAG augmentation.
+
+2.1 The Two Pipelines
+Offline Pipeline Data collection → preprocessing → fine-tuning → model registry. This runs once (or periodically). Output is a fine-tuned model checkpoint.
+
+Online Pipeline (RAG) User query → query understanding → vector retrieval → context injection → fine-tuned LLM → response → GIS tool execution (optional).
+
+2.2 Key Components
+Component
+Role
+Base LLM (e.g. LLaMA 3.1 8B)
+General language understanding foundation
+Fine-tuned GeoLLM
+Geospatial domain expert — understands GIS concepts, CRS, spatial functions
+Embedding Model
+Converts geo documents and queries into vector representations for retrieval
+Vector Database
+Stores and searches embedded geo knowledge (ChromaDB, FAISS, Qdrant, PGVector)
+RAG Retriever
+Matches incoming query to most relevant geo documents at inference time
+Tool Executor
+Runs generated GIS code: PostGIS SQL, GDAL scripts, QGIS Python API
+Prompt Orchestrator
+Assembles system prompt + retrieved context + user query before calling the LLM
+
+
+PHASE 01    Data Collection & Curation
+
+3.1 Data Categories
+Geoinformatics LLM training requires two distinct types of data that serve different purposes in the pipeline:
+
+3.1.1 Domain Pre-Training Corpus (Large-Scale Unlabeled Text)
+This large corpus is used for Domain-Adaptive Pre-Training (DAPT) — a continued pre-training step that deepens the model's geospatial vocabulary before instruction tuning begins.
+	•	GIS academic papers: ISPRS journals, AGU publications, arXiv (cs.CV, cs.AI with geo tags)
+	•	OpenStreetMap wiki, documentation, and tagging guides
+	•	ESRI ArcGIS documentation and help articles
+	•	QGIS official documentation (all versions)
+	•	OGC (Open Geospatial Consortium) standards and specifications
+	•	Copernicus, USGS, and NASA EarthData portal content
+	•	Wikipedia articles on geographic regions, projections, and GIS concepts
+	•	Remote sensing textbooks and lecture notes (open access)
+	•	GIS Stack Exchange Q&A threads
+
+3.1.2 Instruction-Tuning Dataset (Supervised Pairs)
+These are the (instruction, response) pairs used for supervised fine-tuning. Each pair must represent a realistic geospatial task that a GIS professional might request.
+
+Example instruction-response pairs:
+Instruction (User)
+Expected Response
+Write a PostGIS query to find all schools within 500m of a flood zone
+SELECT s.name FROM schools s JOIN flood_zones f ON ST_DWithin(s.geom, f.geom, 500) WHERE f.risk_level = 'high';
+What does a negative NDVI value mean in a Sentinel-2 image?
+Negative NDVI (< 0) typically indicates water bodies, snow, ice, or bare rock — areas with little to no vegetation...
+Explain the difference between EPSG:4326 and EPSG:3857
+EPSG:4326 is WGS84 geographic coordinates (lat/lon in degrees). EPSG:3857 is Web Mercator (projected, meters). Use 4326 for storage, 3857 for web mapping...
+Convert a Shapefile to GeoJSON using GDAL
+ogr2ogr -f GeoJSON output.geojson input.shp -t_srs EPSG:4326
+What is a spatial join and how do I perform one in GeoPandas?
+A spatial join combines two datasets based on their geometric relationship... gdf_result = gpd.sjoin(gdf_left, gdf_right, how='inner', predicate='intersects')
+
+Data Quality Rule Quality over quantity is critical. Research shows that 1,000 carefully curated geo instruction pairs outperform 10,000 noisy examples. Every pair must be geographically accurate and syntactically correct.
+
+3.2 Data Collection Tools & Sources
+Source
+Tool / Method
+Academic papers
+Semantic Scholar API, arXiv API, ISPRS Open Access
+OpenStreetMap docs
+Web scraping with Scrapy or BeautifulSoup
+Stack Exchange GIS
+Stack Exchange Data Dump (available on archive.org)
+ESRI / QGIS docs
+Web crawler + HTML parser
+Synthetic pairs
+Use GPT-4 or Claude to generate instruction pairs from raw geo text
+Existing datasets
+BB-GeoGPT dataset, GeoLLM dataset, GTChain benchmark
+
+3.3 Data Preprocessing Pipeline
+Raw collected data must go through a strict preprocessing pipeline before training:
+	•	Deduplication: Remove exact and near-duplicate texts using MinHash LSH or SimHash
+	•	Language filtering: Keep only English text (or your target language) using langdetect
+	•	Quality filtering: Remove short texts (<50 words), broken HTML, encoding errors
+	•	Geo relevance scoring: Use a small classifier or keyword filter to keep geo-relevant content
+	•	Format standardization: Convert all instruction pairs to a consistent JSON schema
+	•	Train/validation/test split: 80% train, 10% validation, 10% test — stratified by task type
+
+Standard JSON format for instruction pairs (Alpaca format):
+{ "instruction": "...", "input": "", "output": "..." }
+Or ShareGPT format (for multi-turn conversation datasets):
+{ "conversations": [{"from": "human", "value": "..."}, {"from": "gpt", "value": "..."}] }
+
+
+PHASE 02    Base Model Selection
+
+4.1 Choosing the Right Base Model
+The base model is the foundation. For geoinformatics, the choice depends on your primary task type (language understanding vs. code generation), available compute, and deployment constraints.
+
+Model
+Best For
+LLaMA 3.1 8B (Meta)
+General geo QA, instruction following, low-resource environments
+Mistral 7B / Mistral Instruct
+Fast inference, multilingual geo applications
+Qwen2.5 7B / 14B (Alibaba)
+Strong multilingual support; good for Asian geo data
+DeepSeek-Coder 7B
+PostGIS/SQL generation, GIS scripting, Python geo code
+Qwen2.5-Coder 7B
+Code generation for GDAL, GeoPandas, Earth Engine APIs
+LLaMA 3.1 70B
+Highest accuracy for complex spatial reasoning (requires A100/H100 GPU)
+Phi-3 Medium (14B)
+Balanced capability vs. cost for mid-range GPU setups
+
+Recommendation Start with LLaMA 3.1 8B or Mistral 7B for fast iteration and experimentation. If your primary task involves SQL/code generation, start with DeepSeek-Coder 7B instead. Only scale to 70B when the 8B model plateaus.
+
+4.2 Hardware Requirements
+Setup
+Minimum Hardware
+7-8B model, QLoRA fine-tuning
+1x NVIDIA RTX 3090 (24GB VRAM) or RTX 4090
+7-8B model, full fine-tuning
+4x A100 40GB (not recommended — use QLoRA instead)
+13-14B model, QLoRA fine-tuning
+2x RTX 3090 or 1x A100 80GB
+70B model, QLoRA fine-tuning
+4x A100 80GB or 8x H100
+Inference (quantized 7B)
+1x GPU 8GB+ or CPU (slow) — use llama.cpp or Ollama
+
+
+PHASE 03    Fine-Tuning the GeoLLM
+
+5.1 Fine-Tuning Strategy: DAPT then SFT
+The recommended training sequence has two stages:
+	•	Domain-Adaptive Pre-Training (DAPT): Continue pre-training on large-scale geo text corpus to deepen geospatial vocabulary. Optional — skip if dataset is small (<1GB).
+	•	Supervised Fine-Tuning (SFT): Fine-tune on instruction-response pairs using QLoRA for efficiency.
+
+GTChain Finding Research from the GTChain project demonstrated that fine-tuning LLaMA-2-7B on geospatial instruction data achieved 32.5% higher accuracy than GPT-4 on geospatial tool-use tasks — proving that domain fine-tuning is highly effective.
+
+5.2 QLoRA: The Standard Technique
+QLoRA (Quantized Low-Rank Adaptation) is the standard technique for fine-tuning LLMs in resource-constrained environments. It combines two innovations:
+	•	4-bit quantization (bitsandbytes): Reduces the base model's memory footprint by 4x, so a 7B model fits in ~5GB VRAM instead of ~14GB.
+	•	LoRA adapters: Instead of updating all parameters, LoRA adds small trainable matrices (rank-r adapters) to the attention layers. Only these adapters are trained — far fewer parameters, faster training, no catastrophic forgetting.
+
+5.3 Full Fine-Tuning Pipeline (Step-by-Step)
+
+Step 1: Environment Setup
+pip install transformers peft bitsandbytes trl datasets accelerate wandb
+# Optional but recommended for monitoring
+pip install wandb  # Weights & Biases for experiment tracking
+
+Step 2: Load Base Model with 4-bit Quantization
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+import torch
+
+bnb_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_use_double_quant=True,
+    bnb_4bit_quant_type='nf4',
+    bnb_4bit_compute_dtype=torch.bfloat16
+)
+
+model = AutoModelForCausalLM.from_pretrained(
+    'meta-llama/Meta-Llama-3.1-8B',
+    quantization_config=bnb_config,
+    device_map='auto'
+)
+tokenizer = AutoTokenizer.from_pretrained('meta-llama/Meta-Llama-3.1-8B')
+
+Step 3: Configure LoRA Adapters
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+
+model = prepare_model_for_kbit_training(model)
+
+lora_config = LoraConfig(
+    r=16,                    # LoRA rank — higher = more capacity
+    lora_alpha=32,           # Scaling factor (usually 2x rank)
+    target_modules=['q_proj', 'k_proj', 'v_proj', 'o_proj'],
+    lora_dropout=0.05,
+    bias='none',
+    task_type='CAUSAL_LM'
+)
+model = get_peft_model(model, lora_config)
+
+Step 4: Prepare the Geospatial Dataset
+from datasets import load_dataset
+
+dataset = load_dataset('json', data_files={
+    'train': 'geo_instructions_train.json',
+    'validation': 'geo_instructions_val.json'
+})
+
+# Format into prompt template
+def format_prompt(example):
+    return {'text': f"### Instruction:\n{example['instruction']}\n
+                          ### Response:\n{example['output']}"}
+dataset = dataset.map(format_prompt)
+
+Step 5: Training with SFTTrainer
+from trl import SFTTrainer
+from transformers import TrainingArguments
+
+training_args = TrainingArguments(
+    output_dir='./geo_llm_checkpoints',
+    num_train_epochs=3,
+    per_device_train_batch_size=4,
+    gradient_accumulation_steps=4,   # Effective batch size = 16
+    learning_rate=2e-4,
+    warmup_ratio=0.05,
+    lr_scheduler_type='cosine',
+    fp16=False,
+    bf16=True,                        # Use bfloat16 for stability
+    logging_steps=25,
+    save_steps=200,
+    evaluation_strategy='steps',
+    eval_steps=200,
+    load_best_model_at_end=True,
+    report_to='wandb'
+)
+
+trainer = SFTTrainer(
+    model=model,
+    train_dataset=dataset['train'],
+    eval_dataset=dataset['validation'],
+    dataset_text_field='text',
+    tokenizer=tokenizer,
+    args=training_args,
+    max_seq_length=2048
+)
+trainer.train()
+
+Step 6: Save the Fine-Tuned Adapter
+model.save_pretrained('./geo_llm_adapter')
+tokenizer.save_pretrained('./geo_llm_adapter')
+
+5.4 Key Hyperparameter Guidelines
+Hyperparameter
+Recommended Value & Notes
+LoRA rank (r)
+8–32 for most tasks; 64 for complex spatial reasoning
+lora_alpha
+Set to 2x rank (e.g., r=16 → alpha=32)
+Learning rate
+1e-4 to 3e-4 with cosine scheduler and warm-up
+Epochs
+2–5; watch validation loss — stop early if it increases
+Batch size
+Use gradient accumulation to reach effective batch of 16–32
+Max sequence length
+2048 tokens minimum; 4096 for long SQL or complex workflows
+lora_dropout
+0.05–0.1 to prevent overfitting on small datasets
+
+
+PHASE 04    Building the RAG Pipeline
+
+6.1 RAG Architecture for Geoinformatics
+Retrieval-Augmented Generation (RAG) allows the fine-tuned GeoLLM to access a large, dynamic knowledge base at inference time — without retraining. This is especially valuable for geoinformatics because the knowledge base can include live spatial datasets, updated documentation, and project-specific GIS data.
+
+The RAG pipeline has four stages: Indexing, Retrieval, Augmentation, and Generation.
+
+6.2 Stage 1 — Knowledge Base Indexing
+This is an offline stage that prepares the searchable knowledge base. It runs once and is updated when new geo documents are added.
+
+Step 1: Choose and Embed Documents
+Index the following geo document types into the vector database:
+	•	GIS API references (QGIS PyQGIS docs, GDAL C++ and Python API docs)
+	•	PostGIS and spatial SQL function references
+	•	OGC standards (WMS, WFS, WCS, WPS specifications)
+	•	Remote sensing product guides (Sentinel-2, Landsat band descriptions)
+	•	Coordinate reference system references (EPSG registry)
+	•	Your own project-specific GIS data dictionaries and metadata
+	•	Academic papers relevant to your use case
+
+Step 2: Chunking Strategy
+Proper chunking is critical for retrieval quality. Use semantic chunking rather than fixed-size:
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+splitter = RecursiveCharacterTextSplitter(
+    chunk_size=512,          # ~512 tokens per chunk
+    chunk_overlap=64,        # Overlap prevents context loss at boundaries
+    separators=['\n\n', '\n', '. ', ' ']
+)
+chunks = splitter.split_documents(geo_documents)
+
+Step 3: Embedding the Chunks
+Use a sentence-transformer model to convert text chunks into dense vector embeddings:
+from sentence_transformers import SentenceTransformer
+
+# Use a high-quality embedding model
+embed_model = SentenceTransformer('BAAI/bge-large-en-v1.5')
+# Or for geo-specific, try: 'intfloat/e5-large-v2'
+
+embeddings = embed_model.encode(
+    [chunk.page_content for chunk in chunks],
+    batch_size=64,
+    show_progress_bar=True
+)
+
+Step 4: Store in Vector Database
+import chromadb
+
+client = chromadb.PersistentClient(path='./geo_vector_db')
+collection = client.create_collection('geo_knowledge')
+
+collection.add(
+    embeddings=embeddings.tolist(),
+    documents=[c.page_content for c in chunks],
+    metadatas=[{'source': c.metadata.get('source', ''), 'type': c.metadata.get('type', '')} for c in chunks],
+    ids=[f'chunk_{i}' for i in range(len(chunks))]
+)
+
+6.3 Stage 2 — Query-Time Retrieval
+At inference time, when a user sends a geospatial query, the retriever finds the most relevant knowledge chunks and injects them into the prompt.
+
+Retrieval Step-by-Step
+	•	Embed the user query using the same embedding model used during indexing.
+	•	Search the vector database for the top-k most similar chunks (cosine similarity).
+	•	Apply optional metadata filters (e.g., only retrieve PostGIS docs if query contains SQL keywords).
+	•	Re-rank results using a cross-encoder for higher precision (optional but recommended).
+	•	Select the top 3–5 chunks that fit within the context window.
+
+def retrieve_geo_context(query, collection, embed_model, top_k=5):
+    query_embedding = embed_model.encode([query])[0]
+    results = collection.query(
+        query_embeddings=[query_embedding.tolist()],
+        n_results=top_k,
+        include=['documents', 'metadatas', 'distances']
+    )
+    return results['documents'][0]  # List of relevant text chunks
+
+6.4 Stage 3 — Prompt Augmentation
+Combine the retrieved context with the user query to build the final prompt for the GeoLLM. The system prompt must instruct the model on how to use the retrieved context.
+
+GEO_SYSTEM_PROMPT = '''You are GeoLLM, a geospatial AI assistant expert in GIS,
+remote sensing, spatial databases, and geoinformatics.
+
+Use the following retrieved context from your knowledge base to answer
+accurately. If the context does not contain the answer, say so — do not
+hallucinate geographic facts.
+
+RETRIEVED CONTEXT:
+{context}
+
+Answer the user's geospatial question with precision and include
+working code examples where applicable.'''
+
+def build_geo_prompt(query, context_chunks):
+    context_text = '\n\n---\n\n'.join(context_chunks)
+    return GEO_SYSTEM_PROMPT.format(context=context_text) + f'\n\nUser: {query}'
+
+6.5 Stage 4 — Generation with the Fine-Tuned GeoLLM
+The augmented prompt is passed to the fine-tuned GeoLLM for generation. The model produces answers grounded in both its fine-tuned geospatial knowledge and the retrieved context.
+
+from peft import PeftModel
+from transformers import pipeline
+
+# Load fine-tuned model
+base = AutoModelForCausalLM.from_pretrained('meta-llama/Meta-Llama-3.1-8B', ...)
+geo_model = PeftModel.from_pretrained(base, './geo_llm_adapter')
+
+# Inference pipeline
+pipe = pipeline('text-generation', model=geo_model, tokenizer=tokenizer,
+                max_new_tokens=512, temperature=0.1, do_sample=True)
+
+def geo_llm_answer(query):
+    context = retrieve_geo_context(query, collection, embed_model)
+    prompt = build_geo_prompt(query, context)
+    response = pipe(prompt)[0]['generated_text']
+    return response
+
+
+PHASE 05    Tool Integration (Agentic Layer)
+
+7.1 Connecting GeoLLM to GIS Tools
+To turn the GeoLLM from a text generator into an autonomous GIS assistant, connect it to external geospatial tools using a tool-use framework. This is the approach pioneered by GeoGPT and GTChain.
+
+7.2 Tool Registry
+Tool
+Purpose
+PostGIS Executor
+Run generated SQL against a live PostGIS database and return results
+GDAL Python bindings
+Raster/vector data transformation (format conversion, reprojection)
+GeoPandas
+Spatial joins, buffering, dissolve, overlay analysis in Python
+Shapely
+Geometric operations: intersections, unions, differences, centroid
+Google Earth Engine API
+Access and process satellite imagery (Sentinel, Landsat, MODIS)
+QGIS PyQGIS API
+Run QGIS processing algorithms programmatically
+Overpass API (OSM)
+Query real-time OpenStreetMap data by bounding box or tag
+WMS/WFS Client
+Retrieve map tiles and feature data from OGC-compliant services
+Geocoding API
+Convert addresses to coordinates (Nominatim, Google Maps API)
+
+7.3 Tool-Use Pattern (LangChain Agent)
+from langchain.agents import AgentExecutor, create_react_agent
+from langchain.tools import Tool
+
+# Define geo tools
+tools = [
+    Tool(name='PostGIS', func=run_postgis_query,
+         description='Execute spatial SQL queries. Input: SQL string.'),
+    Tool(name='GDAL_Convert', func=gdal_convert,
+         description='Convert geospatial files. Input: source path, target format.'),
+    Tool(name='EarthEngine', func=gee_query,
+         description='Query satellite imagery from Google Earth Engine.')
+]
+
+agent = create_react_agent(geo_llm_chain, tools, geo_prompt_template)
+executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+
+PHASE 06    Evaluation & Benchmarking
+
+8.1 Evaluation Strategy
+Evaluation of a GeoLLM must cover multiple dimensions — not just general language quality, but specifically geospatial accuracy. Use both automatic metrics and human expert evaluation.
+
+8.2 Automatic Metrics
+Task Type
+Metrics to Use
+SQL / PostGIS generation
+CodeBLEU score, execution validity rate (% of queries that run without error), result correctness
+GIS Python code generation
+Execution pass rate, functional correctness against test cases
+Spatial QA (factual answers)
+Exact Match, ROUGE-L, BERTScore, GPT-4 judge score
+Coordinate / CRS reasoning
+Numeric accuracy (RMSE of coordinates), CRS identification accuracy
+Spatial relationship detection
+F1 score on topology classification (contains, intersects, disjoint, etc.)
+End-to-end workflow
+% of multi-step geospatial tasks solved correctly end-to-end
+
+8.3 Existing Geo Benchmarks
+	•	GeoAnalystBench — spatial analysis workflow and code generation benchmark
+	•	GeoBenchX — multi-step geospatial task solving benchmark
+	•	AutoGEEval++ — Google Earth Engine code generation evaluation
+	•	BB-GeoGPT QA set — GIS question-answering evaluation dataset
+	•	Custom holdout set — 10–15% of your instruction pairs reserved for testing
+
+Critical Task Evaluate specifically on spatial reasoning tasks (topology detection, distance estimation, site selection) — these are the hardest and where GeoLLMs most commonly fail.
+
+8.4 Evaluation Code Example
+def evaluate_sql_generation(model, test_pairs, db_connection):
+    valid = 0
+    correct = 0
+    for pair in test_pairs:
+        generated_sql = model.generate(pair['instruction'])
+        try:
+            result = db_connection.execute(generated_sql)
+            valid += 1
+            if result == pair['expected_result']:
+                correct += 1
+        except Exception:
+            pass  # Invalid SQL — not counted
+    print(f'Validity: {valid/len(test_pairs):.2%}')
+    print(f'Correctness: {correct/len(test_pairs):.2%}')
+
+
+PHASE 07    Deployment
+
+9.1 Model Quantization for Production
+Before deployment, quantize the merged fine-tuned model to reduce memory and increase inference speed. Merge the LoRA adapters into the base model first, then quantize:
+
+# Step 1: Merge LoRA into base model
+merged_model = geo_model.merge_and_unload()
+merged_model.save_pretrained('./geo_llm_merged')
+
+# Step 2: Convert to GGUF for llama.cpp / Ollama
+# Use llama.cpp's convert.py script:
+python convert.py ./geo_llm_merged --outfile geo_llm_q4.gguf --outtype q4_k_m
+
+9.2 Serving Options
+Option
+When to Use
+Ollama (local)
+Development, private deployment, single-user GIS workstations
+vLLM (self-hosted)
+Production, high-throughput API server with OpenAI-compatible endpoints
+HuggingFace Inference Endpoints
+Quick cloud deployment without managing GPU infrastructure
+FastAPI + Transformers
+Custom API with full control over pre/post-processing
+QGIS Plugin
+Embed GeoLLM directly in QGIS for in-app GIS assistance
+ArcGIS Pro Add-in
+Integration with ESRI enterprise GIS workflows
+
+9.3 Complete Inference Pipeline (Production)
+# Full RAG + GeoLLM inference endpoint (FastAPI)
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI(title='GeoLLM API')
+
+class GeoQuery(BaseModel):
+    query: str
+    use_tools: bool = False
+
+@app.post('/geo-query')
+async def geo_query(request: GeoQuery):
+    # 1. Retrieve relevant geo knowledge
+    context = retrieve_geo_context(request.query, collection, embed_model)
+    # 2. Build augmented prompt
+    prompt = build_geo_prompt(request.query, context)
+    # 3. Generate response with fine-tuned GeoLLM
+    response = geo_model_generate(prompt)
+    # 4. Optionally execute any GIS code in the response
+    if request.use_tools:
+        response = tool_executor.run(response)
+    return {'response': response, 'sources': [c[:100] for c in context]}
+
+
+10. Complete Workflow Summary
+The following table summarizes the entire end-to-end pipeline from raw data to deployed system:
+
+Stage
+Key Actions & Outputs
+1. Data Collection
+Collect geo papers, OSM docs, ESRI/QGIS docs, Stack Exchange GIS. Create instruction-response pairs.
+2. Data Preprocessing
+Deduplicate, filter, standardize to Alpaca/ShareGPT JSON. Split 80/10/10 train/val/test.
+3. Base Model Selection
+Choose LLaMA 3.1 8B (general) or DeepSeek-Coder 7B (code/SQL). Download from HuggingFace.
+4. DAPT (optional)
+Continue pre-training on large geo text corpus with standard CLM objective.
+5. QLoRA Fine-Tuning
+Apply 4-bit quantization + LoRA adapters. Train with SFTTrainer. Monitor val loss.
+6. Knowledge Base Indexing
+Chunk geo documents, embed with BGE/E5 model, store in ChromaDB or FAISS.
+7. RAG Retriever
+At query time: embed query, retrieve top-5 chunks, re-rank, inject into prompt.
+8. Prompt Orchestration
+Combine system prompt + retrieved context + user query into final prompt.
+9. Tool Integration
+Connect to PostGIS, GDAL, GeoPandas, Earth Engine via LangChain tool-use.
+10. Evaluation
+Test on GeoAnalystBench, GeoBenchX, custom holdout. Measure CodeBLEU, validity, F1.
+11. Quantization
+Merge LoRA adapters, export to GGUF (Q4_K_M) for efficient deployment.
+12. Deployment
+Serve via vLLM / FastAPI / Ollama. Integrate with QGIS or ArcGIS if needed.
+
+
+11. Recommended Technology Stack
+
+Category
+Recommended Tools
+Base Models
+LLaMA 3.1 8B, Mistral 7B, DeepSeek-Coder 7B, Qwen2.5 7B
+Fine-Tuning Framework
+HuggingFace Transformers + PEFT + TRL (SFTTrainer)
+Efficient Training
+bitsandbytes (QLoRA), Axolotl, LLaMA Factory
+Embedding Models
+BAAI/bge-large-en-v1.5, intfloat/e5-large-v2
+Vector Databases
+ChromaDB (dev), Qdrant or PGVector (production), FAISS (offline)
+RAG Framework
+LangChain, LlamaIndex
+GIS Libraries
+GeoPandas, Shapely, Fiona, GDAL/OGR, Rasterio
+Spatial Databases
+PostGIS (PostgreSQL), SpatiaLite (SQLite)
+Satellite Imagery
+Google Earth Engine Python API, sentinelsat, STAC clients
+Inference Serving
+vLLM, Ollama, llama.cpp, HuggingFace Text Generation Inference
+Monitoring
+Weights & Biases (training), LangSmith (RAG tracing), Prometheus (production)
+API Layer
+FastAPI + Pydantic
+Experiment Tracking
+MLflow or Weights & Biases
+
+
+12. Common Pitfalls & How to Avoid Them
+
+Pitfall
+How to Avoid It
+Training data contains incorrect geo facts (wrong CRS, bad SQL)
+Have domain experts manually review at least 10% of instruction pairs before training
+Model hallucinates spatial relationships
+Include topology classification examples in training; use RAG to ground factual claims
+RAG retrieves irrelevant chunks
+Use metadata filters + cross-encoder re-ranking; tune chunk size and overlap
+Overfitting on small instruction dataset
+Use LoRA dropout 0.1, stop early when validation loss increases, limit epochs to 3
+Generated SQL fails on real PostGIS schema
+Include your actual table schema in the system prompt; fine-tune on schema-aware examples
+Context window overflow with RAG
+Limit to top-3 chunks; use summarization for long documents before indexing
+Slow inference in production
+Quantize to Q4_K_M GGUF; use vLLM with continuous batching for throughput
+Model forgets general language ability after fine-tuning
+Use QLoRA (not full fine-tuning); it preserves base model weights
+
+13. Recommended Next Steps
+	•	Start small: Collect 500–1000 high-quality geospatial instruction pairs as your MVP dataset.
+	•	Fine-tune LLaMA 3.1 8B with QLoRA on a single RTX 3090 — this is achievable in 2–6 hours.
+	•	Build a minimal RAG pipeline with ChromaDB and your most important geo documents (start with PostGIS and QGIS docs).
+	•	Evaluate on a 100-example holdout set with a mix of SQL generation, spatial QA, and CRS tasks.
+	•	Iterate on data quality first — adding more instruction pairs yields faster gains than changing model size.
+	•	Deploy locally with Ollama for testing, then move to vLLM when production traffic demands it.
+	•	Integrate the tool-use layer once the base model + RAG is working well.
+
+Final Tip The GeoLLM + RAG hybrid outperforms either approach alone. Fine-tuning gives deep domain expertise; RAG gives factual accuracy and freshness. Together, they produce a system more reliable than using a general-purpose LLM like GPT-4 for geoinformatics tasks — as proven by GTChain, GeoGPT, and BB-GeoGPT research.

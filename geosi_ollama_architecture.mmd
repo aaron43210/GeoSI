@@ -1,0 +1,75 @@
+graph TD
+    %% User & Interfaces
+    User([User / GIS Analyst])
+    UI[Local Web UI / CLI]
+    API[FastAPI Server]
+    
+    %% Local LLM Core
+    subgraph Offline_LLM_Layer [100% Local Inference Engine]
+        Ollama((Ollama Daemon))
+        Llama3[Llama 3 / Mistral Model]
+        Ollama <--> Llama3
+    end
+    
+    %% Core Engine
+    subgraph GeoSI_Engine [Agentic Engine - All 14 Specialized Agents]
+        Supervisor[1. Supervisor Agent]
+        Safety[2. Safety / Guardrails Agent]
+        Router[3. Intent Router Agent]
+        GraphRAG_Engine[4. GraphRAG Agent]
+        ToolSelector[5. Tool Selector Agent]
+        Planner[6. Planner Agent]
+        Validator[7. Validator Agent]
+        Crawler[8. Data Crawler Agent]
+        Executor[9. Execution Agent]
+        Interpreter[10. Error Interpreter Agent]
+        Verifier[11. Verification Agent]
+        Reporter[12. Reporter Agent]
+        Memory[13. Memory Agent]
+        Explainer[14. Explainer Agent]
+    end
+    
+    %% Data & Knowledge
+    subgraph Data_Layer [Local Data & Knowledge]
+        PostGIS[(Local PostGIS)]
+        Qdrant[(Local Qdrant)]
+        Neo4j[(Local Neo4j)]
+    end
+
+    %% GIS Execution Core
+    subgraph GIS_Execution [Local GIS Headless Execution]
+        QGIS[PyQGIS / QGIS 3.34+]
+        GDAL[GDAL / OGR / PROJ]
+    end
+
+    %% Connections
+    User -->|Local Network| UI
+    UI -->|REST/WebSockets| API
+    API --> Safety
+    
+    %% Basic Flow
+    Safety --> Router
+    Router --> Supervisor
+    Supervisor --> GraphRAG_Engine
+    Supervisor --> ToolSelector
+    Supervisor --> Crawler
+    ToolSelector --> Planner
+    GraphRAG_Engine --> Planner
+    Planner --> Validator
+    Validator --> Executor
+    Executor --> Interpreter
+    Interpreter --> Executor
+    Executor --> GIS_Execution
+    Executor --> Verifier
+    Verifier --> Reporter
+    Reporter --> Explainer
+    Memory -.-> Supervisor
+    
+    %% AI connections
+    Supervisor <-->|Localhost port 11434<br>NO INTERNET| Ollama
+    Planner <-->|Localhost port 11434<br>NO INTERNET| Ollama
+    
+    GraphRAG_Engine <--> Qdrant
+    GraphRAG_Engine <--> Neo4j
+    
+    GIS_Execution <--> PostGIS

@@ -1,0 +1,51 @@
+graph TD
+    %% User & Interfaces
+    User([User / GIS Analyst])
+    MCP[MCP Client / Claude Desktop]
+    API[FastAPI Server]
+    
+    %% Core Engine
+    subgraph GeoSI_Engine [Agentic Engine - 14 Agents]
+        Supervisor[Supervisor Agent]
+        Planner[Planner Agent]
+        Validator[Validator Agent]
+        Executor[Execution Agent]
+        Verifier[Verification Agent]
+        Safety[Safety / Guardrails]
+        GraphRAG_Engine[GraphRAG Engine]
+    end
+    
+    %% GIS Execution Core
+    subgraph GIS_Execution [GIS Headless Execution Layer]
+        QGIS[PyQGIS / QGIS 3.34+]
+        GDAL[GDAL / OGR / PROJ]
+        PyData[Rasterio / GeoPandas / PyKrige]
+    end
+    
+    %% Data & Knowledge
+    subgraph Data_Layer [Data & Knowledge Infrastructure]
+        PostGIS[(PostGIS)]
+        Qdrant[(Qdrant Vector DB)]
+        Neo4j[(Neo4j Graph DB)]
+        Redis[(Redis Cache/PubSub)]
+    end
+
+    %% Connections
+    User -->|Natural Language| API
+    MCP -->|JSON-RPC 2.0| API
+    API --> Safety
+    Safety --> Supervisor
+    
+    Supervisor --> Planner
+    Planner <--> GraphRAG_Engine
+    Planner --> Validator
+    Validator --> Executor
+    Executor --> GIS_Execution
+    Executor --> Verifier
+    Verifier --> Supervisor
+    
+    GraphRAG_Engine <--> Qdrant
+    GraphRAG_Engine <--> Neo4j
+    
+    GIS_Execution <--> PostGIS
+    API <--> Redis

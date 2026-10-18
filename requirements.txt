@@ -1,0 +1,8 @@
+# GeoSI v2 → v2 Dependencies
+# ⚠️  DEPRECATED: Use pyproject.toml for all new development.
+# This file is kept ONLY for QGIS plugin packaging compatibility
+# (the official QGIS Plugin Repository build system expects requirements.txt).
+# For the server, agents, and eval packages, install via:
+#   pip install -e ".[dev]"
+# ---------------------------------------------------------------------------
+-r requirements-qgis-compat.txt

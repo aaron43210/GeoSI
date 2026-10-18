@@ -1,0 +1,92 @@
+
+GEOSI STRATEGIC ROADMAP
+Based on IBM RAG & Agentic AI + IBM DevOps & Software Engineering
+
+CURRENT STATUS (PHASE 1 COMPLETE)
+- Query Parser
+- Planning Agent
+- Execution Engine
+- Tool Registry
+- State Manager
+- QGIS Plugin
+- FastAPI Integration
+- Workflow Execution
+- Logging
+- NDVI Workflow
+- Watershed Workflow
+
+PHASE 2 (IMMEDIATE FOCUS)
+- PostGIS Integration
+- Qdrant Integration
+- GIS Documentation Corpus
+- RAG Service
+- Workflow Knowledge Base
+
+GIS Documentation Corpus:
+- QGIS Docs
+- PyQGIS Docs
+- GDAL Docs
+- Rasterio Docs
+- GeoPandas Docs
+- PostGIS Docs
+- Earth Engine Docs
+- Remote Sensing Workflows
+- GeoSI Workflows
+
+RAG Pipeline:
+User Query
+ -> Qdrant Search
+ -> GIS Knowledge Retrieval
+ -> Context Generation
+ -> Planning Agent
+ -> Execution Engine
+
+PHASE 3
+- Supervisor Agent
+- GIS Agent
+
+PHASE 4
+- LangGraph
+- Remote Sensing Agent
+- RAG Agent
+
+PHASE 5
+- Computer Vision Agent
+- YOLO
+- SAM
+- U-Net
+
+PHASE 6
+- Docker
+- Containerized Deployment
+
+PHASE 7
+- CI/CD
+- GitHub Actions
+- Automated Testing
+
+PHASE 8
+- Kubernetes
+
+PHASE 9
+- Neo4j
+- GraphRAG
+
+PHASE 10
+- Autonomous GIS
+
+MOST IMPORTANT NEXT 6 MONTHS
+1. PostGIS
+2. Qdrant
+3. GIS Documentation Corpus
+4. RAG Service
+5. Agent + RAG Integration
+6. Workflow Knowledge Base
+7. Docker
+8. CI/CD
+
+FINAL GOAL
+GeoSI becomes an Autonomous Geospatial Intelligence Platform capable of
+understanding natural language, retrieving GIS knowledge, planning workflows,
+executing GIS tools, learning from previous workflows, and producing maps,
+reports, and decisions automatically.
