@@ -62,3 +62,20 @@ Results on macOS, QGIS 4.2, llama3 8B + nomic-embed-text:
 | main, no LLM | CI regression gate (≥ 85%) | 32/36 |
 
 The **blind** score is the realistic estimate for unfamiliar requests. Raster algorithms such as heatmaps can take minutes.
+
+Blind set by planning model (same code; tool search on local `nomic-embed-text`):
+
+| Planner | Blind score |
+|---|---|
+| llama3 8B (local Ollama) | 7/15 |
+| `openai/gpt-oss-120b` (Groq) | 10/15 |
+| `qwen/qwen3.8-27b` (Groq) | 10/15 |
+
+The blind set was used once to find general verification bugs, so these scores are slightly optimistic. Both hosted models fail the same 5 tasks, most of them handled by deterministic planners before the model is asked. The next gains come from those planners, not from a bigger model.
+
+### Using a hosted model (optional)
+Any OpenAI-compatible API works: Groq, OpenAI, OpenRouter, LM Studio and others. In ⚙ settings, set **Hosted API URL**, **Hosted model** and **API key**. The key is stored in the QGIS authentication database, not in plain settings. For scripts and tests, environment variables override the settings:
+```bash
+export GEOSI_LLM_BASE_URL=https://api.groq.com/openai/v1 GEOSI_LLM_MODEL=openai/gpt-oss-120b GEOSI_LLM_API_KEY=...
+```
+Your request text, layer and field names, and sample attribute values are sent to the provider. Geometry files and processing stay local. Tool search always uses the local embedding model.

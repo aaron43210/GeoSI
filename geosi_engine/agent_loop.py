@@ -287,8 +287,12 @@ class AgentLoop:
                 return (f"the final output '{final.name}' has 0 features — the inputs may be "
                         f"swapped, the wrong tool was used, or the distance/units are wrong")
             each = self._each_layer(query)
-            geometric = _geom_family(final.geometry_type) in ("point", "line", "polygon")
-            if each and geometric and final.feature_count != each[1]:
+            # One output feature per input feature is only expected when the
+            # output keeps the input's geometry type ("count X in each zone" →
+            # zones); "5 random points in each zone" or "buffer each point"
+            # legitimately produce a different number or type.
+            same_family = each is not None and _geom_family(final.geometry_type) == each[2]
+            if each and same_family and final.feature_count != each[1]:
                 return (f"the request is about each feature of '{each[0]}' ({each[1]} features) but "
                         f"the output has {final.feature_count} — the result should keep one feature per "
                         f"'{each[0]}' feature (e.g. use '{each[0]}' as the INPUT/POLYGONS layer, keep "
@@ -308,7 +312,7 @@ class AgentLoop:
         return (result.results or {}).get(plan.steps[-1].output_name)
 
     def _each_layer(self, query: str):
-        """("flood_zones", 2) for "... in each flood_zones polygon"."""
+        """("flood_zones", 2, "polygon") for "... in each flood_zones polygon"."""
         state = self.engine.state
         for m in _EACH_RE.finditer(query):
             words = m.group(1).lower().split()
@@ -318,7 +322,7 @@ class AgentLoop:
                 if words[0] in cands or " ".join(words) in cands:
                     layer = state.get_layer(name)
                     if getattr(layer, "layer_type", "") == "vector" and layer.feature_count:
-                        return name, layer.feature_count
+                        return name, layer.feature_count, _geom_family(layer.geometry_type)
         return None
 
     def _expected_geometry(self, query: str):

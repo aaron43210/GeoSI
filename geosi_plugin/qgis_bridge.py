@@ -764,7 +764,20 @@ def _run_qgis_algorithm(algorithm_id: str, parameters: dict) -> ToolResult:
         from qgis.core import QgsProcessingContext
         context = QgsProcessingContext()
         feedback = _collecting_feedback()
-        result = processing.run(algorithm_id, unwrapped_params, context=context, feedback=feedback)
+        try:
+            result = processing.run(algorithm_id, unwrapped_params, context=context, feedback=feedback)
+        except Exception as e:
+            # Some algorithms copy input fids, which GeoPackage rejects as
+            # duplicates. FlatGeobuf has no fid constraint: retry once.
+            if output_file and output_file.endswith(".gpkg") and "UNIQUE constraint failed" in str(e):
+                output_file = output_file[:-5] + ".fgb"
+                unwrapped_params["OUTPUT"] = output_file
+                logger.info(f"Retrying {algorithm_id} with FlatGeobuf output (duplicate fids)")
+                feedback = _collecting_feedback()
+                result = processing.run(algorithm_id, unwrapped_params, context=QgsProcessingContext(),
+                                        feedback=feedback)
+            else:
+                raise
         elapsed = (time.time() - start) * 1000
         logger.info(f"Completed {algorithm_id} in {elapsed:.0f}ms")
 

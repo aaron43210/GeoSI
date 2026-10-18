@@ -143,7 +143,7 @@ def test_stop_before_running():
 
 def test_each_layer_feature_count_is_checked():
     # "in each flood_zones polygon" → one output feature per zone (2)
-    eng = FakeEngine([_plan(), _plan()], [_result(_layer("p", "Point", 5)), _result(_layer("z", "Polygon", 2))])
+    eng = FakeEngine([_plan(), _plan()], [_result(_layer("p", "Polygon", 5)), _result(_layer("z", "Polygon", 2))])
     res = AgentLoop(eng).run("count the hospitals inside each flood_zones polygon")
     assert res.success
     assert "each feature of 'flood_zones'" in eng.agent.feedback[1]
@@ -173,3 +173,9 @@ def test_how_many_uses_exact_feature_count():
 def test_into_one_layer_is_not_a_missing_layer():
     eng = FakeEngine([_plan()], [_result(_layer("merged", "Polygon", 6))])
     assert AgentLoop(eng).run("merge hospitals and flood_zones into one layer").success
+
+
+def test_each_check_allows_different_geometry():
+    # "5 random points in each zone" → 10 points is right, not "one per zone"
+    eng = FakeEngine([_plan()], [_result(_layer("pts", "Point", 10))])
+    assert AgentLoop(eng).run("create 5 random points inside each flood_zones polygon").success

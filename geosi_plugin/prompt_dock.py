@@ -262,8 +262,10 @@ class GeoSIDock:
         dlg = SettingsDialog(self.dock)
         if dlg.exec_():
             apply(self.engine, dlg.values)
-            model = self.engine.agent._ollama_model
-            self._append_system(f"⚙ Settings saved — planning model: <b>{model}</b>")
+            agent = self.engine.agent
+            model = agent._api_model if agent._api_configured() else agent._ollama_model
+            where = "hosted API" if agent._api_configured() else "local Ollama"
+            self._append_system(f"⚙ Settings saved — planning with <b>{model}</b> ({where})")
 
     def _set_busy(self, busy):
         self.stop_btn.setEnabled(busy)

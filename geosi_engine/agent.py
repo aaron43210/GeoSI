@@ -155,6 +155,12 @@ class GeoSIAgent:
         self._ollama_endpoint = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
         self._ollama_model = self._detect_ollama_model()
         self._tool_retriever = None  # created lazily; see _relevant_tools()
+        # Optional hosted model behind an OpenAI-compatible API (OpenAI, Groq,
+        # OpenRouter, Together, LM Studio, ...). When set it is used for
+        # planning and answers before Ollama; tool search stays local.
+        self._api_base = os.environ.get("GEOSI_LLM_BASE_URL", "").rstrip("/")
+        self._api_key = os.environ.get("GEOSI_LLM_API_KEY", "")
+        self._api_model = os.environ.get("GEOSI_LLM_MODEL", "")
         self._anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
         self._gemini_key = (
             os.environ.get("GEMINI_API_KEY")
@@ -301,7 +307,7 @@ class GeoSIAgent:
         """True when an LLM is reachable to produce a corrected plan."""
         if not self.use_llm:
             return False
-        if self._gemini_key or self._anthropic_key:
+        if self._gemini_key or self._anthropic_key or self._api_configured():
             return True
         try:
             import requests
@@ -319,6 +325,11 @@ class GeoSIAgent:
             "exact numbers and names. Reply in one or two short sentences.\n\n"
             f"DATA:\n{evidence[:6000]}\n\nQUESTION: {question}\nANSWER:"
         )
+        if self._api_configured():
+            try:
+                return self._api_chat(prompt, json_mode=False).strip() or None
+            except Exception as e:
+                logger.warning(f"API answer failed, trying Ollama: {e}")
         try:
             import requests
             resp = requests.post(
@@ -338,6 +349,8 @@ class GeoSIAgent:
 
     def _llm_providers(self):
         """Yield (name, callable) tuples for available LLM providers."""
+        if self._api_configured():
+            yield ("api", self._plan_with_api)
         yield ("ollama", self._plan_with_ollama)
         if self._gemini_key:
             yield ("gemini", self._plan_with_gemini)
@@ -642,8 +655,14 @@ class GeoSIAgent:
             tool = "qgis_basicstatisticsforfields"
             if not self.registry.get_tool(tool):
                 return None
-        for name in self._mentioned_layers(query, state):
+        mentioned = self._mentioned_layers(query, state)
+        # "mean elevation within each zone" is zonal statistics, not a whole-raster summary
+        per_zone = bool(re.search(r"\b(each|every|per|by)\b", query, re.I)) or any(
+            state.get_layer(n).layer_type == "vector" for n in mentioned)
+        for name in mentioned:
             layer = state.get_layer(name)
+            if layer.layer_type == "raster" and per_zone:
+                continue
             if layer.layer_type == "raster" and self.registry.get_tool("native_rasterlayerstatistics"):
                 return self._one_step_plan(request, "native_rasterlayerstatistics",
                                            {"INPUT": name, "BAND": 1}, f"Raster statistics of {name}")
@@ -653,7 +672,7 @@ class GeoSIAgent:
                                                f"Field statistics for {name}.{f}")
         # "highest elevation" style questions about the only raster
         rasters = [n for n in state.list_layers() if state.get_layer(n).layer_type == "raster"]
-        if len(rasters) == 1 and re.search(r"\b(elevation|height|value|pixel)s?\b", query, re.I) \
+        if len(rasters) == 1 and not per_zone and re.search(r"\b(elevation|height|value|pixel)s?\b", query, re.I) \
                 and self.registry.get_tool("native_rasterlayerstatistics"):
             return self._one_step_plan(request, "native_rasterlayerstatistics",
                                        {"INPUT": rasters[0], "BAND": 1}, f"Raster statistics of {rasters[0]}")
@@ -1019,6 +1038,40 @@ Return ONLY valid JSON:
         text = response.json().get("response", "")
         return self._json_to_plan(request, text)
 
+    # ── OpenAI-compatible hosted models ───────────────────────────────
+
+    def _api_configured(self) -> bool:
+        return bool(self._api_base and self._api_model)
+
+    def _api_chat(self, prompt: str, json_mode: bool = True) -> str:
+        """One chat completion; plain HTTP so QGIS needs no extra packages."""
+        import requests
+
+        body = {
+            "model": self._api_model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.0,
+        }
+        if json_mode:
+            body["response_format"] = {"type": "json_object"}
+        headers = {"Content-Type": "application/json"}
+        if self._api_key:
+            headers["Authorization"] = f"Bearer {self._api_key}"
+        for attempt in range(3):
+            resp = requests.post(f"{self._api_base}/chat/completions", json=body, headers=headers, timeout=120)
+            if resp.status_code == 429 and attempt < 2:  # rate limited: back off and retry
+                import time
+                time.sleep(float(resp.headers.get("retry-after", 2 * (attempt + 1))))
+                continue
+            if resp.status_code >= 400:
+                # Never log headers (they carry the key); the body has the reason
+                raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:300]}")
+            return resp.json()["choices"][0]["message"]["content"] or ""
+        raise RuntimeError("rate limited")
+
+    def _plan_with_api(self, request: AnalysisRequest) -> ExecutionPlan:
+        return self._json_to_plan(request, self._api_chat(self._get_prompt(request)))
+
     def _plan_with_gemini(self, request: AnalysisRequest) -> ExecutionPlan:
         import google.generativeai as genai
         genai.configure(api_key=self._gemini_key)
@@ -1037,13 +1090,17 @@ Return ONLY valid JSON:
         return self._json_to_plan(request, response.content[0].text)
 
     def _json_to_plan(self, request: AnalysisRequest, text: str) -> ExecutionPlan:
-        text = text.strip()
+        text = re.sub(r"<think>.*?</think>", "", text or "", flags=re.S).strip()
         if text.startswith("```"):
             text = text.split("\n", 1)[1]
             if text.endswith("```"):
                 text = text[:-3]
+        if not text.startswith("{") and "{" in text:
+            text = text[text.index("{"):text.rindex("}") + 1]
         data = json.loads(text)
-        steps = [ToolStep(**s) for s in data.get("steps", [])]
+        # Keep only known ToolStep fields; larger models add their own keys
+        allowed = set(ToolStep.__dataclass_fields__)
+        steps = [ToolStep(**{k: v for k, v in s.items() if k in allowed}) for s in data.get("steps", [])]
         return ExecutionPlan(
             request=request, steps=steps,
             reasoning=data.get("reasoning", ""),
