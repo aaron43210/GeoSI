@@ -99,6 +99,11 @@ class GeoSIPlugin:
             # Step 2: Dynamic discovery — reads every algorithm from the
             # QGIS Processing Registry and creates a BackendTool for each.
             self.tool_count = install(registry=engine.registry)
+            try:
+                from .settings import apply
+                apply(engine)
+            except Exception as e:  # noqa: BLE001 — defaults still work
+                logger.warning("Could not apply GeoSI settings: %s", e)
             self.engine = engine
         except Exception as e:  # noqa: BLE001 — surface any startup failure
             logger.error("GeoSI engine failed to start:\n%s", traceback.format_exc())

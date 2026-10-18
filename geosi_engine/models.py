@@ -286,6 +286,10 @@ class Layer:
     raster_meta: Dict[str, Any] = field(default_factory=dict, repr=False)
     bounds: Dict[str, float] = field(default_factory=dict, repr=False)
     fields: List[str] = field(default_factory=list, repr=False)
+    # Optional attribute metadata for planning: "number" / "text" per field,
+    # and up to 50 distinct values of each text field.
+    field_types: Dict[str, str] = field(default_factory=dict, repr=False)
+    field_values: Dict[str, List[Any]] = field(default_factory=dict, repr=False)
 
     def __str__(self):
         """Show layer info in a compact format."""

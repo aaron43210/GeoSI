@@ -59,7 +59,7 @@ plugin_dir = os.path.dirname(__file__)
 if plugin_dir not in sys.path:
     sys.path.insert(0, plugin_dir)
 
-from geosi_engine.base import register_backend
+from geosi_engine.base import register_backend, register_inspector
 from geosi_engine.models import ToolResult, ToolParameter, Layer
 
 logger = logging.getLogger("geosi_plugin.qgis_bridge")
@@ -258,6 +258,13 @@ def auto_discover_qgis_tools(registry) -> int:
                 skipped_count += 1
                 continue
             seen_ids.add(alg_id)
+
+            # select* algorithms only change the selection on the input
+            # layer and create nothing; the extract* twins do the same job
+            # and produce a layer the agent can return.
+            if alg_id.split(":")[-1].startswith("select") or alg_id.endswith("randomselection"):
+                skipped_count += 1
+                continue
 
             # ── Skip algorithms that cannot run here (e.g. GRASS or SAGA
             # not installed) so the LLM is never offered them ─────────
@@ -462,13 +469,15 @@ def _try_fast_path(algorithm_id: str, parameters: dict) -> Optional[ToolResult]:
 # when running concurrent queries. Uses uuid4 for cryptographic randomness.
 # ═══════════════════════════════════════════════════════════════════════════
 
-def _make_temp_output(algorithm_id: str) -> str:
+def _make_temp_output(algorithm_id: str, raster: Optional[bool] = None) -> str:
     """Generate a collision-free temp file path with correct extension."""
     uid = uuid.uuid4().hex[:8]
     # Extract the algorithm short name for human-readable filenames
     algo_short = algorithm_id.split(":")[-1] if ":" in algorithm_id else algorithm_id
     # Raster algorithms produce .tif, vector algorithms produce .gpkg
-    ext = ".tif" if algorithm_id.lower() in _RASTER_ALGORITHMS else ".gpkg"
+    if raster is None:
+        raster = algorithm_id.lower() in _RASTER_ALGORITHMS
+    ext = ".tif" if raster else ".gpkg"
     return os.path.join(tempfile.gettempdir(), f"geosi_{algo_short}_{uid}{ext}")
 
 
@@ -530,6 +539,146 @@ def _normalize_params(algorithm_id: str, params: dict) -> dict:
     return out
 
 
+def _output_kind(algorithm_id: str) -> Optional[str]:
+    """
+    "raster" / "vector" from the algorithm's OUTPUT destination, or None
+    when the algorithm only returns values (no layer to write).
+    """
+    try:
+        from qgis.core import QgsApplication
+        alg = QgsApplication.processingRegistry().algorithmById(algorithm_id)
+    except Exception:
+        alg = None
+    if alg is None:
+        return _detect_layer_type(algorithm_id)
+    out = alg.parameterDefinition("OUTPUT")
+    if out is None or not out.isDestination():
+        return None
+    t = out.type().lower()
+    if "raster" in t:
+        return "raster"
+    if t in ("vectordestination", "sink"):
+        return "vector"
+    return None  # file / folder destinations (html reports etc.)
+
+
+def field_metadata(lyr, max_values: int = 50):
+    """(field_types, field_values) of a QgsVectorLayer for the planner."""
+    types, values = {}, {}
+    for idx, f in enumerate(lyr.fields()):
+        if f.name() == "fid":
+            continue
+        numeric = f.isNumeric()
+        types[f.name()] = "number" if numeric else "text"
+        if not numeric:
+            try:
+                uniq = list(lyr.uniqueValues(idx, max_values + 1))
+                if len(uniq) <= max_values:
+                    values[f.name()] = [u for u in uniq if u not in (None, "")]
+            except Exception:
+                pass
+    return types, values
+
+
+def describe_output(path: str, name: str, kind: str) -> Optional[Layer]:
+    """Open an output file with QGIS and return a Layer with its real facts."""
+    from qgis.core import QgsRasterLayer, QgsVectorLayer, QgsWkbTypes
+
+    if kind == "raster":
+        lyr = QgsRasterLayer(path, name)
+        if not lyr.isValid():
+            return None
+        ext = lyr.extent()
+        return Layer(
+            name=name, filepath=path, layer_type="raster", geometry_type="Raster",
+            feature_count=1, crs=lyr.crs().authid(),
+            bounds={"xmin": ext.xMinimum(), "ymin": ext.yMinimum(),
+                    "xmax": ext.xMaximum(), "ymax": ext.yMaximum()},
+            fields=[f"band_{i}" for i in range(1, lyr.bandCount() + 1)],
+        )
+    lyr = QgsVectorLayer(path, name, "ogr")
+    if not lyr.isValid():
+        return None
+    ext = lyr.extent()
+    types, values = field_metadata(lyr)
+    return Layer(
+        name=name, filepath=path, layer_type="vector",
+        geometry_type=QgsWkbTypes.geometryDisplayString(lyr.geometryType()),
+        feature_count=lyr.featureCount(), crs=lyr.crs().authid(),
+        bounds={"xmin": ext.xMinimum(), "ymin": ext.yMinimum(),
+                "xmax": ext.xMaximum(), "ymax": ext.yMaximum()},
+        fields=[f.name() for f in lyr.fields()],
+        field_types=types, field_values=values,
+    )
+
+
+def describe_layer(layer: Layer, max_rows: int = 30) -> str:
+    """
+    Text summary of a layer's contents for the LLM: attribute rows for
+    vectors, band statistics for rasters. Registered as the engine's
+    layer inspector by install().
+    """
+    from qgis.core import Qgis, QgsRasterLayer, QgsVectorLayer
+
+    path = getattr(layer, "filepath", "") or ""
+    if getattr(layer, "layer_type", "") == "raster":
+        lyr = QgsRasterLayer(path, layer.name)
+        if not lyr.isValid():
+            return f"{layer.name}: unreadable raster"
+        lines = [f"raster {layer.name}: {lyr.width()}x{lyr.height()} px, crs {lyr.crs().authid()}"]
+        try:
+            all_stats = Qgis.RasterBandStatistic.All  # QGIS >= 3.36
+        except AttributeError:
+            from qgis.core import QgsRasterBandStats
+            all_stats = QgsRasterBandStats.All
+        for b in range(1, lyr.bandCount() + 1):
+            st = lyr.dataProvider().bandStatistics(b, all_stats)
+            lines.append(f"  band {b}: min={st.minimumValue:.4g} max={st.maximumValue:.4g} mean={st.mean:.4g}")
+        return "\n".join(lines)
+
+    # Open from the file rather than using a live project layer, which may
+    # only be touched from the main thread.
+    lyr = QgsVectorLayer(path, layer.name, "ogr") if path else None
+    if (lyr is None or not lyr.isValid()) and isinstance(getattr(layer, "features", None), QgsVectorLayer):
+        lyr = layer.features
+    if not lyr.isValid():
+        return f"{layer.name}: unreadable layer"
+    from qgis.core import QgsWkbTypes
+
+    names = [f.name() for f in lyr.fields() if f.name() != "fid"]
+    gtype = lyr.geometryType()
+    measure = {QgsWkbTypes.GeometryType.LineGeometry: "length_m",
+               QgsWkbTypes.GeometryType.PolygonGeometry: "area_m2"}.get(gtype)
+    lines = [f"layer {layer.name}: {lyr.featureCount()} {layer.geometry_type} features, fields {names}"]
+    for i, feat in enumerate(lyr.getFeatures()):
+        if i >= max_rows:
+            lines.append(f"  ... {lyr.featureCount() - max_rows} more")
+            break
+        cells = [f"{n}={feat[n]}" for n in names]
+        geom = feat.geometry()
+        if measure and geom is not None and not geom.isEmpty():
+            value = geom.length() if measure == "length_m" else geom.area()
+            cells.append(f"{measure}={value:.1f}")
+        lines.append("  " + ", ".join(cells))
+    return "\n".join(lines)
+
+
+def _collecting_feedback():
+    """QgsProcessingFeedback that keeps reported errors for the agent."""
+    from qgis.core import QgsProcessingFeedback
+
+    class _Feedback(QgsProcessingFeedback):
+        def __init__(self):
+            super().__init__()
+            self.errors = []
+
+        def reportError(self, error, fatalError=False):
+            self.errors.append(str(error).strip())
+            super().reportError(error, fatalError)
+
+    return _Feedback()
+
+
 def _run_qgis_algorithm(algorithm_id: str, parameters: dict) -> ToolResult:
     """
     Execute a QGIS Processing algorithm with automatic parameter unwrapping
@@ -572,7 +721,14 @@ def _run_qgis_algorithm(algorithm_id: str, parameters: dict) -> ToolResult:
         # because QgsProject is a main-thread singleton.
         unwrapped_params = {}
         for k, v in parameters.items():
-            if hasattr(v, "filepath") and hasattr(v, "layer_type"):
+            if isinstance(v, (list, tuple)) and any(hasattr(i, "filepath") for i in v):
+                # e.g. LAYERS for merge: a list of GeoSI layers → list of paths
+                unwrapped_params[k] = [
+                    (i.filepath if getattr(i, "filepath", "") and os.path.isfile(i.filepath) else
+                     getattr(i, "name", i)) if hasattr(i, "filepath") else i
+                    for i in v
+                ]
+            elif hasattr(v, "filepath") and hasattr(v, "layer_type"):
                 # This is a GeoSI Layer object — unwrap it
                 if v.filepath and os.path.isfile(v.filepath):
                     unwrapped_params[k] = v.filepath
@@ -590,72 +746,94 @@ def _run_qgis_algorithm(algorithm_id: str, parameters: dict) -> ToolResult:
         unwrapped_params = _normalize_params(algorithm_id, unwrapped_params)
 
         # ── Step 4: Redirect in-memory outputs to temp files ───────────
+        # The file extension follows the algorithm's declared OUTPUT type
+        # (raster destination → .tif, otherwise .gpkg).
+        output_kind = _output_kind(algorithm_id)
         output_file = None
-        if unwrapped_params.get("OUTPUT") in ("memory:", "TEMPORARY_OUTPUT", None, ""):
-            output_file = _make_temp_output(algorithm_id)
+        if output_kind and unwrapped_params.get("OUTPUT") in ("memory:", "TEMPORARY_OUTPUT", None, ""):
+            output_file = _make_temp_output(algorithm_id, raster=(output_kind == "raster"))
             unwrapped_params["OUTPUT"] = output_file
             logger.info(f"Redirected OUTPUT → {output_file}")
 
         # ── Step 5: Execute via processing.run() ───────────────────────
         logger.info(f"Running {algorithm_id} with {len(unwrapped_params)} params")
+        logger.debug(f"  params: {unwrapped_params}")
         start = time.time()
-        result = processing.run(algorithm_id, unwrapped_params)
+        # A fresh context + feedback per run: safe from the QgsTask worker
+        # thread (inputs are file paths, nothing reads the GUI project).
+        from qgis.core import QgsProcessingContext
+        context = QgsProcessingContext()
+        feedback = _collecting_feedback()
+        result = processing.run(algorithm_id, unwrapped_params, context=context, feedback=feedback)
         elapsed = (time.time() - start) * 1000
         logger.info(f"Completed {algorithm_id} in {elapsed:.0f}ms")
 
-        # ── Step 6: Determine output path ──────────────────────────────
+        # ── Step 6: Algorithms with no layer output return values ──────
+        # e.g. qgis:basicstatisticsforfields → {"SUM": ..., "COUNT": ...}
+        if output_kind is None:
+            values = {
+                k: v for k, v in result.items()
+                if isinstance(v, (int, float, str, bool)) and not str(v).endswith((".html", ".htm"))
+            }
+            summary = ", ".join(f"{k}={v}" for k, v in list(values.items())[:20])
+            return ToolResult(
+                success=True,
+                output=values,
+                message=f"{algorithm_id} results: {summary}",
+            )
+
+        # ── Step 7: Determine and validate the output path ─────────────
         output_value = result.get("OUTPUT", "")
         output_path = None
-
-        if isinstance(output_value, str) and os.path.isfile(output_value):
-            output_path = output_value
+        if isinstance(output_value, str) and os.path.isfile(output_value.split("|")[0]):
+            output_path = output_value.split("|")[0]
         elif output_file and os.path.isfile(output_file):
             output_path = output_file
-        else:
-            # Try extracting path from QgsMapLayer.source()
-            try:
-                if hasattr(output_value, "source"):
-                    src = output_value.source()
-                    if os.path.isfile(src):
-                        output_path = src
-            except Exception:
-                pass
+        elif hasattr(output_value, "source"):
+            src = output_value.source().split("|")[0]
+            if os.path.isfile(src):
+                output_path = src
 
-        # ── Step 7: Validate the output file ───────────────────────────
-        file_size = 0
-        if output_path and os.path.isfile(output_path):
-            file_size = os.path.getsize(output_path)
-
-        if not output_path or not os.path.isfile(output_path) or file_size < 100:
+        if not output_path:
             return ToolResult(
                 success=False,
-                error=f"Algorithm {algorithm_id} produced invalid output (size: {file_size}B)",
+                error=f"Algorithm {algorithm_id} produced no output file",
                 message=f"QGIS algorithm silently failed: {algorithm_id}",
             )
 
-        # ── Step 8: Wrap output as a GeoSI Layer object ────────────────
-        layer_type = _detect_layer_type(algorithm_id)
+        # ── Step 8: Wrap output as a Layer carrying its real facts ─────
         algo_name = algorithm_id.split(":")[-1] if ":" in algorithm_id else algorithm_id
-        output_layer = Layer(
-            name=f"{algo_name}_result",
-            filepath=output_path,
-            layer_type=layer_type,
-            geometry_type="raster" if layer_type == "raster" else "unknown",
-            feature_count=1,
-            crs="",
+        output_layer = describe_output(output_path, f"{algo_name}_result", output_kind)
+        if output_layer is None:
+            return ToolResult(
+                success=False,
+                error=f"Algorithm {algorithm_id} wrote an unreadable output: {output_path}",
+                message=f"QGIS algorithm silently failed: {algorithm_id}",
+            )
+        logger.info(
+            f"Wrapped output: {output_path} ({output_layer.layer_type}, "
+            f"{output_layer.geometry_type}, {output_layer.feature_count} features)"
         )
-        logger.info(f"Wrapped output: {output_path} ({layer_type})")
-        return ToolResult(
-            success=True,
-            output=output_layer,
-            message=f"QGIS algorithm completed: {algorithm_id}",
-        )
+        # Some algorithms also return values next to the layer
+        # (e.g. basic statistics: SUM, MEAN, COUNT) — keep them for answers.
+        values = {
+            k: v for k, v in result.items()
+            if k != "OUTPUT" and isinstance(v, (int, float)) and not isinstance(v, bool)
+        }
+        message = f"QGIS algorithm completed: {algorithm_id}"
+        if values:
+            message += " (" + ", ".join(f"{k}={v:g}" for k, v in list(values.items())[:20]) + ")"
+        return ToolResult(success=True, output=output_layer, message=message)
 
     except Exception as e:
-        logger.error(f"QGIS algorithm failed: {algorithm_id}: {e}")
+        # QGIS often raises a generic "Unable to execute algorithm" and puts
+        # the real reason in the feedback log — pass it on so the agent can fix it.
+        details = getattr(locals().get("feedback"), "errors", [])
+        error = "\n".join([str(e)] + [d for d in details if d and d not in str(e)])
+        logger.error(f"QGIS algorithm failed: {algorithm_id}: {error}")
         return ToolResult(
             success=False,
-            error=str(e),
+            error=error,
             message=f"QGIS algorithm failed: {algorithm_id}",
         )
 
@@ -677,6 +855,7 @@ def install(registry=None) -> int:
         Number of dynamically discovered tools (0 if registry not provided).
     """
     register_backend("qgis", _run_qgis_algorithm)
+    register_inspector(describe_layer)
     logger.info("GeoSI: QGIS backend installed.")
 
     tool_count = 0

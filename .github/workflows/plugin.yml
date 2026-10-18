@@ -96,6 +96,37 @@ jobs:
       - name: Load plugin in QGIS
         run: python3 tests/plugin_smoke.py "dist/geosi_plugin-*.zip"
 
+  agent-bench:
+    name: "Agent benchmark (no LLM, QGIS latest)"
+    needs: package
+    runs-on: ubuntu-latest
+    container:
+      image: qgis/qgis:latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+      XDG_RUNTIME_DIR: /tmp/runtime-root
+      # No Ollama in CI: scores the deterministic planners + verification.
+      # The full LLM benchmark runs locally (see README).
+      OLLAMA_ENDPOINT: http://127.0.0.1:9
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: geosi-plugin
+          path: dist
+
+      - name: Run benchmark
+        run: |
+          python3 -m tests.agent_bench.run_bench --plugin "dist/geosi_plugin-*.zip" \
+            --json bench.json --min-score ${{ vars.GEOSI_BENCH_MIN_SCORE || '85' }}
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agent-bench
+          path: bench.json
+
   qgis-conda:
     name: "QGIS conda-forge (${{ matrix.os }})"
     needs: package

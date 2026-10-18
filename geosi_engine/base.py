@@ -158,6 +158,24 @@ def get_backend(name: str) -> Optional[BackendFn]:
 def clear_backends() -> None:
     """Clear all registered backends (used in tests)."""
     _BACKENDS.clear()
+    global _INSPECTOR
+    _INSPECTOR = None
+
+
+# Layer inspector: (Layer, max_rows) → text summary of the layer's contents.
+# The QGIS plugin registers one so the agent loop can read results back
+# (attribute rows, raster band statistics) without importing QGIS itself.
+InspectorFn = Callable[..., str]
+_INSPECTOR: Optional[InspectorFn] = None
+
+
+def register_inspector(fn: InspectorFn) -> None:
+    global _INSPECTOR
+    _INSPECTOR = fn
+
+
+def get_inspector() -> Optional[InspectorFn]:
+    return _INSPECTOR
 
 
 class BackendTool(GISTool):

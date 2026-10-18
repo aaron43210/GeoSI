@@ -145,6 +145,8 @@ class GeoSI:
             registry=self.registry,
             state=self.state,
         )
+        from geosi_engine.agent_loop import AgentLoop
+        self.loop = AgentLoop(self)
 
     def _init_knowledge_layer(self):
         """
@@ -207,14 +209,9 @@ class GeoSI:
         Returns:
             ExecutionResult with answer, reasoning, and output layers
         """
-        # 1. Parse the query
-        request = self.agent.parse(query, self.state)
-
-        # 2. Plan the workflow
-        plan = self.agent.plan(request, self.state)
-
-        # 3. Execute the plan
-        result = self.executor.run(plan)
+        # 1-3. Parse → plan → execute → verify, re-planning on problems
+        result = self.loop.run(query)
+        plan = self.loop.last_plan
 
         # 4. Track in conversation memory
         self.conversation.add_user_message(query)

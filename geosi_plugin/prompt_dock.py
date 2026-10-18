@@ -23,8 +23,10 @@ Architecture
 
 Thread Safety
 ─────────────
-    Query execution runs on a QThread to prevent GUI freezing.
-    Results are marshalled back to the main thread via Qt signals.
+    Queries run as a QgsTask (QGIS task manager) so the GUI never freezes.
+    The task's on_finished callback runs on the main thread, which is
+    where result layers are added to the project. Stop cancels the task;
+    the agent loop stops before its next attempt.
 
 QGIS Layer Sync
 ───────────────
@@ -69,7 +71,10 @@ class GeoSIDock:
         # ── Store references ───────────────────────────────────────────
         self.iface = iface
         self.engine = engine
-        self._worker = None
+        self._task = None
+        # Run queries as a QgsTask so QGIS stays responsive. Tests that need
+        # the result synchronously set this to False.
+        self.run_in_background = True
 
         # ── Create the dock widget ─────────────────────────────────────
         self.dock = QDockWidget("GeoSI — Geospatial AI", iface.mainWindow())
@@ -120,7 +125,7 @@ class GeoSIDock:
         input_layout.addWidget(self.input_box)
 
         # Send button
-        send_btn = QPushButton("Send")
+        send_btn = self.send_btn = QPushButton("Send")
         send_btn.setStyleSheet(
             "background-color: #4CAF50; color: white; "
             "border: none; border-radius: 4px; padding: 8px 16px; "
@@ -138,7 +143,26 @@ class GeoSIDock:
         clear_btn.clicked.connect(self._on_clear)
         input_layout.addWidget(clear_btn)
 
+        # Stop button (enabled while a request is running)
+        self.stop_btn = QPushButton("Stop")
+        self.stop_btn.setEnabled(False)
+        self.stop_btn.setStyleSheet(
+            "background-color: #b33; color: white; "
+            "border: none; border-radius: 4px; padding: 8px 12px;"
+        )
+        self.stop_btn.clicked.connect(self._on_stop)
+        input_layout.addWidget(self.stop_btn)
+
+        settings_btn = QPushButton("⚙")
+        settings_btn.setToolTip("GeoSI settings (models, Ollama URL, retries)")
+        settings_btn.setStyleSheet("border: none; padding: 8px 6px; font-size: 16px;")
+        settings_btn.clicked.connect(self._on_settings)
+        input_layout.addWidget(settings_btn)
+
         layout.addLayout(input_layout)
+        self.status_label = QLabel("")
+        self.status_label.setStyleSheet("color: #aaa; padding: 2px;")
+        layout.addWidget(self.status_label)
         self.dock.setWidget(central)
 
     # ── Qt delegation (so iface.addDockWidget works) ───────────────────
@@ -174,29 +198,98 @@ class GeoSIDock:
             self._search_tools(query[7:].strip())
             return
 
-        # ── Sync QGIS layers to engine state ───────────────────────────
+        if self._task is not None:
+            self._append_system("⏳ Still working on the previous request — press Stop to cancel it.")
+            return
+
+        # ── Sync QGIS layers to engine state (main thread) ─────────────
         self._sync_layers()
+        self._append_system("⏳ Planning and executing...")
 
-        # ── Execute the query ──────────────────────────────────────────
+        if not self.run_in_background:
+            self._show_result(*self._run_query(query))
+            return
+
+        # ── Run plan → execute → verify in a QGIS background task ──────
+        # The worker only touches files and the engine; result layers are
+        # added to the project back on the main thread in _on_task_done.
+        from qgis.core import QgsApplication, QgsTask
+
+        task = QgsTask.fromFunction(
+            f"GeoSI: {query[:50]}", self._task_body, query, on_finished=self._on_task_done
+        )
+        self._task = task
+        task.progressChanged.connect(self._on_progress)
+        self._set_busy(True)
+        QgsApplication.taskManager().addTask(task)
+
+    def _run_query(self, query, task=None):
+        """Run the engine; returns (result, error_text). Safe off the main thread."""
+        loop = getattr(self.engine, "loop", None)
+        if loop is not None:
+            loop.should_stop = task.isCanceled if task is not None else (lambda: False)
+            loop.on_progress = task.setProgress if task is not None else None
         try:
-            self._append_system("⏳ Planning and executing...")
-            result = self.engine.run(query)
-
-            if result.success:
-                self._append_assistant(result.answer)
-                if result.reasoning:
-                    self._append_system(
-                        f"<details><summary>📋 Reasoning</summary>"
-                        f"<pre>{result.reasoning}</pre></details>"
-                    )
-                # Auto-load output layers into QGIS
-                self._load_result_layers(result)
-            else:
-                error_msg = result.error or result.answer or "Unknown error"
-                self._append_error(error_msg)
-
+            return self.engine.run(query), None
         except Exception as e:
-            self._append_error(f"Error: {e}\n{traceback.format_exc()}")
+            return None, f"Error: {e}\n{traceback.format_exc()}"
+
+    def _task_body(self, task, query):
+        return self._run_query(query, task)
+
+    def _on_task_done(self, exception, value=None):
+        self._task = None
+        self._set_busy(False)
+        if exception is not None:
+            self._append_error(f"Error: {exception}")
+            return
+        if value is None:
+            self._append_system("⏹ Stopped.")
+            return
+        self._show_result(*value)
+
+    def _on_progress(self, pct):
+        self.status_label.setText(f"Working… {pct:.0f}%")
+
+    def _on_stop(self):
+        if self._task is not None:
+            self._task.cancel()
+            self.status_label.setText("Stopping after the current step…")
+
+    def _on_settings(self):
+        from .settings import SettingsDialog, apply
+
+        dlg = SettingsDialog(self.dock)
+        if dlg.exec_():
+            apply(self.engine, dlg.values)
+            model = self.engine.agent._ollama_model
+            self._append_system(f"⚙ Settings saved — planning model: <b>{model}</b>")
+
+    def _set_busy(self, busy):
+        self.stop_btn.setEnabled(busy)
+        self.send_btn.setEnabled(not busy)
+        self.status_label.setText("Working…" if busy else "")
+
+    def _show_result(self, result, error):
+        if error:
+            self._append_error(error)
+            return
+        if result.success:
+            self._append_assistant(result.answer)
+            if result.reasoning:
+                self._append_system(
+                    f"<details><summary>📋 Reasoning</summary>"
+                    f"<pre>{result.reasoning}</pre></details>"
+                )
+            # Auto-load output layers into QGIS (main thread)
+            self._load_result_layers(result)
+        else:
+            self._append_error(result.answer or result.error or "Unknown error")
+            if result.reasoning:
+                self._append_system(
+                    f"<details><summary>📋 What was tried</summary>"
+                    f"<pre>{result.reasoning}</pre></details>"
+                )
 
     def _on_clear(self):
         """Clear the chat history."""
@@ -252,13 +345,24 @@ class GeoSIDock:
                         geom_type = "Raster"
                         feature_count = 1
 
+                    fields, field_types, field_values = [], {}, {}
+                    if layer_type == "vector":
+                        try:
+                            from .qgis_bridge import field_metadata
+                            fields = [f.name() for f in qgs_layer.fields()]
+                            field_types, field_values = field_metadata(qgs_layer)
+                        except Exception:
+                            pass
                     engine_layer = Layer(
                         name=name,
                         geometry_type=geom_type,
                         feature_count=feature_count,
                         crs=crs,
-                        filepath=qgs_layer.source(),
+                        filepath=qgs_layer.source().split("|")[0],
                         layer_type=layer_type,
+                        fields=fields,
+                        field_types=field_types,
+                        field_values=field_values,
                     )
                     # Store the QgsMapLayer reference for fast-path operations
                     engine_layer.features = qgs_layer

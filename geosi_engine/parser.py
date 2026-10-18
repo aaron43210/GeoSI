@@ -167,7 +167,7 @@ _OPERATION_MAP: Dict[str, List[str]] = {
     "ndwi": ["ndwi", "water index"],
     "buffer": ["buffer", "grow by", "ring around"],
     "intersect": ["intersect", "overlap", "common area", "inside both"],
-    "union": ["union", "merge", "combine"],
+    "union": ["union"],
     "clip": ["clip", "cut to", "crop", "extract", "subset", "shapefile from",
              "region from", "area from", "need", "get"],
     "difference": ["difference", "erase", "subtract"],
@@ -203,7 +203,7 @@ _OPERATION_MAP: Dict[str, List[str]] = {
 # ---------------------------------------------------------------------------
 
 # Bump when parsing rules change so stale cached parses are not reused.
-_CACHE_VERSION = 2
+_CACHE_VERSION = 3
 
 
 def _default_cache_path() -> Path:
