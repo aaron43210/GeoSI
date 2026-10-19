@@ -70,8 +70,9 @@ class GeoSIDock:
         from qgis.PyQt.QtWidgets import (
             QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
             QTextEdit, QLineEdit, QPushButton, QLabel,
+            QCompleter,
         )
-        from qgis.PyQt.QtCore import Qt
+        from qgis.PyQt.QtCore import Qt, QStringListModel
 
         # ── Store references ───────────────────────────────────────────
         self.iface = iface
@@ -84,6 +85,7 @@ class GeoSIDock:
                                                      factory=lambda sid: engine))
         self.supervisor = supervisor
         self._task = None
+        self._completer_model = QStringListModel()
         # Run queries as a QgsTask so QGIS stays responsive. Tests that need
         # the result synchronously set this to False.
         self.run_in_background = True
@@ -136,16 +138,60 @@ class GeoSIDock:
         )
         layout.addWidget(self.chat_display)
 
+        # ── Context action buttons (above input) ───────────────────────
+        ctx_layout = QHBoxLayout()
+        ctx_layout.setSpacing(4)
+
+        def _ctx_btn(label, tooltip, handler):
+            b = QPushButton(label)
+            b.setToolTip(tooltip)
+            b.setStyleSheet(
+                "background-color: #333; color: #bbb; border: 1px solid #555; "
+                "border-radius: 3px; padding: 3px 8px; font-size: 11px;"
+            )
+            b.clicked.connect(handler)
+            return b
+
+        ctx_layout.addWidget(_ctx_btn(
+            "📎 @layer", "Insert @layername reference into your query",
+            self._on_insert_layer_ref,
+        ))
+        ctx_layout.addWidget(_ctx_btn(
+            "🗺 Current View", "Append current map canvas extent to query",
+            self._on_append_extent,
+        ))
+        ctx_layout.addWidget(_ctx_btn(
+            "✂ Selected", "Append selected-features context to query",
+            self._on_append_selected,
+        ))
+        ctx_layout.addWidget(_ctx_btn(
+            "↩ Undo", "Undo last GeoSI operation (restore checkpoint)",
+            self._on_undo,
+        ))
+        ctx_layout.addStretch()
+        layout.addLayout(ctx_layout)
+
         # ── Input area ─────────────────────────────────────────────────
         input_layout = QHBoxLayout()
         self.input_box = QLineEdit()
-        self.input_box.setPlaceholderText("Ask GeoSI anything about your spatial data...")
+        self.input_box.setPlaceholderText(
+            "Ask GeoSI anything… type @ to reference a layer by name"
+        )
         self.input_box.setStyleSheet(
             "background-color: #2d2d2d; color: #fff; "
             "border: 1px solid #555; border-radius: 4px; "
             "padding: 8px; font-size: 14px;"
         )
         self.input_box.returnPressed.connect(self._on_submit)
+        self.input_box.textChanged.connect(self._on_input_changed)
+
+        # @-layer autocomplete
+        self._completer = QCompleter(self._completer_model, self.input_box)
+        self._completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self._completer.activated.connect(self._on_completer_activated)
+        self.input_box.setCompleter(None)  # manual control; we set it on '@'
+
         input_layout.addWidget(self.input_box)
 
         # Send button
@@ -187,6 +233,12 @@ class GeoSIDock:
         self.status_label = QLabel("")
         self.status_label.setStyleSheet("color: #aaa; padding: 2px;")
         layout.addWidget(self.status_label)
+
+        # ── Drag-and-drop GIS files onto the dock ──────────────────────
+        central.setAcceptDrops(True)
+        central.dragEnterEvent = self._drag_enter
+        central.dropEvent = self._drop_event
+
         self.dock.setWidget(central)
 
     # ── Qt delegation (so iface.addDockWidget works) ───────────────────
@@ -367,6 +419,158 @@ class GeoSIDock:
         approved = run() == QMessageBox.StandardButton.Yes
         self._append_system("✅ Approved — continuing." if approved else "✋ Rejected.")
         self._start("", resume=(action_id, approved))
+
+    # ── @-layer autocomplete ───────────────────────────────────────────
+
+    def _on_input_changed(self, text: str):
+        """Show layer-name autocomplete when user types '@'."""
+        cursor = self.input_box.cursorPosition()
+        fragment = text[:cursor]
+        at_pos = fragment.rfind("@")
+        if at_pos == -1:
+            self.input_box.setCompleter(None)
+            return
+        # The word after @ (may be partial)
+        partial = fragment[at_pos + 1:]
+        layers = self.engine.state.list_layers()
+        matches = [f"@{n}" for n in layers if n.lower().startswith(partial.lower())]
+        if not matches:
+            self.input_box.setCompleter(None)
+            return
+        self._completer_model.setStringList(matches)
+        self.input_box.setCompleter(self._completer)
+        self._completer.setCompletionPrefix(f"@{partial}")
+        self._completer.complete()
+
+    def _on_completer_activated(self, completion: str):
+        """Replace the @partial token in the input box with the chosen layer name."""
+        text = self.input_box.text()
+        cursor = self.input_box.cursorPosition()
+        at_pos = text.rfind("@", 0, cursor)
+        if at_pos == -1:
+            return
+        new_text = text[:at_pos] + completion + text[cursor:]
+        self.input_box.setText(new_text)
+        self.input_box.setCursorPosition(at_pos + len(completion))
+        self.input_box.setCompleter(None)
+
+    # ── Context button handlers ────────────────────────────────────────
+
+    def _on_insert_layer_ref(self):
+        """Insert '@' into the input box and show the layer picker."""
+        self.input_box.setFocus()
+        pos = self.input_box.cursorPosition()
+        text = self.input_box.text()
+        self.input_box.setText(text[:pos] + "@" + text[pos:])
+        self.input_box.setCursorPosition(pos + 1)
+        # Trigger autocomplete immediately
+        self._on_input_changed(self.input_box.text())
+
+    def _on_append_extent(self):
+        """Append the current map canvas extent to the query."""
+        try:
+            from qgis.utils import iface as _iface
+            canvas = _iface.mapCanvas() if _iface else None
+            if canvas is None:
+                canvas = self.iface.mapCanvas()
+            ext = canvas.extent()
+            snippet = (
+                f" within extent ({ext.xMinimum():.4f}, {ext.yMinimum():.4f}, "
+                f"{ext.xMaximum():.4f}, {ext.yMaximum():.4f})"
+            )
+        except Exception:
+            snippet = " within current map extent"
+        self.input_box.setText(self.input_box.text().rstrip() + snippet)
+        self.input_box.setFocus()
+
+    def _on_append_selected(self):
+        """Append selected-feature context from the active layer."""
+        try:
+            from qgis.core import QgsProject
+            layer = None
+            try:
+                from qgis.utils import iface as _iface
+                layer = (_iface or self.iface).activeLayer()
+            except Exception:
+                pass
+            if layer is None:
+                self._append_system("No active layer — click a layer in the Layers panel first.")
+                return
+            count = layer.selectedFeatureCount() if hasattr(layer, "selectedFeatureCount") else 0
+            if count == 0:
+                snippet = f" for all features in @{layer.name()}"
+            else:
+                snippet = f" for {count} selected features in @{layer.name()}"
+        except Exception:
+            snippet = " for selected features"
+        self.input_box.setText(self.input_box.text().rstrip() + snippet)
+        self.input_box.setFocus()
+
+    def _on_undo(self):
+        """Undo the last GeoSI operation by rolling back the most recent checkpoint."""
+        loop = getattr(self.engine, "loop", None)
+        if loop is None:
+            self._append_system("⚠ No engine loop available for undo.")
+            return
+        undo_fn = getattr(loop, "undo_last", None)
+        if undo_fn is None:
+            self._append_system("⚠ Undo not available in this engine version.")
+            return
+        try:
+            ok, msg = undo_fn()
+            if ok:
+                self._append_system(f"↩ Undone — {msg or 'last operation reversed.'}")
+            else:
+                self._append_system(f"↩ Nothing to undo — {msg or 'no checkpoint found.'}")
+        except Exception as exc:
+            self._append_error(f"Undo failed: {exc}")
+
+    # ── Drag-and-drop ──────────────────────────────────────────────────
+
+    _GIS_EXTS = frozenset({
+        ".gpkg", ".shp", ".geojson", ".json", ".tif", ".tiff",
+        ".fgb", ".kml", ".kmz", ".csv", ".zip",
+    })
+
+    def _drag_enter(self, event):
+        from qgis.PyQt.QtCore import Qt
+        if event.mimeData().hasUrls():
+            paths = [u.toLocalFile() for u in event.mimeData().urls()]
+            if any(os.path.splitext(p)[1].lower() in self._GIS_EXTS for p in paths):
+                event.acceptProposedAction()
+                return
+        event.ignore()
+
+    def _drop_event(self, event):
+        paths = [u.toLocalFile() for u in event.mimeData().urls()]
+        for path in paths:
+            ext = os.path.splitext(path)[1].lower()
+            if ext not in self._GIS_EXTS:
+                continue
+            self._load_dropped_file(path)
+        event.acceptProposedAction()
+
+    def _load_dropped_file(self, path: str):
+        """Load a dropped GIS file into QGIS and the engine state."""
+        try:
+            from qgis.core import QgsProject, QgsVectorLayer, QgsRasterLayer
+            name = os.path.splitext(os.path.basename(path))[0]
+            ext = os.path.splitext(path)[1].lower()
+            if ext in (".tif", ".tiff"):
+                layer = QgsRasterLayer(path, name)
+            else:
+                layer = QgsVectorLayer(path, name, "ogr")
+            if layer.isValid():
+                QgsProject.instance().addMapLayer(layer)
+                self._sync_layers()
+                self._append_system(
+                    f"📂 Dropped layer loaded: <b>{html.escape(name)}</b> "
+                    f"<span style='color:#666;'>({os.path.basename(path)})</span>"
+                )
+            else:
+                self._append_error(f"Could not load dropped file: {os.path.basename(path)}")
+        except Exception as exc:
+            self._append_error(f"Drop load failed: {exc}")
 
     def _on_clear(self):
         """Clear the chat history."""
@@ -593,11 +797,11 @@ class GeoSIDock:
     def _ollama_online(agent) -> bool:
         """Return True if the local Ollama endpoint is reachable right now."""
         try:
-            import requests
-            return requests.get(
-                getattr(agent, "_ollama_endpoint", "http://localhost:11434") + "/api/tags",
-                timeout=1.0,
-            ).ok
+            from urllib.request import urlopen
+            from urllib.error import URLError
+            url = getattr(agent, "_ollama_endpoint", "http://localhost:11434") + "/api/tags"
+            with urlopen(url, timeout=1.0) as resp:
+                return resp.status == 200
         except Exception:
             return False
 

@@ -168,6 +168,16 @@ class CodeGenerationAgent:
                 "Generated code may require additional dependencies not listed in imports.",
             ]
 
+            # ASTGuard static analysis (non-blocking: adds to warnings only)
+            try:
+                from geosi_engine.security import ASTGuard
+                guard_ok, violations = ASTGuard.check(code)
+                if not guard_ok:
+                    warnings.append("🛡 ASTGuard flagged potential issues:")
+                    warnings.extend(f"   • {v}" for v in violations)
+            except Exception:
+                pass
+
             result = GeneratedCode(
                 success=True,
                 target_language=lang,

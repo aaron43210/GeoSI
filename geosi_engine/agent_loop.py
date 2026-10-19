@@ -106,6 +106,10 @@ class AgentLoop:
         # on_progress(percent) reports progress.
         self.should_stop = lambda: False
         self.on_progress = None
+        # Checkpoint manager (lazy-init; None outside QGIS)
+        self._checkpoints: Optional[Any] = None
+        # Last checkpoint id for undo support
+        self.last_checkpoint_id: Optional[str] = None
 
     # ── team ──────────────────────────────────────────────────────────
 
@@ -121,6 +125,29 @@ class AgentLoop:
         self._supervisor = supervisor
         if self._team is not None:
             self._team.attach_supervisor(supervisor)
+
+    def checkpoint_manager(self):
+        """Lazy-load CheckpointManager (QGIS-optional)."""
+        if self._checkpoints is None:
+            try:
+                from geosi_engine.checkpoints import CheckpointManager
+                self._checkpoints = CheckpointManager()
+            except Exception:
+                self._checkpoints = None
+        return self._checkpoints
+
+    def undo_last(self) -> bool:
+        """Rollback to the checkpoint taken before the last execution."""
+        if not self.last_checkpoint_id:
+            return False
+        mgr = self.checkpoint_manager()
+        if mgr is None:
+            return False
+        ok = mgr.rollback(self.last_checkpoint_id)
+        if ok:
+            mgr.discard(self.last_checkpoint_id)
+            self.last_checkpoint_id = None
+        return ok
 
     # ── public ────────────────────────────────────────────────────────
 
@@ -259,6 +286,11 @@ class AgentLoop:
             problem = self._check_plan(plan)
             if problem is None:
                 suggestions = self._suggestions(plan)
+                # Snapshot before execution so the user can undo
+                mgr = self.checkpoint_manager()
+                if mgr is not None and attempt_no == 1:
+                    cp = mgr.create_snapshot(query=query)
+                    self.last_checkpoint_id = cp.checkpoint_id
                 result = self.engine.executor.run(plan, step_runner=team.gis.execute_step)
                 if result.approval_pending:
                     self.paused[result.approval_pending] = PausedRun(
