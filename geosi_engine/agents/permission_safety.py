@@ -29,6 +29,7 @@ Responsibilities
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -40,6 +41,14 @@ from geosi_engine.models import ApprovalResult, PermissionDecision, ToolStep
 
 logger = logging.getLogger("geosi_engine.agents.permission_safety")
 
+
+# Requests that would destroy data are refused before planning
+# ("remove duplicates" / "drop null geometries" create new layers and are fine).
+_DESTRUCTIVE_INTENT_RE = re.compile(
+    r"\b(delete|drop|remove|erase|wipe|truncate|overwrite)\b"
+    r"(?!\s+(?:the\s+)?(?:duplicate|duplicates|null|empty|holes?|small|slivers?|vertices))",
+    re.IGNORECASE,
+)
 
 # ---------------------------------------------------------------------------
 # Pending approval registry (in-memory)
@@ -56,6 +65,14 @@ class _PendingApproval:
     )
     resolved: bool = False
     approved: Optional[bool] = None
+    consumed: bool = False  # an approved action is used by exactly one execution
+
+
+def _step_signature(tool_name: str, parameters: dict[str, Any]) -> str:
+    """Stable identity of a step for matching approvals to executions."""
+    import json
+
+    return f"{tool_name}|{json.dumps(parameters, sort_keys=True, default=str)}"
 
 
 class _ApprovalRegistry:
@@ -87,6 +104,30 @@ class _ApprovalRegistry:
             if p is None or not p.resolved:
                 return None
             return p.approved
+
+    def consume(self, session_id: str, signature: str) -> Optional[str]:
+        """
+        Use up an approved, not-yet-used action for this exact step in this
+        session. Returns its action_id, or None when nothing matches.
+        """
+        with self._lock:
+            for p in self._pending.values():
+                if (p.resolved and p.approved and not p.consumed
+                        and p.session_id == session_id
+                        and p.step_data.get("signature") == signature):
+                    p.consumed = True
+                    return p.action_id
+        return None
+
+    def purge(self, max_age_seconds: float = 24 * 3600) -> int:
+        """Drop approvals older than *max_age_seconds* (bounded memory)."""
+        cutoff = datetime.now(timezone.utc).timestamp() - max_age_seconds
+        with self._lock:
+            old = [k for k, p in self._pending.items()
+                   if datetime.fromisoformat(p.created_at).timestamp() < cutoff]
+            for k in old:
+                del self._pending[k]
+            return len(old)
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +268,7 @@ class PermissionSafetyAgent:
                 "risk_level": step.risk_level,
                 "description": step.description,
                 "context": context or {},
+                "signature": _step_signature(step.tool_name, step.parameters),
             },
             session_id=session_id,
             risk_level=step.risk_level,
@@ -264,9 +306,39 @@ class PermissionSafetyAgent:
         """
         return self._APPROVALS.is_approved(action_id)
 
+    def consume_approval(self, step: ToolStep, session_id: str) -> Optional[str]:
+        """
+        Return the action_id of a human approval granted for exactly this
+        step in this session (and mark it used), or None.
+        """
+        self._APPROVALS.purge()
+        action_id = self._APPROVALS.consume(session_id, _step_signature(step.tool_name, step.parameters))
+        if action_id:
+            logger.info("Using approval %s for tool=%s", action_id, step.tool_name)
+        return action_id
+
     # ------------------------------------------------------------------
     # 3. Guardrail scanning
     # ------------------------------------------------------------------
+
+    def screen_request(self, query: str) -> Optional[str]:
+        """
+        Check a user request before any planning happens.
+
+        Returns a refusal message for requests that ask to destroy data or
+        that carry prompt-injection patterns; None when the request may
+        proceed.
+        """
+        if _DESTRUCTIVE_INTENT_RE.search(query or ""):
+            return ("⚠ GeoSI does not delete or overwrite data. If you meant to create a "
+                    "filtered copy, ask e.g. \"extract hospitals where beds > 100\".")
+        result = scan_text(query or "")
+        if not result.is_clean:
+            logger.warning("Request refused by guardrails: %s", result.flags)
+            return ("⚠ This request contains instructions aimed at the assistant itself "
+                    f"({', '.join(result.flags[:3])}), so it was not run. Please rephrase it "
+                    "as a GIS task.")
+        return None
 
     def scan_rag_context(self, context_obj: Any) -> Any:
         """

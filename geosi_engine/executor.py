@@ -111,16 +111,23 @@ class ExecutionEngine:
                 logger.debug("save_result failed for '%s': %s", step.output_name, exc)
         return tool_result
 
-    def run(self, plan: ExecutionPlan) -> ExecutionResult:
+    def run(self, plan: ExecutionPlan, step_runner=None) -> ExecutionResult:
         """
         Execute all steps in the plan and return the final result.
 
         Args:
             plan: The ExecutionPlan with ordered ToolSteps.
+            step_runner: Optional ``(step, state) -> ToolResult`` used instead
+                of calling the registry directly — the agent pipeline passes
+                ``GISAgent.execute_step`` so every step goes through the
+                permission gate. It may raise an approval-pending error
+                (has ``action_id``) to pause, or ``PermissionDeniedError``.
 
         Returns:
             ExecutionResult with answer, reasoning, logs, and outputs.
         """
+        approval_pending = None
+        denied = False
         # Mark start time for total execution duration
         total_start = time.time()
         # Track execution logs for each step
@@ -183,10 +190,29 @@ class ExecutionEngine:
                             new_list.append(item)
                     resolved_params[key] = new_list
 
-            # Call the tool through the registry with resolved parameters
-            tool_result = self.registry.execute_tool(
-                step.tool_name, **resolved_params
-            )
+            # Call the tool (through the permission gate when a runner is set)
+            try:
+                if step_runner is not None:
+                    tool_result = step_runner(step, self.state)
+                else:
+                    tool_result = self.registry.execute_tool(
+                        step.tool_name, **resolved_params
+                    )
+            except Exception as exc:
+                if getattr(exc, "action_id", None):
+                    # Paused: a human must approve this step first
+                    approval_pending = exc.action_id
+                    logs.append(StepLog(
+                        step_id=step.step_id, tool_name=step.tool_name,
+                        status=ExecutionStatus.PENDING_APPROVAL,
+                        duration_ms=(time.time() - step_start) * 1000,
+                        error_message=str(exc),
+                    ))
+                    all_success = False
+                    break
+                denied = type(exc).__name__ == "PermissionDeniedError"
+                tool_result = ToolResult(success=False, error=str(exc),
+                                         message="Refused by policy" if denied else "Step raised an error")
 
             # Compute execution time in milliseconds
             elapsed = (time.time() - step_start) * 1000
@@ -224,6 +250,8 @@ class ExecutionEngine:
                 logger.warning(
                     f"  ⚠ Step {step.step_id} failed: {tool_result.error}"
                 )
+                if denied:
+                    break  # a policy refusal ends the plan
                 # Continue with remaining steps (partial execution)
 
         # Compute total execution time
@@ -232,6 +260,11 @@ class ExecutionEngine:
         # Generate human-readable answer and step-by-step reasoning
         answer = self._build_answer(plan, logs, last_result)
         reasoning = self._build_reasoning(plan, logs)
+        if approval_pending:
+            answer = (f"⏸ Approval required before continuing: approve or reject action "
+                      f"`{approval_pending}` to proceed.")
+        elif denied:
+            answer = f"⛔ Stopped by policy: {last_result.error if last_result else 'denied'}"
 
         # Extract final output layers that are ready to be returned to the user
         result_layers = {}
@@ -262,6 +295,9 @@ class ExecutionEngine:
             results=result_layers,
             logs=logs,
             total_duration_ms=total_elapsed,
+            approval_pending=approval_pending,
+            denied=denied,
+            plan_source=getattr(plan, "plan_source", ""),
         )
 
     # ── Answer generation ─────────────────────────────────────────────

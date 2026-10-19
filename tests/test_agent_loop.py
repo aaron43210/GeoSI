@@ -47,7 +47,7 @@ class FakeExecutor:
     def __init__(self, results):
         self.results = list(results)
 
-    def run(self, plan):
+    def run(self, plan, step_runner=None):
         if not plan.steps:
             return ExecutionResult(success=False, answer=plan.reasoning or "nothing to do")
         return self.results.pop(0)

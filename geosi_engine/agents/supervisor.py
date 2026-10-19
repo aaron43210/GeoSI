@@ -2,28 +2,31 @@
 """
 GeoSI v2 — Supervisor Agent
 ════════════════════════════════════════════════════════════════════
-The single entry-point for ALL four client surfaces:
-  • QGIS plugin dock
-  • Web UI
-  • REST API (geosi_server/)
-  • MCP server (geosi_mcp/)
+The single entry point for every client surface:
+  • QGIS plugin dock      (geosi_plugin/)
+  • REST API + web UI     (geosi_server/)
+  • MCP server            (geosi_mcp/)
 
-NO surface may call a domain agent (Planning, GIS, RS, ML, Geology)
-directly — everything routes through ``SupervisorAgent.handle()``.
+No surface calls planning or execution directly — everything goes through
+``SupervisorAgent.handle()`` (and ``resume()`` after an approval).
 
-Key responsibilities (PRD §4, FR-6)
-────────────────────────────────────
-1. Session management — delegates to ``SessionPool``.
-2. LLM cascade with per-request timeout budget (Ollama → Gemini →
-   Claude → rule-based fallback).
-3. Per-provider circuit breaker: after N consecutive failures within
-   a time window, the provider is skipped for the rest of the session.
-4. Routes requests to the correct downstream agent sequence:
-   Planning → Validation → Permission & Safety → GIS / RS / ML / Geology.
-5. Orchestrates the audit log and OTel spans across the full pipeline.
+Responsibilities
+────────────────
+1. Sessions — one isolated engine per session id (``SessionPool``).
+2. The pipeline — the session's ``AgentLoop`` drives the agent team:
+   Permission & Safety → Planning → Reflection critic → Validation →
+   Workflow Optimization → GIS Agent (permission gate) → Verification →
+   Reflection feedback / re-plan → Report Generation.
+3. LLM providers — process-wide circuit breakers per provider (hosted API,
+   Ollama, Gemini, Anthropic): after N failures in a window a provider is
+   skipped until its reset period passes.
+4. Human-in-the-loop — a step that needs approval pauses the run and
+   returns an ``approval_pending`` action id; ``resume()`` continues it.
+5. Telemetry — an OpenTelemetry span per request when configured.
 """
 from __future__ import annotations
 
+import dataclasses
 import logging
 import os
 import time
@@ -125,6 +128,20 @@ class CircuitBreaker:
             }
 
 
+# Process-wide breakers: every SupervisorAgent in this process shares them, so
+# a provider that keeps failing is skipped for all sessions until it recovers.
+_BREAKERS: dict[str, CircuitBreaker] = {}
+_BREAKERS_LOCK = threading.Lock()
+_PROVIDERS = ("api", "ollama", "gemini", "anthropic")
+
+
+def _breaker(provider: str) -> CircuitBreaker:
+    with _BREAKERS_LOCK:
+        if provider not in _BREAKERS:
+            _BREAKERS[provider] = CircuitBreaker(provider=provider)
+        return _BREAKERS[provider]
+
+
 # ---------------------------------------------------------------------------
 # Request / Response types
 # ---------------------------------------------------------------------------
@@ -141,13 +158,17 @@ class SupervisorRequest:
 @dataclass
 class SupervisorResponse:
     success: bool
-    result: Any = None
+    result: Any = None                      # the answer text
     error: Optional[str] = None
     plan_json: Optional[dict[str, Any]] = None
     execution_summary: Optional[dict[str, Any]] = None
-    approval_pending: Optional[str] = None
+    approval_pending: Optional[str] = None  # action_id when paused for approval
     session_id: str = ""
     latency_ms: float = 0.0
+    execution_result: Any = None            # full ExecutionResult (output layers, logs)
+    report: str = ""                        # Markdown execution report
+    warnings: list[str] = field(default_factory=list)
+    plan_source: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -156,43 +177,41 @@ class SupervisorResponse:
 
 class SupervisorAgent:
     """
-    Single entry-point for all GeoSI client surfaces.
+    Single entry point for all GeoSI client surfaces (QGIS plugin, REST,
+    MCP, web UI).
+
+    * Sessions: each ``session_id`` gets its own engine from the pool
+      (isolated layers, results, approvals).
+    * Pipeline: the session's ``AgentLoop`` runs the agent team — screen,
+      plan, critique, validate, execute through the permission gate,
+      verify, reflect and re-plan, answer and report.
+    * LLM providers: guarded by process-wide circuit breakers (``api``,
+      ``ollama``, ``gemini``, ``anthropic``).
+    * Approvals: a step that needs human approval pauses the run;
+      ``resume(action_id, approved)`` continues it in the right session.
+    * Telemetry: one span per request (OpenTelemetry when configured).
 
     Parameters
     ----------
     pool:
-        ``SessionPool`` instance managed by the server/plugin layer.
+        ``SessionPool`` (or any object with ``get_or_create(session_id)``).
     """
 
     def __init__(self, pool: Any) -> None:
         self._pool = pool
-        self._circuit_breakers: dict[str, CircuitBreaker] = {
-            "ollama": CircuitBreaker(provider="ollama"),
-            "gemini": CircuitBreaker(provider="gemini"),
-            "claude": CircuitBreaker(provider="claude"),
-        }
+        self._circuit_breakers = self.provider_breakers()
+
+    @staticmethod
+    def provider_breakers() -> dict[str, CircuitBreaker]:
+        return {name: _breaker(name) for name in _PROVIDERS}
 
     # ------------------------------------------------------------------
-    # Public handle() — the ONLY authorised entry point
+    # Public API
     # ------------------------------------------------------------------
 
     def handle(self, request: SupervisorRequest) -> SupervisorResponse:
-        """
-        Process a user request end-to-end.
-
-        Pipeline (Phase 1):
-            1. Retrieve/create session-scoped engine.
-            2. Invoke Planning Agent with LLM cascade + budget.
-            3. Invoke Validation Agent.
-            4. Invoke Permission & Safety Agent.
-            5. Dispatch to GIS Agent (other domain agents in later phases).
-            6. Return result.
-
-        All downstream agent calls are guarded by the total budget.
-        Every hand-off is wrapped in an OTel span (FR-7.3).
-        """
+        """Process one request end-to-end in its session."""
         start = time.monotonic()
-
         with start_span(
             "supervisor.handle",
             **{"session.id": request.session_id, "surface": request.surface}
@@ -200,39 +219,57 @@ class SupervisorAgent:
             try:
                 root_span.set_attribute("query.length", len(request.query))
                 engine = self._pool.get_or_create(request.session_id)
-                pipe = self._run_pipeline(request, engine)
-                latency = (time.monotonic() - start) * 1000
-                root_span.set_attribute("latency_ms", latency)
-                return SupervisorResponse(
-                    success=True,
-                    result=pipe.get("answer"),
-                    plan_json=pipe.get("plan_json"),
-                    execution_summary=pipe.get("execution_summary"),
-                    approval_pending=pipe.get("approval_pending"),
-                    session_id=request.session_id,
-                    latency_ms=latency,
-                )
+                engine.loop.attach_supervisor(self)
+                result = engine.run(request.query)
+                response = self._response(engine, result, request.session_id, start)
+                root_span.set_attribute("latency_ms", response.latency_ms)
+                root_span.set_attribute("success", response.success)
+                return response
             except Exception as exc:
-                latency = (time.monotonic() - start) * 1000
-                logger.error(
-                    "Supervisor pipeline failed for session %s: %s",
-                    request.session_id,
-                    exc,
-                    exc_info=True,
-                )
+                logger.error("Supervisor failed for session %s: %s", request.session_id, exc,
+                             exc_info=True)
                 return SupervisorResponse(
-                    success=False,
-                    error=str(exc),
-                    session_id=request.session_id,
-                    latency_ms=latency,
+                    success=False, error=str(exc), session_id=request.session_id,
+                    latency_ms=(time.monotonic() - start) * 1000,
                 )
+
+    def resume(self, action_id: str, approved: bool,
+               session_id: Optional[str] = None) -> SupervisorResponse:
+        """
+        Resolve a pending approval and continue the paused run.
+
+        The session comes from the approval record unless given.
+        """
+        from geosi_engine.agents.permission_safety import PermissionSafetyAgent
+
+        start = time.monotonic()
+        pending = PermissionSafetyAgent._APPROVALS.get(action_id)
+        if pending is None:
+            return SupervisorResponse(success=False, error=f"No pending approval {action_id!r}.",
+                                      session_id=session_id or "")
+        session_id = session_id or pending.session_id
+        if pending.session_id != session_id:
+            return SupervisorResponse(success=False, session_id=session_id,
+                                      error="This approval belongs to a different session.")
+        PermissionSafetyAgent._APPROVALS.resolve(action_id, approved)
+        with start_span("supervisor.resume", **{"session.id": session_id, "approved": approved}):
+            try:
+                engine = self._pool.get_or_create(session_id)
+                engine.loop.attach_supervisor(self)
+                result = engine.resume(action_id, approved)
+                return self._response(engine, result, session_id, start)
+            except Exception as exc:
+                logger.error("Resume failed for %s: %s", action_id, exc, exc_info=True)
+                return SupervisorResponse(success=False, error=str(exc), session_id=session_id,
+                                          latency_ms=(time.monotonic() - start) * 1000)
 
     def circuit_breaker_states(self) -> list[dict[str, Any]]:
         """Return all circuit breaker statuses for the /health endpoint."""
         return [cb.status() for cb in self._circuit_breakers.values()]
 
     # ------------------------------------------------------------------
-    # LLM cascade with budget + circuit breaker
+    # LLM cascade with budget + circuit breaker (utility for callers that
+    # orchestrate their own provider calls)
     # ------------------------------------------------------------------
 
     def run_with_budget(
@@ -243,403 +280,106 @@ class SupervisorAgent:
         per_provider_timeout: float = _PROVIDER_TIMEOUT_S,
     ) -> Any:
         """
-        Try each LLM provider in order, respecting the total budget.
-
-        Parameters
-        ----------
-        providers:
-            Ordered list of provider names to try.
-        fn:
-            Callable that accepts a provider name and returns a result.
-            May raise any exception on failure.
-        budget_seconds:
-            Total wall-clock time across all provider attempts.
-        per_provider_timeout:
-            Time limit per individual provider attempt.
-
-        Returns
-        -------
-        Any
-            Result from the first successful provider call.
-
-        Raises
-        ------
-        RuntimeError
-            If all providers fail or the budget is exhausted.
+        Try each provider in order within a total time budget; each call is
+        bounded by *per_provider_timeout* and its circuit breaker.
+        Raises ``RuntimeError`` if all providers fail or the budget runs out.
         """
+        import concurrent.futures
+
         deadline = time.monotonic() + budget_seconds
         last_error: Optional[Exception] = None
-
         for provider in providers:
-            cb = self._circuit_breakers.get(provider)
-            if cb and not cb.is_available():
+            cb = self._circuit_breakers.get(provider) or _breaker(provider)
+            if not cb.is_available():
                 logger.debug("Skipping provider '%s' — circuit breaker OPEN", provider)
                 continue
-
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise RuntimeError(
-                    f"LLM budget exhausted after trying providers: {providers}"
-                )
-
-            effective_timeout = min(per_provider_timeout, remaining)
-
-            import concurrent.futures
-
-            # NOTE: deliberately NOT using `with ThreadPoolExecutor(...)` here.
-            # The context-manager exit calls shutdown(wait=True), which blocks
-            # until the submitted call returns — so a hung provider would stall
-            # the whole cascade for its full generation time, defeating both the
-            # per-provider timeout and the total budget. Instead we shut the
-            # executor down with wait=False so a timed-out provider is abandoned
-            # and we move on to the next one immediately.
+                raise RuntimeError(f"LLM budget exhausted after trying providers: {providers}")
+            # Not a ``with`` block: shutdown(wait=True) would block on a hung
+            # provider and defeat the timeout. Abandon it instead.
             executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
             future = executor.submit(fn, provider)
             try:
-                result = future.result(timeout=effective_timeout)
-                if cb:
-                    cb.record_success()
+                result = future.result(timeout=min(per_provider_timeout, remaining))
+                cb.record_success()
                 return result
             except concurrent.futures.TimeoutError:
                 future.cancel()
-                logger.warning(
-                    "Provider '%s' timed out after %.1fs", provider, effective_timeout
-                )
-                if cb:
-                    cb.record_failure()
+                logger.warning("Provider '%s' timed out", provider)
+                cb.record_failure()
                 last_error = TimeoutError(f"{provider} timed out")
             except Exception as exc:
                 logger.warning("Provider '%s' failed: %s", provider, exc)
-                if cb:
-                    cb.record_failure()
+                cb.record_failure()
                 last_error = exc
             finally:
-                # Release the worker without blocking on an in-flight call.
                 executor.shutdown(wait=False, cancel_futures=True)
-
-        raise RuntimeError(
-            f"All providers failed. Last error: {last_error}"
-        ) from last_error
+        raise RuntimeError(f"All providers failed. Last error: {last_error}") from last_error
 
     # ------------------------------------------------------------------
-    # Internal pipeline
+    # Internal
     # ------------------------------------------------------------------
 
-    def _run_pipeline(self, request: SupervisorRequest, engine: Any) -> dict[str, Any]:
-        """
-        Coordinate the full agent pipeline (PRD §4, FR-6).
-
-        Single plan→reflect→validate→permission→execute→verify→report loop —
-        the Golden Rule: there is no second routing brain. Domain agents
-        (RS / ML / Geology / CodeGen / Report / Research) are reached as
-        registered tools dispatched by the GIS Agent, so they flow through
-        exactly this pipeline like any other tool.
-
-        Each agent hand-off is wrapped in its own OTel span (FR-7.3).
-
-        Returns a dict with keys ``answer``, ``plan_json``,
-        ``execution_summary``, ``approval_pending``.
-        """
-        import dataclasses
-
-        from geosi_engine.agents.planning import PlanningAgent
-        from geosi_engine.agents.validation import ValidationAgent
-        from geosi_engine.agents.permission_safety import PermissionSafetyAgent
-        from geosi_engine.agents.gis_agent import (
-            GISAgent,
-            ApprovalPendingError,
-            PermissionDeniedError,
-        )
-        from geosi_engine.agents.reflection import ReflectionAgent
-        from geosi_engine.agents.verification import VerificationAgent
-        from geosi_engine.agents.workflow_optimization import WorkflowOptimizationAgent
-        from geosi_engine.models import ExecutionPlan, ExecutionResult, ToolResult
-
-        planning = PlanningAgent(engine, supervisor=self)
-        validation = ValidationAgent(engine)
-        permission = PermissionSafetyAgent(engine)
-        gis = GISAgent(engine, permission_agent=permission)
-        reflection = ReflectionAgent(engine)
-        verification = VerificationAgent(engine)
-        workflow_opt = WorkflowOptimizationAgent(engine)
-
-        # Expose this Supervisor on the engine so agents that need the LLM
-        # cascade for re-planning (e.g. ReflectionAgent._generate_corrected_plan)
-        # can reach it instead of constructing a PlanningAgent with supervisor=None.
-        try:
-            engine.supervisor = self  # type: ignore[attr-defined]
-        except Exception:
-            pass
-
-        # ── Step 1: plan ───────────────────────────────────────────────
-        with start_span("planning.plan", **{"agent.name": "planning", "session.id": request.session_id}):
-            plan = planning.plan(
-                query=request.query,
-                available_layers=request.available_layers,
-                session_id=request.session_id,
-            )
-            set_span_attr("plan.steps", len(plan.steps))
-            set_span_attr("plan.source", plan.plan_source)
-
-        plan_json = dataclasses.asdict(plan)
-
-        # ── Step 2: reflection pre-check (non-blocking critic) ─────────
-        with start_span("reflection.critic", **{"agent.name": "reflection"}):
-            try:
-                critic = reflection.critic(plan)
-                set_span_attr("reflection.ok", critic.ok)
-                if not critic.ok:
-                    msgs = [f"{f.tool_name}: {f.message}" for f in critic.errors()]
-                    logger.warning(
-                        "Reflection critic flagged plan %s: %s", plan.plan_id, msgs
-                    )
-                for w in critic.warnings():
-                    logger.info("Reflection warning [%s]: %s", w.tool_name, w.message)
-            except Exception as exc:  # non-fatal — critic is advisory
-                logger.debug("Reflection critic skipped: %s", exc)
-
-        # ── Step 2b: workflow optimization (advisory, read-only) ───────
-        # Agent #13 — surfaces redundant/reorderable steps and best
-        # practices from execution history. Never mutates the plan.
-        wfo_report: Optional[dict[str, Any]] = None
-        with start_span("workflow_opt.analyze", **{"agent.name": "workflow_optimization"}):
-            try:
-                opt = workflow_opt.analyze(plan)
-                wfo_report = {
-                    "original_step_count": opt.original_step_count,
-                    "optimized_step_count": opt.optimized_step_count,
-                    "estimated_total_saving_s": opt.estimated_total_saving_s,
-                    "suggestions": [
-                        {
-                            "type": s.type,
-                            "step_index": s.step_index,
-                            "message": s.message,
-                            "estimated_time_saving_s": s.estimated_time_saving_s,
-                            "confidence": s.confidence,
-                        }
-                        for s in opt.suggestions
-                    ],
-                    "best_practices": opt.best_practices,
-                }
-                set_span_attr("wfo.suggestions", len(opt.suggestions))
-                for s in opt.suggestions:
-                    logger.info("Workflow optimization [%s]: %s", s.type, s.message)
-            except Exception as exc:  # non-fatal — optimization is advisory
-                logger.debug("Workflow optimization skipped: %s", exc)
-
-        # ── Step 3: validate ───────────────────────────────────────────
-        with start_span("validation.validate", **{"agent.name": "validation"}):
-            report = validation.validate(plan, engine.state)
-            if not report.ok:
-                errors = [i.message for i in report.errors()]
-                raise ValueError(f"Plan validation failed: {'; '.join(errors)}")
-            set_span_attr("validation.ok", True)
-
-        # ── Step 4: guardrail check at pipeline boundary ───────────────
-        with start_span("permission_safety.guardrail_check", **{"agent.name": "permission_safety"}):
-            if plan.guardrail_flags:
-                logger.warning(
-                    "Plan carries guardrail flags from retrieval: %s",
-                    plan.guardrail_flags,
-                )
-                set_span_attr("guardrail.flags", str(plan.guardrail_flags))
-
-        # ── Step 5: execute each step through the GIS Agent ────────────
-        # Permission gate fires here (mutating → HITL). The loop stops the
-        # moment a step needs approval or is denied, returning partials.
-        results: list[ToolResult] = []
-        step_summaries: list[dict[str, Any]] = []
-        approval_pending: Optional[str] = None
-        denied_reason: Optional[str] = None
-        all_ok = True
-
-        for step in plan.steps:
-            with start_span(
-                "gis_agent.execute_step",
-                **{
-                    "agent.name": "gis_agent",
-                    "tool.name": step.tool_name,
-                    "tool.risk_level": step.risk_level,
-                }
-            ):
-                try:
-                    result = gis.execute_step(step, engine.state)
-                except ApprovalPendingError as ap:
-                    approval_pending = ap.action_id
-                    all_ok = False
-                    set_span_attr("step.approval_pending", ap.action_id)
-                    step_summaries.append({
-                        "step_id": step.step_id,
-                        "tool_name": step.tool_name,
-                        "risk_level": step.risk_level,
-                        "success": False,
-                        "approval_pending": ap.action_id,
-                    })
-                    logger.info(
-                        "Pipeline halted — step '%s' awaits approval (action_id=%s)",
-                        step.tool_name, ap.action_id,
-                    )
-                    break
-                except PermissionDeniedError as pd:
-                    denied_reason = str(pd)
-                    all_ok = False
-                    set_span_attr("step.denied", True)
-                    step_summaries.append({
-                        "step_id": step.step_id,
-                        "tool_name": step.tool_name,
-                        "risk_level": step.risk_level,
-                        "success": False,
-                        "denied": True,
-                        "error": denied_reason,
-                    })
-                    logger.warning("Pipeline halted — step '%s' denied: %s", step.tool_name, denied_reason)
-                    break
-
-                # ── Generic step failure → one reflection self-correction ──
-                if not result.success:
-                    set_span_attr("step.success", False)
-                    with start_span("reflection.reflect_and_retry", **{"agent.name": "reflection"}):
-                        def _exec_one(p: ExecutionPlan) -> ToolResult:
-                            last: Optional[ToolResult] = None
-                            for s in p.steps:
-                                r = gis.execute_step(s, engine.state)
-                                if not r.success:
-                                    raise RuntimeError(r.error or f"step {s.step_id} failed")
-                                last = r
-                            if last is None:
-                                raise RuntimeError("corrected plan produced no steps")
-                            return last
-                        single = ExecutionPlan(
-                            plan_id=f"{plan.plan_id}-retry-{step.step_id}",
-                            steps=[step],
-                            reasoning=f"Self-correction for failed step {step.step_id}",
-                            plan_source=plan.plan_source,
-                        )
-                        try:
-                            result = reflection.reflect_and_retry(
-                                single, result.error or "step failed", _exec_one
-                            )
-                            set_span_attr("reflection.recovered", True)
-                        except Exception as exc:
-                            logger.info("Reflection retry exhausted for '%s': %s", step.tool_name, exc)
-
-                set_span_attr("step.success", bool(result.success))
-                results.append(result)
-                if not result.success:
-                    all_ok = False
-
-                # ── Verification after mutating steps ───────────────────
-                verification_passed: Optional[bool] = None
-                if step.risk_level != "read_only" and result.success:
-                    with start_span("verification.verify", **{"agent.name": "verification"}):
-                        try:
-                            vr = verification.verify_execution_result(result)
-                            verification_passed = vr.passed
-                            set_span_attr("verification.passed", vr.passed)
-                            if not vr.passed:
-                                logger.warning(
-                                    "Verification failed for '%s': %s",
-                                    step.tool_name, vr.issues,
-                                )
-                        except Exception as exc:
-                            logger.debug("Verification skipped for '%s': %s", step.tool_name, exc)
-
-                step_summaries.append({
-                    "step_id": step.step_id,
-                    "tool_name": step.tool_name,
-                    "risk_level": step.risk_level,
-                    "success": bool(result.success),
-                    "verification_passed": verification_passed,
-                    "error": result.error,
-                    "message": result.message,
-                })
-
-        # ── Step 6: report generation → human-readable answer ──────────
-        answer = self._generate_answer(
-            engine, plan, results, all_ok, approval_pending, denied_reason, request.session_id
+    def _response(self, engine: Any, result: Any, session_id: str, start: float) -> SupervisorResponse:
+        plan = getattr(engine.loop, "last_plan", None)
+        plan_json = _json_safe(dataclasses.asdict(plan)) if plan is not None else None
+        if plan_json is not None:
+            plan_json.pop("request", None)  # parser internals, not part of the plan contract
+        paused = bool(result.approval_pending)
+        return SupervisorResponse(
+            success=bool(result.success) or paused,
+            result=result.answer,
+            error=None if (result.success or paused) else (result.error or result.answer),
+            plan_json=plan_json,
+            execution_summary=_execution_summary(plan, result),
+            approval_pending=result.approval_pending,
+            session_id=session_id,
+            latency_ms=(time.monotonic() - start) * 1000,
+            execution_result=result,
+            report=getattr(result, "report", ""),
+            warnings=list(getattr(result, "warnings", []) or []),
+            plan_source=getattr(result, "plan_source", "") or getattr(plan, "plan_source", ""),
         )
 
-        execution_summary = {
-            "plan_id": plan.plan_id,
-            "plan_source": plan.plan_source,
-            "total_steps": len(plan.steps),
-            "executed_steps": len(step_summaries),
-            "all_success": all_ok and approval_pending is None and denied_reason is None,
-            "approval_pending": approval_pending,
-            "denied_reason": denied_reason,
-            "steps": step_summaries,
-            "optimization": wfo_report,
+
+def _json_safe(value: Any) -> Any:
+    """Round-trip through JSON (enums, dates and objects become strings)."""
+    import json
+
+    return json.loads(json.dumps(value, default=str))
+
+
+def _execution_summary(plan: Any, result: Any) -> dict[str, Any]:
+    logs = {log.step_id: log for log in getattr(result, "logs", []) or []}
+    steps = []
+    for step in getattr(plan, "steps", []) or []:
+        log = logs.get(step.step_id)
+        entry: dict[str, Any] = {
+            "step_id": step.step_id,
+            "tool_name": step.tool_name,
+            "risk_level": step.risk_level,
+            "executed": log is not None,
         }
-
-        return {
-            "answer": answer,
-            "plan_json": plan_json,
-            "execution_summary": execution_summary,
-            "approval_pending": approval_pending,
-        }
-
-    def _generate_answer(
-        self,
-        engine: Any,
-        plan: Any,
-        results: list,
-        all_ok: bool,
-        approval_pending: Optional[str],
-        denied_reason: Optional[str],
-        session_id: str,
-    ) -> str:
-        """
-        Build the human-readable answer via the Report Generation Agent
-        (execution_summary report). Falls back to a plain string if the
-        report agent is unavailable so the pipeline never hard-fails on
-        answer formatting.
-        """
-        if approval_pending:
-            return (
-                f"⏸ Approval required before continuing. "
-                f"Approve or reject action `{approval_pending}` to proceed."
-            )
-        if denied_reason:
-            return f"⛔ Request stopped by policy: {denied_reason}"
-
-        try:
-            import tempfile
-            from geosi_engine.models import ExecutionResult
-            from geosi_engine.agents.report_generation import (
-                ReportGenerationAgent,
-                ReportRequest,
-            )
-
-            last = results[-1] if results else None
-            exec_result = ExecutionResult(
-                success=all_ok,
-                answer=(last.message if last else "") or "",
-                reasoning=getattr(plan, "reasoning", "") or "",
-                error=(None if all_ok else (last.error if last else "execution failed")),
-                results={},
-                logs=[],
-                total_duration_ms=0.0,
-            )
-            out_path = f"{tempfile.gettempdir()}/geosi_summary_{session_id or 'session'}.md"
-            rr = ReportGenerationAgent(engine).generate(
-                ReportRequest(
-                    report_type="execution_summary",
-                    plan=plan,
-                    execution_result=exec_result,
-                    session_id=session_id,
-                    output_path=out_path,
-                )
-            )
-            if rr.success and rr.content:
-                return rr.content
-        except Exception as exc:
-            logger.debug("Report generation skipped: %s", exc)
-
-        # Fallback: concise plain-text summary
-        n_ok = sum(1 for r in results if getattr(r, "success", False))
-        if not results:
-            return "No steps were executed."
-        if all_ok:
-            last = results[-1]
-            return (getattr(last, "message", None) or "Completed successfully.")
-        return f"Partial completion: {n_ok}/{len(results)} steps succeeded."
+        if log is not None:
+            status = getattr(log.status, "value", str(log.status))
+            entry.update({
+                "success": status == "success",
+                "duration_ms": round(log.duration_ms, 1),
+                "output_features": log.output_features,
+                "error": log.error_message,
+            })
+            if status == "pending_approval":
+                entry["approval_pending"] = result.approval_pending
+        steps.append(entry)
+    return {
+        "plan_id": getattr(plan, "plan_id", ""),
+        "plan_source": getattr(result, "plan_source", "") or getattr(plan, "plan_source", ""),
+        "total_steps": len(steps),
+        "executed_steps": sum(1 for s in steps if s["executed"]),
+        "all_success": bool(result.success),
+        "approval_pending": result.approval_pending,
+        "denied": bool(getattr(result, "denied", False)),
+        "warnings": list(getattr(result, "warnings", []) or []),
+        "steps": steps,
+    }

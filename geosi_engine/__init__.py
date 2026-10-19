@@ -233,6 +233,21 @@ class GeoSI:
 
         return result
 
+    def resume(self, action_id: str, approved: bool) -> ExecutionResult:
+        """Continue a run that paused for approval (see SupervisorAgent.resume)."""
+        result = self.loop.resume(action_id, approved)
+        if self.knowledge and result.success:
+            try:
+                self.knowledge.learn_from_execution("(resumed)", self.loop.last_plan, result)
+            except Exception as e:
+                logger.debug(f"Knowledge learning failed: {e}")
+        return result
+
+    def shutdown(self) -> None:
+        """Release session resources (called when the session is evicted)."""
+        self.loop.paused.clear()
+        self.state.clear()
+
     # ── Phase 2: Convenience methods ───────────────────────────────
 
     def ingest_documents(self, directory: str, collection: str = "gis_docs") -> int:

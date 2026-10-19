@@ -47,6 +47,7 @@ class GeoSIPlugin:
         self.dock = None
         self.action = None
         self.engine = None
+        self.supervisor = None
         self.tool_count = 0  # Number of dynamically discovered tools
 
     def initGui(self):
@@ -105,6 +106,13 @@ class GeoSIPlugin:
             except Exception as e:  # noqa: BLE001 — defaults still work
                 logger.warning("Could not apply GeoSI settings: %s", e)
             self.engine = engine
+            # One supervised session for the desktop user; the Supervisor is
+            # the same entry point the REST API and MCP server use.
+            from geosi_engine.agents.supervisor import SupervisorAgent
+            from geosi_engine.session_pool import SessionPool
+
+            self.supervisor = SupervisorAgent(
+                SessionPool(max_size=1, ttl_seconds=float("inf"), factory=lambda sid: engine))
         except Exception as e:  # noqa: BLE001 — surface any startup failure
             logger.error("GeoSI engine failed to start:\n%s", traceback.format_exc())
             self._show_error(f"GeoSI engine failed to start: {e}")
@@ -138,7 +146,7 @@ class GeoSIPlugin:
             from qgis.PyQt.QtCore import Qt
             from .prompt_dock import GeoSIDock
 
-            self.dock = GeoSIDock(self.iface, self.engine)
+            self.dock = GeoSIDock(self.iface, self.engine, supervisor=self.supervisor)
             self.iface.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dock.dock)
             # Keep the toolbar button in sync when the user closes the dock
             self.dock.dock.visibilityChanged.connect(self._on_dock_visibility)

@@ -253,7 +253,9 @@ class GeoSIAgent:
         # problem from the previous attempt; rules would repeat themselves.
         if operation in well_understood and not feedback and self._is_simple_request(request.query):
             logger.info(f"Op '{operation}' well-understood → rule-based plan")
-            return self._plan_with_rules(request)
+            plan = self._plan_with_rules(request)
+            plan.plan_source = "rule_based"
+            return plan
 
         # ── Deterministic shortcuts tried before the LLM ───────────────
         if not feedback:
@@ -262,27 +264,54 @@ class GeoSIAgent:
                 plan = planner(request, state)
                 if plan is not None:
                     logger.info(f"Deterministic plan: {plan.reasoning}")
+                    if planner != self._plan_from_template:
+                        plan.plan_source = "deterministic"
                     return plan
 
         # ── LLM cascade ────────────────────────────────────────────────
+        # Each provider is guarded by the Supervisor's circuit breaker when
+        # one is attached (``breakers``): a provider that keeps failing is
+        # skipped until its reset window passes.
         self._prompt_state = state
         self._feedback = feedback
+        breakers = getattr(self, "breakers", None) or {}
         try:
             if self.use_llm:
                 for name, fn in self._llm_providers():
+                    breaker = breakers.get(name)
+                    if breaker is not None and not breaker.is_available():
+                        logger.info(f"Skipping {name}: circuit breaker open")
+                        continue
                     try:
                         plan = fn(request)
-                        if self._validate_plan_layers(plan, request.available_layers):
-                            return plan
-                        logger.warning(f"{name} plan referenced nonexistent layers")
                     except Exception as e:
+                        if breaker is not None:
+                            breaker.record_failure()
                         logger.warning(f"{name} planning failed: {e}")
+                        continue
+                    if breaker is not None:
+                        breaker.record_success()
+                    plan.plan_source = f"{name}:{self._provider_model(name)}"
+                    if self._validate_plan_layers(plan, request.available_layers):
+                        return plan
+                    logger.warning(f"{name} plan referenced nonexistent layers")
         finally:
             self._feedback = None
 
         if feedback:
-            return ExecutionPlan(request=request, steps=[], reasoning="Re-planning failed")
-        return self._plan_with_rules(request)
+            return ExecutionPlan(request=request, steps=[], reasoning="Re-planning failed",
+                                 plan_source="none")
+        plan = self._plan_with_rules(request)
+        plan.plan_source = "rule_based"
+        return plan
+
+    def _provider_model(self, name: str) -> str:
+        return {
+            "api": self._api_model,
+            "ollama": self._ollama_model,
+            "gemini": os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
+            "anthropic": os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5-5"),
+        }.get(name, "")
 
     def _state_layer(self, name):
         state = getattr(self, "_prompt_state", None)
@@ -824,6 +853,7 @@ class GeoSIAgent:
                             output_name=st["output_name"], description=f"As in: {example['query']}")
                    for st in steps],
             reasoning=f"Matched verified example '{example['query']}' (similarity {score:.2f})",
+            plan_source="template",
         )
         if not self._validate_plan_layers(plan, request.available_layers):
             return None
@@ -1043,22 +1073,25 @@ Return ONLY valid JSON:
     def _api_configured(self) -> bool:
         return bool(self._api_base and self._api_model)
 
-    def _api_chat(self, prompt: str, json_mode: bool = True) -> str:
+    def _api_chat(self, prompt: str, json_mode: bool = True, base: Optional[str] = None,
+                  key: Optional[str] = None, model: Optional[str] = None) -> str:
         """One chat completion; plain HTTP so QGIS needs no extra packages."""
         import requests
 
+        base = (base or self._api_base).rstrip("/")
+        key = self._api_key if key is None else key
         body = {
-            "model": self._api_model,
+            "model": model or self._api_model,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.0,
         }
         if json_mode:
             body["response_format"] = {"type": "json_object"}
         headers = {"Content-Type": "application/json"}
-        if self._api_key:
-            headers["Authorization"] = f"Bearer {self._api_key}"
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
         for attempt in range(3):
-            resp = requests.post(f"{self._api_base}/chat/completions", json=body, headers=headers, timeout=120)
+            resp = requests.post(f"{base}/chat/completions", json=body, headers=headers, timeout=120)
             if resp.status_code == 429 and attempt < 2:  # rate limited: back off and retry
                 import time
                 time.sleep(float(resp.headers.get("retry-after", 2 * (attempt + 1))))
@@ -1073,21 +1106,40 @@ Return ONLY valid JSON:
         return self._json_to_plan(request, self._api_chat(self._get_prompt(request)))
 
     def _plan_with_gemini(self, request: AnalysisRequest) -> ExecutionPlan:
-        import google.generativeai as genai
-        genai.configure(api_key=self._gemini_key)
-        model = genai.GenerativeModel("gemini-2.5-flash")
-        response = model.generate_content(self._get_prompt(request))
-        return self._json_to_plan(request, response.text)
+        """Gemini through Google's OpenAI-compatible endpoint (plain HTTP)."""
+        text = self._api_chat(
+            self._get_prompt(request),
+            base=os.environ.get("GEMINI_BASE_URL",
+                                "https://generativelanguage.googleapis.com/v1beta/openai"),
+            key=self._gemini_key,
+            model=self._provider_model("gemini"),
+        )
+        return self._json_to_plan(request, text)
 
     def _plan_with_anthropic(self, request: AnalysisRequest) -> ExecutionPlan:
-        import anthropic
-        client = anthropic.Anthropic(api_key=self._anthropic_key)
-        response = client.messages.create(
-            model="claude-3-sonnet-20240229",
-            max_tokens=2048,
-            messages=[{"role": "user", "content": self._get_prompt(request)}],
+        """Claude through the Anthropic Messages API (plain HTTP, no SDK)."""
+        import requests
+
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": self._anthropic_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": self._provider_model("anthropic"),
+                "max_tokens": 2048,
+                "temperature": 0.0,
+                "messages": [{"role": "user", "content": self._get_prompt(request)}],
+            },
+            timeout=120,
         )
-        return self._json_to_plan(request, response.content[0].text)
+        if resp.status_code >= 400:
+            raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:300]}")
+        blocks = resp.json().get("content", [])
+        text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
+        return self._json_to_plan(request, text)
 
     def _json_to_plan(self, request: AnalysisRequest, text: str) -> ExecutionPlan:
         text = re.sub(r"<think>.*?</think>", "", text or "", flags=re.S).strip()

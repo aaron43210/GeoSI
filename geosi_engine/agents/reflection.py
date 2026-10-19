@@ -138,7 +138,52 @@ class ReflectionAgent:
         return CriticReport(ok=len(errors) == 0, findings=findings)
 
     # ------------------------------------------------------------------
-    # 2. Post-execution retry (FR-4.1)
+    # 2. Turning a rejected attempt into guidance for the next plan
+    # ------------------------------------------------------------------
+
+    # Common failure messages → what the planner should change
+    _HINTS: tuple[tuple[str, str], ...] = (
+        (r"not found in registry|unknown tool",
+         "Use only tool names from the Available tools list."),
+        (r"Missing required parameter: (\w+)",
+         "Set the required parameter {0}."),
+        (r"Incorrect parameter value for (\w+)",
+         "The value for {0} is invalid for this tool; check its type and allowed options."),
+        (r"does not exist in layer",
+         "Use one of the field names listed for that layer."),
+        (r"0 features",
+         "Check which layer is the INPUT and which is the comparison layer, the spatial "
+         "relationship, and distance units (metres)."),
+        (r"is not loaded|no layer named",
+         "Reference only layers from the Available layers list."),
+        (r"invalid expression|parser error",
+         "Write a valid QGIS expression: field names in double quotes, text in single quotes."),
+        (r"no result layer",
+         "Use a processing tool whose output is a new layer."),
+    )
+
+    def feedback_for(self, plan: ExecutionPlan, problem: str) -> str:
+        """
+        Describe a rejected attempt for the planner: the plan, what was
+        wrong, a targeted hint, and similar past failures (knowledge memory).
+        """
+        import re as _re
+
+        steps = "; ".join(f"{s.step_id}: {s.tool_name} {s.parameters}" for s in plan.steps)
+        lines = [f"Previous plan: {steps}", f"Problem: {problem}"]
+        for pattern, hint in self._HINTS:
+            m = _re.search(pattern, problem or "", _re.IGNORECASE)
+            if m:
+                lines.append("Hint: " + hint.format(*m.groups()))
+                break
+        similar = self._retrieve_similar_failures(problem or "")
+        if similar:
+            lines.append("Similar past failures: " + " | ".join(similar[:3]))
+        set_span_attr("reflection.feedback_len", sum(len(x) for x in lines))
+        return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # 3. Post-execution retry (FR-4.1)
     # ------------------------------------------------------------------
 
     @span("reflection.retry", agent="reflection")

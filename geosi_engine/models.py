@@ -59,6 +59,7 @@ class ExecutionStatus(str, Enum):
     PARTIAL = "partial"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    PENDING_APPROVAL = "pending_approval"  # paused before a step that needs approval
 
 
 class IntentType(str, Enum):
@@ -158,6 +159,10 @@ class ToolParameter:
     description: str = ""
     example: Optional[str] = None
     default: Optional[Any] = None
+    # For "field" parameters: name of the layer parameter the field belongs to
+    parent_layer: Optional[str] = None
+    # For "enum" parameters: the allowed option labels, in index order
+    options: List[str] = field(default_factory=list)
 
     def __repr__(self):
         """Show parameter in a compact format for debugging."""
@@ -213,6 +218,10 @@ class ToolSpec:
     qgis_algorithm: Optional[str] = None
     requires_qgis: bool = False
     requires_gpu: bool = False
+    # What running the tool does to existing data (see agents.planning):
+    # "read_only" writes only new outputs, "mutating" changes files/databases
+    # outside the session, "destructive" deletes or overwrites existing data.
+    risk_level: str = "read_only"
 
     def __str__(self):
         """Show tool spec in a compact format for debugging."""
@@ -534,6 +543,17 @@ class ExecutionResult:
     results: Dict[str, Any] = field(default_factory=dict)
     logs: List[StepLog] = field(default_factory=list)
     total_duration_ms: float = 0.0
+    # Set when execution paused before a step that needs human approval;
+    # resume with SupervisorAgent.resume(action_id, approved).
+    approval_pending: Optional[str] = None
+    # True when a step was refused by policy (never retried with another tool)
+    denied: bool = False
+    # Advisory findings (verification warnings, optimization suggestions)
+    warnings: List[str] = field(default_factory=list)
+    # Markdown execution report from the Report Generation Agent
+    report: str = ""
+    # Which planner produced the executed plan (rules, template, llm:<model>, ...)
+    plan_source: str = ""
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -8,10 +8,9 @@ seeded with real ``ToolSpec``s (portable + domain tools). There are NO
 where a plan must be supplied as INPUT, hand-built real ``ExecutionPlan``s.
 
 Covers plan Parts A / B / D1 / D2 / D3:
-  * Part A — the planner grounds its prompt in the real registry (lists real
-    tool names + qgis_algorithm ids); empty registry → no catalog block.
-  * Part B — ``_retrieve_context`` calls ``retrieve_context`` (not the dead
-    ``get_context``).
+  * Part A — the planner grounds its prompt in the real registry (real tool
+    names, required-parameter flags) and annotates risk from the registry.
+  * Part B — knowledge-layer context reaches the planner prompt.
   * Part D1 — the 6 domain tools are registered and resolvable via
     ``registry.get_tool``.
   * Part D2 — a ``generate_code`` step returns review-only code and is never
@@ -55,10 +54,6 @@ def _engine() -> GeoSI:
     return GeoSI(use_llm=False, enable_knowledge=False)
 
 
-# The exact catalog block header the planner emits only when tools exist.
-_CATALOG_HEADER = "AVAILABLE GIS TOOLS (use the exact tool_name shown):"
-
-
 # ── Part D1: domain tools registered + resolvable ──────────────────────
 
 def test_domain_tools_registered_and_resolvable():
@@ -71,44 +66,45 @@ def test_domain_tools_registered_and_resolvable():
         assert spec.requires_qgis is False
 
 
-# ── Part A: planner grounds the prompt in the real registry ────────────
+# ── Part A: the planner grounds its prompt in the real registry ────────
 
-def test_build_prompt_lists_real_tool_names():
+def test_prompt_lists_real_tool_names():
     eng = _engine()
-    planner = PlanningAgent(eng, supervisor=None)
-    prompt = planner._build_prompt("buffer the roads", ["roads"], rag_context="")
-    assert _CATALOG_HEADER in prompt
-    # Domain tools are always included → generate_code must appear by name.
-    assert "generate_code" in prompt
+    request = eng.agent.parse("write code to dissolve polygons", eng.state)
+    prompt = eng.agent._get_prompt(request)
+    assert "Available tools:" in prompt
+    assert "generate_code" in prompt  # a real registered tool name
 
 
-def test_empty_registry_emits_no_catalog_block():
+def test_prompt_marks_required_parameters():
     eng = _engine()
-    eng.registry._tools.clear()  # real registry, now empty
-    if hasattr(eng.registry, "_category_index"):
-        eng.registry._category_index.clear()
-    planner = PlanningAgent(eng, supervisor=None)
-    prompt = planner._build_prompt("buffer the roads", ["roads"], rag_context="")
-    assert _CATALOG_HEADER not in prompt
+    request = eng.agent.parse("count features", eng.state)
+    prompt = eng.agent._get_prompt(request)
+    assert '"required"' in prompt
 
 
-def test_tool_catalog_includes_registry_name():
+def test_planning_agent_annotates_risk_from_registry():
     eng = _engine()
-    planner = PlanningAgent(eng, supervisor=None)
-    specs = planner._select_relevant_tools("machine learning classification", [])
-    catalog = planner._format_tool_catalog(specs)
-    assert "machine_learning" in catalog
-    # Format: "- name (algo) [category]: desc | params: ..."
-    assert "params:" in catalog
+    plan = ExecutionPlan(steps=[ToolStep(step_id="s1", tool_name="machine_learning")])
+    eng.agent.plan = lambda request, state, feedback=None: plan  # fixed plan (INPUT injection)
+    out = PlanningAgent(eng).plan("classify land cover", [], "s1")
+    assert out.steps[0].risk_level == "mutating"
 
 
-# ── Part B: RAG uses retrieve_context, not the dead get_context ────────
+# ── Part B: knowledge context reaches the planner prompt ───────────────
 
-def test_retrieve_context_uses_real_method():
-    import inspect
-    src = inspect.getsource(PlanningAgent._retrieve_context)
-    assert "retrieve_context" in src
-    assert "get_context" not in src
+def test_knowledge_context_reaches_prompt():
+    eng = _engine()
+
+    class _Ctx:
+        context_prompt = "KNOWLEDGE: use native:buffer for distance zones"
+
+        def has_knowledge(self):
+            return True
+
+    eng.agent._last_knowledge_context = _Ctx()
+    request = eng.agent.parse("buffer the roads", eng.state)
+    assert "KNOWLEDGE: use native:buffer" in eng.agent._get_prompt(request)
 
 
 # ── Part D3: dataclasses.asdict round-trips the plan ───────────────────
@@ -147,7 +143,7 @@ def test_generate_code_review_only():
 
 def _patch_planner(monkeypatch_or_none, plan: ExecutionPlan):
     """Replace PlanningAgent.plan to return a fixed real plan (INPUT injection)."""
-    def _plan(self, query, available_layers=None, session_id=""):
+    def _plan(self, query, available_layers=None, session_id="", feedback=None):
         return plan
     PlanningAgent.plan = _plan  # type: ignore[assignment]
 

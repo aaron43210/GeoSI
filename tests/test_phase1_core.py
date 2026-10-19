@@ -51,22 +51,38 @@ def test_circuit_breaker():
 
 
 def test_risk_level_computation():
-    """Verify PRD FR-2 risk level derivations."""
-    # Destructive keywords
-    assert _compute_risk_level("native:deletefield", {}) == "destructive"
+    """Risk = what the tool does to existing data (agents.planning docstring)."""
+    from geosi_engine.models import ToolSpec
+
+    # QGIS algorithms write new outputs: read-only for existing data
+    buffer_spec = ToolSpec(name="native_buffer", qgis_algorithm="native:buffer")
+    assert _compute_risk_level("native_buffer", {}) == "read_only"
+    from geosi_engine.agents.planning import compute_risk_level
+    assert compute_risk_level("native_buffer", {"DISTANCE": 500}, buffer_spec) == "read_only"
+    # ...even one whose name says "delete": it writes a new layer without the column
+    assert compute_risk_level("native_deletecolumn", {}, ToolSpec(
+        name="native_deletecolumn", qgis_algorithm="native:deletecolumn")) == "read_only"
+
+    # The bridge's classification of the algorithm is used
+    assert compute_risk_level("native_truncatetable", {}, ToolSpec(
+        name="native_truncatetable", qgis_algorithm="native:truncatetable",
+        risk_level="destructive")) == "destructive"
+
+    # Non-QGIS tools: destructive name fragments
     assert _compute_risk_level("drop_table", {}) == "destructive"
-    
-    # Mutating keywords
-    assert _compute_risk_level("native:buffer", {}) == "mutating"
-    assert _compute_risk_level("clip_features", {}) == "mutating"
-    
-    # Overwrite parameter overrides to mutating
-    assert _compute_risk_level("export_to_csv", {"OVERWRITE": True}) == "mutating"
-    assert _compute_risk_level("read_layer", {"overwrite": "1"}) == "mutating"
-    
+    assert _compute_risk_level("delete_field", {}) == "destructive"
+
+    # Parameters raise the level
+    assert _compute_risk_level("export_to_csv", {"OVERWRITE": True}) == "destructive"
+    assert _compute_risk_level("native_buffer", {"OUTPUT": "/Users/me/data/out.gpkg"}) == "mutating"
+    assert _compute_risk_level("native_buffer", {"OUTPUT": "TEMPORARY_OUTPUT"}) == "read_only"
+
+    # Domain tools declare their own risk
+    assert _compute_risk_level("machine_learning", {}) == "mutating"
+    assert _compute_risk_level("generate_code", {}) == "read_only"
+
     # Read-only default
     assert _compute_risk_level("count_points", {}) == "read_only"
-
 
 def test_table_allow_list():
     """Verify G4 SQL injection prevention."""

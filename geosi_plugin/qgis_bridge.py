@@ -59,7 +59,7 @@ plugin_dir = os.path.dirname(__file__)
 if plugin_dir not in sys.path:
     sys.path.insert(0, plugin_dir)
 
-from geosi_engine.base import register_backend, register_inspector
+from geosi_engine.base import register_backend, register_expression_validator, register_inspector
 from geosi_engine.models import ToolResult, ToolParameter, Layer
 
 logger = logging.getLogger("geosi_plugin.qgis_bridge")
@@ -126,11 +126,11 @@ _PARAM_TYPE_MAP: Dict[str, str] = {
 
     # ── Everything else → "string" ────────────────────────────────────
     "string":          "string",  # QgsProcessingParameterString
-    "field":           "string",  # QgsProcessingParameterField
+    "field":           "field",   # QgsProcessingParameterField (checked against layer fields)
     "band":            "string",  # QgsProcessingParameterBand
-    "expression":      "string",  # QgsProcessingParameterExpression
+    "expression":      "expression",  # QgsProcessingParameterExpression (QgsExpression-validated)
     "crs":             "string",  # QgsProcessingParameterCrs
-    "enum":            "string",  # QgsProcessingParameterEnum
+    "enum":            "enum",    # QgsProcessingParameterEnum (options listed for the planner)
     "extent":          "string",  # QgsProcessingParameterExtent
     "point":           "string",  # QgsProcessingParameterPoint
     "geometry":        "string",  # QgsProcessingParameterGeometry
@@ -173,6 +173,36 @@ _GROUP_TO_CATEGORY: Dict[str, str] = {
     "plots": "cartography",
     "modeler": "general",
 }
+
+# ── Risk of each algorithm for existing data (see agents.planning) ─────
+# Processing algorithms write results to new outputs, so they are
+# read-only for existing data unless they act on something in place,
+# write into a database or file the user owns, or reach the network.
+_DESTRUCTIVE_ALGORITHMS: frozenset = frozenset({
+    "native:truncatetable",
+    "qgis:postgisexecutesql", "native:postgisexecutesql",
+    "qgis:postgisexecuteandloadsql", "native:postgisexecuteandloadsql",
+    "qgis:spatialiteexecutesql", "native:spatialiteexecutesql",
+    "native:spatialiteexecutesqlregistered",
+})
+_MUTATING_ALGORITHMS: frozenset = frozenset({
+    "native:setprojection", "qgis:definecurrentprojection", "native:definecurrentprojection",
+    "native:createspatialindex", "native:createattributeindex",
+    "qgis:importintopostgis", "native:importintopostgis",
+    "qgis:importintospatialite", "native:importintospatialite",
+    "native:package", "native:filedownloader", "native:httprequest",
+    "native:createdirectory", "native:setlayerencoding",
+    "native:exporttospreadsheet", "native:savelog",
+})
+
+
+def _algorithm_risk(alg_id: str) -> str:
+    if alg_id in _DESTRUCTIVE_ALGORITHMS:
+        return "destructive"
+    if alg_id in _MUTATING_ALGORITHMS:
+        return "mutating"
+    return "read_only"
+
 
 # ── Providers to skip (meta-providers that don't have real algorithms) ─
 _SKIP_PROVIDERS: frozenset = frozenset({
@@ -348,12 +378,27 @@ def auto_discover_qgis_tools(registry) -> int:
                 if default_val is not None:
                     is_required = False
 
+                parent_layer = None
+                options: List[str] = []
+                if qgis_type == "field":
+                    try:
+                        parent_layer = param.parentLayerParameterName() or None
+                    except Exception:
+                        pass
+                elif qgis_type == "enum":
+                    try:
+                        options = [str(o) for o in param.options()]
+                    except Exception:
+                        pass
+
                 tool_params.append(ToolParameter(
                     name=param.name(),
                     param_type=geosi_type,
                     required=is_required,
                     description=param.description() or param.name(),
                     default=default_val,
+                    parent_layer=parent_layer,
+                    options=options,
                 ))
 
             # ── Create the GeoSI tool name from the algorithm ID ───────
@@ -379,6 +424,7 @@ def auto_discover_qgis_tools(registry) -> int:
                 qgis_algorithm=alg_id,
                 backend="qgis",
                 tags=tags,
+                risk_level=_algorithm_risk(alg_id),
             )
             registry.register_tool(dynamic_tool)
             registered_count += 1
@@ -610,6 +656,16 @@ def describe_output(path: str, name: str, kind: str) -> Optional[Layer]:
         fields=[f.name() for f in lyr.fields()],
         field_types=types, field_values=values,
     )
+
+
+def validate_expression(expression: str) -> Optional[str]:
+    """Parse a QGIS expression; returns the parser error, or None when valid."""
+    from qgis.core import QgsExpression
+
+    expr = QgsExpression(str(expression))
+    if expr.hasParserError():
+        return expr.parserErrorString() or "invalid expression"
+    return None
 
 
 def describe_layer(layer: Layer, max_rows: int = 30) -> str:
@@ -869,6 +925,7 @@ def install(registry=None) -> int:
     """
     register_backend("qgis", _run_qgis_algorithm)
     register_inspector(describe_layer)
+    register_expression_validator(validate_expression)
     logger.info("GeoSI: QGIS backend installed.")
 
     tool_count = 0

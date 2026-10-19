@@ -41,6 +41,9 @@ from typing import Optional
 
 logger = logging.getLogger("geosi_plugin.prompt_dock")
 
+# The desktop plugin is one user with one workspace: a single session
+SESSION_ID = "qgis-desktop"
+
 
 class GeoSIDock:
     """
@@ -54,7 +57,7 @@ class GeoSIDock:
         - Result display with output layer auto-loading into QGIS
     """
 
-    def __init__(self, iface, engine):
+    def __init__(self, iface, engine, supervisor=None):
         """
         Create the dock widget.
 
@@ -71,6 +74,13 @@ class GeoSIDock:
         # ── Store references ───────────────────────────────────────────
         self.iface = iface
         self.engine = engine
+        if supervisor is None:
+            from geosi_engine.agents.supervisor import SupervisorAgent
+            from geosi_engine.session_pool import SessionPool
+
+            supervisor = SupervisorAgent(SessionPool(max_size=1, ttl_seconds=float("inf"),
+                                                     factory=lambda sid: engine))
+        self.supervisor = supervisor
         self._task = None
         # Run queries as a QgsTask so QGIS stays responsive. Tests that need
         # the result synchronously set this to False.
@@ -206,8 +216,12 @@ class GeoSIDock:
         self._sync_layers()
         self._append_system("⏳ Planning and executing...")
 
+        self._start(query)
+
+    def _start(self, query, resume=None):
+        """Run a request (or resume a paused one) without blocking QGIS."""
         if not self.run_in_background:
-            self._show_result(*self._run_query(query))
+            self._show_result(*self._run_query(query, resume=resume))
             return
 
         # ── Run plan → execute → verify in a QGIS background task ──────
@@ -215,27 +229,40 @@ class GeoSIDock:
         # added to the project back on the main thread in _on_task_done.
         from qgis.core import QgsApplication, QgsTask
 
+        label = "resuming approved step" if resume else query[:50]
         task = QgsTask.fromFunction(
-            f"GeoSI: {query[:50]}", self._task_body, query, on_finished=self._on_task_done
+            f"GeoSI: {label}", self._task_body, query, resume, on_finished=self._on_task_done
         )
         self._task = task
         task.progressChanged.connect(self._on_progress)
         self._set_busy(True)
         QgsApplication.taskManager().addTask(task)
 
-    def _run_query(self, query, task=None):
-        """Run the engine; returns (result, error_text). Safe off the main thread."""
+    def _run_query(self, query, task=None, resume=None):
+        """
+        Run a request through the Supervisor (or resume a paused one);
+        returns (ExecutionResult, error_text). Safe off the main thread.
+        """
         loop = getattr(self.engine, "loop", None)
         if loop is not None:
             loop.should_stop = task.isCanceled if task is not None else (lambda: False)
             loop.on_progress = task.setProgress if task is not None else None
         try:
-            return self.engine.run(query), None
+            from geosi_engine.agents.supervisor import SupervisorRequest
+
+            if resume is not None:
+                response = self.supervisor.resume(resume[0], resume[1], session_id=SESSION_ID)
+            else:
+                response = self.supervisor.handle(
+                    SupervisorRequest(query=query, session_id=SESSION_ID, surface="qgis"))
+            if response.execution_result is None:
+                return None, response.error or "No result"
+            return response.execution_result, None
         except Exception as e:
             return None, f"Error: {e}\n{traceback.format_exc()}"
 
-    def _task_body(self, task, query):
-        return self._run_query(query, task)
+    def _task_body(self, task, query, resume=None):
+        return self._run_query(query, task, resume=resume)
 
     def _on_task_done(self, exception, value=None):
         self._task = None
@@ -276,6 +303,9 @@ class GeoSIDock:
         if error:
             self._append_error(error)
             return
+        if result.approval_pending:
+            self._ask_approval(result)
+            return
         if result.success:
             self._append_assistant(result.answer)
             if result.reasoning:
@@ -292,6 +322,30 @@ class GeoSIDock:
                     f"<details><summary>📋 What was tried</summary>"
                     f"<pre>{result.reasoning}</pre></details>"
                 )
+
+    def _ask_approval(self, result):
+        """A step needs human approval: show what it will do, then resume or stop."""
+        from qgis.PyQt.QtWidgets import QMessageBox
+
+        from geosi_engine.agents.permission_safety import PermissionSafetyAgent
+
+        action_id = result.approval_pending
+        pending = PermissionSafetyAgent._APPROVALS.get(action_id)
+        data = pending.step_data if pending else {}
+        details = (f"Tool: {data.get('tool_name', '?')}\n"
+                   f"Risk: {data.get('risk_level', '?')}\n"
+                   f"Parameters: {data.get('parameters', {})}")
+        self._append_system(f"⏸ Approval needed for <b>{data.get('tool_name', 'a step')}</b> "
+                            f"(risk: {data.get('risk_level', '?')})")
+        box = QMessageBox(self.dock)
+        box.setWindowTitle("GeoSI — approve this step?")
+        box.setText("This step changes data outside the current analysis. Run it?")
+        box.setDetailedText(details)
+        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        run = getattr(box, "exec", None) or box.exec_
+        approved = run() == QMessageBox.StandardButton.Yes
+        self._append_system("✅ Approved — continuing." if approved else "✋ Rejected.")
+        self._start("", resume=(action_id, approved))
 
     def _on_clear(self):
         """Clear the chat history."""

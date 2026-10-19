@@ -26,7 +26,7 @@ import time
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable, Optional
 
 logger = logging.getLogger("geosi_engine.session_pool")
 
@@ -75,9 +75,13 @@ class SessionPool:
         self,
         max_size: int = 50,
         ttl_seconds: float = 1800.0,
+        factory: Optional[Callable[[str], Any]] = None,
     ) -> None:
         self._max_size = max_size
         self._ttl = ttl_seconds
+        # factory(session_id) → engine. The server passes one that installs
+        # the headless QGIS tools; the plugin passes its own engine.
+        self._factory = factory
         self._sessions: OrderedDict[str, _SessionEntry] = OrderedDict()
         self._lock = threading.RLock()
 
@@ -124,7 +128,11 @@ class SessionPool:
             if len(self._sessions) >= self._max_size:
                 self._evict_lru()
 
-            engine = self._create_engine(session_id)
+            engine = self._factory(session_id) if self._factory else self._create_engine(session_id)
+            try:
+                engine._session_id = session_id  # used by audit log entries
+            except Exception:
+                pass
             entry = _SessionEntry(engine=engine)
             self._sessions[session_id] = entry
             self._sessions.move_to_end(session_id, last=False)
@@ -229,9 +237,12 @@ class SessionPool:
     @staticmethod
     def _create_engine(session_id: str) -> Any:
         """Instantiate a fresh, isolated GeoSI engine for this session."""
+        import os
+
         from geosi_engine import GeoSI  # local import to avoid circular deps
 
-        engine = GeoSI(enable_knowledge=True)
+        knowledge = os.environ.get("GEOSI_ENABLE_KNOWLEDGE", "").lower() in ("1", "true", "yes")
+        engine = GeoSI(enable_knowledge=knowledge)
         # Attach the session ID so agents can include it in audit log entries
         engine._session_id = session_id  # type: ignore[attr-defined]
         return engine

@@ -158,8 +158,9 @@ def get_backend(name: str) -> Optional[BackendFn]:
 def clear_backends() -> None:
     """Clear all registered backends (used in tests)."""
     _BACKENDS.clear()
-    global _INSPECTOR
+    global _INSPECTOR, _EXPRESSION_VALIDATOR
     _INSPECTOR = None
+    _EXPRESSION_VALIDATOR = None
 
 
 # Layer inspector: (Layer, max_rows) → text summary of the layer's contents.
@@ -176,6 +177,22 @@ def register_inspector(fn: InspectorFn) -> None:
 
 def get_inspector() -> Optional[InspectorFn]:
     return _INSPECTOR
+
+
+# Expression validator: (expression) → error message, or None when valid.
+# The QGIS plugin registers one backed by QgsExpression so the Validation
+# Agent can reject malformed QGIS expressions before a tool runs.
+ExpressionValidatorFn = Callable[[str], Optional[str]]
+_EXPRESSION_VALIDATOR: Optional[ExpressionValidatorFn] = None
+
+
+def register_expression_validator(fn: ExpressionValidatorFn) -> None:
+    global _EXPRESSION_VALIDATOR
+    _EXPRESSION_VALIDATOR = fn
+
+
+def get_expression_validator() -> Optional[ExpressionValidatorFn]:
+    return _EXPRESSION_VALIDATOR
 
 
 class BackendTool(GISTool):
@@ -205,6 +222,7 @@ class BackendTool(GISTool):
         outputs: Optional[List[str]] = None,
         tags: Optional[List[str]] = None,
         backend: str = "qgis",
+        risk_level: str = "read_only",
     ):
         # Accept either 'algorithm' or 'qgis_algorithm' for compatibility
         algorithm = algorithm or qgis_algorithm
@@ -221,6 +239,7 @@ class BackendTool(GISTool):
             tags=tags or [],
             qgis_algorithm=algorithm,
             requires_qgis=(backend == "qgis"),
+            risk_level=risk_level,
         )
         self._algorithm = algorithm
         self._backend_name = backend

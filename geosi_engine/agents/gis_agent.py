@@ -123,6 +123,16 @@ class GISAgent:
                     f"(risk_level='{step.risk_level}')."
                 )
 
+            session_id = getattr(self._engine, "_session_id", "unknown")
+            if decision.decision == "ask" and self._permission.consume_approval(step, session_id):
+                # A human already approved exactly this step (resumed run)
+                decision = PermissionDecision(
+                    algorithm_id=step.tool_name,
+                    risk_level=step.risk_level,
+                    decision="allow",
+                    policy_source="human_approval",
+                )
+
             if decision.decision == "ask":
                 approval_result = self._permission.request_approval(
                     step,

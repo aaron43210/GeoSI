@@ -125,20 +125,66 @@ class ReportGenerationAgent:
     # Report type generators
     # ------------------------------------------------------------------
 
-    def execution_summary(self, req: ReportRequest) -> ReportResult:
-        """Generate a Markdown execution summary linked to the audit log."""
-        now = datetime.now(timezone.utc).isoformat()
-        plan = req.plan
-        result = req.execution_result
+    # ------------------------------------------------------------------
+    # Answers and in-memory summaries for the agent pipeline
+    # ------------------------------------------------------------------
 
+    @span("report.answer", agent="report_generation")
+    def answer(self, query: str, plan: Any, result: Any) -> Optional[str]:
+        """
+        Answer a question from the executed plan's results.
+
+        "How many ..." is answered from the result layer's exact feature
+        count (small models miscount rows); other questions are answered by
+        the planner's LLM from the result data (attribute rows, statistics,
+        tool values) read back through the registered layer inspector.
+        """
+        import re as _re
+
+        from geosi_engine.agents.verification import geom_family
+        from geosi_engine.base import get_inspector
+        from geosi_engine.models import Layer
+
+        steps = getattr(plan, "steps", []) or []
+        outputs = getattr(result, "results", None) or {}
+        final = outputs.get(steps[-1].output_name) if steps else None
+        if _re.match(r"\s*how many\b", query or "", _re.I) and isinstance(final, Layer) \
+                and geom_family(final.geometry_type) in ("point", "line", "polygon"):
+            return (f"{final.feature_count} — the result layer '{final.name}' has "
+                    f"{final.feature_count} matching feature(s).")
+
+        inspector = get_inspector()
+        evidence = []
+        for name, out in outputs.items():
+            if isinstance(out, Layer) and inspector is not None:
+                try:
+                    evidence.append(inspector(out, 40))
+                except Exception as exc:
+                    logger.debug("inspect %s failed: %s", name, exc)
+            elif out is not None:
+                evidence.append(f"{name}: {out}")
+        if getattr(result, "answer", ""):
+            evidence.append(f"tool message: {result.answer}")
+        agent = getattr(self._engine, "agent", None)
+        if not evidence or agent is None:
+            return None
+        return agent.answer_from_evidence(query, "\n".join(evidence))
+
+    def render_summary(self, plan: Any, result: Any, session_id: str = "",
+                       audit_log_id: Optional[str] = None) -> str:
+        """The Markdown execution summary, without writing a file."""
+        return "\n".join(self._summary_lines(plan, result, session_id, audit_log_id))
+
+    def _summary_lines(self, plan: Any, result: Any, session_id: str,
+                       audit_log_id: Optional[str]) -> List[str]:
+        now = datetime.now(timezone.utc).isoformat()
         lines = [
             "# GeoSI Execution Summary",
             f"**Generated:** {now}",
-            f"**Session:** {req.session_id or 'N/A'}",
-            f"**Audit Log ID:** {req.audit_log_id or 'N/A'}",
+            f"**Session:** {session_id or 'N/A'}",
+            f"**Audit Log ID:** {audit_log_id or 'N/A'}",
             "",
         ]
-
         if plan:
             lines += [
                 "## Execution Plan",
@@ -158,26 +204,35 @@ class ReportGenerationAgent:
                         f"{getattr(step, 'description', '')}"
                     )
                 lines.append("")
-
         if result:
             success = getattr(result, "success", False)
-            lines += [
-                "## Result",
-                f"- **Status:** {'✅ Success' if success else '❌ Failed'}",
-            ]
-            if hasattr(result, "error") and result.error:
+            lines += ["## Result", f"- **Status:** {'✅ Success' if success else '❌ Failed'}"]
+            if getattr(result, "answer", ""):
+                lines.append(f"- **Answer:** {result.answer}")
+            if getattr(result, "error", None):
                 lines.append(f"- **Error:** {result.error}")
+            for name, out in (getattr(result, "results", None) or {}).items():
+                path = getattr(out, "filepath", "")
+                if path:
+                    count = getattr(out, "feature_count", "")
+                    lines.append(f"- **Output `{getattr(out, 'name', name)}`:** `{path}`"
+                                 + (f" ({count} features)" if getattr(out, "layer_type", "") == "vector" else ""))
+            for w in getattr(result, "warnings", []) or []:
+                lines.append(f"- ⚠ {w}")
             if hasattr(result, "output_layer") and result.output_layer:
                 lines.append(f"- **Output:** `{result.output_layer}`")
             if hasattr(result, "statistics") and result.statistics:
                 lines.append("- **Statistics:**")
                 for k, v in result.statistics.items():
                     lines.append(f"  - {k}: {v}")
+        return lines
 
+    def execution_summary(self, req: ReportRequest) -> ReportResult:
+        """Generate a Markdown execution summary linked to the audit log."""
+        lines = self._summary_lines(req.plan, req.execution_result, req.session_id, req.audit_log_id)
         content = "\n".join(lines)
         out_path = req.output_path or f"geosi_summary_{req.audit_log_id or int(time.time())}.md"
         Path(out_path).write_text(content, encoding="utf-8")
-
         return ReportResult(
             success=True, report_type="execution_summary",
             output_path=out_path, content=content,

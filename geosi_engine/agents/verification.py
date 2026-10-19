@@ -25,6 +25,34 @@ from geosi_engine.telemetry import span, set_span_attr
 
 logger = logging.getLogger("geosi_engine.agents.verification")
 
+import re as _re
+
+# A question gets its answer from data, so it need not produce a new layer
+QUESTION_RE = _re.compile(
+    r"^\s*(how many|how much|how long|how big|which|what|where|is there|are there|does|do|list|"
+    r"tell me|show me (the )?(number|count|total))\b|\?\s*$",
+    _re.IGNORECASE,
+)
+# "find/select/extract/get <layer> ..." → the answer must be features of <layer>
+_SUBJECT_RE = _re.compile(
+    r"\b(?:find|select|extract|get|keep|filter|identify|return)\s+(?:all\s+|the\s+|only\s+)?([a-z_][a-z0-9_]*)",
+    _re.IGNORECASE,
+)
+_EACH_RE = _re.compile(r"\b(?:each|every|per)\s+([a-z_]+(?:\s[a-z_]+)?)", _re.IGNORECASE)
+_GEOM_FAMILY = {"point": "point", "multipoint": "point", "line": "line", "linestring": "line",
+                "multilinestring": "line", "polygon": "polygon", "multipolygon": "polygon"}
+# File-level QA reads the whole output; skip it for very large layers
+_FILE_QA_MAX_FEATURES = 100_000
+
+
+def geom_family(geometry_type: str) -> str:
+    """"Point"/"MultiPolygon"/"LineString" → "point"/"polygon"/"line"."""
+    g = (geometry_type or "").lower().replace(" ", "")
+    for key, fam in _GEOM_FAMILY.items():
+        if g.startswith(key):
+            return fam
+    return g
+
 
 @dataclass
 class VerificationIssue:
@@ -324,6 +352,138 @@ class VerificationAgent:
             findings=findings, statistics=stats,
         )
 
+    # ------------------------------------------------------------------
+    # Public: does this result answer the request?
+    # ------------------------------------------------------------------
+
+    @span("verification.verify", agent="verification")
+    def verify(self, query: str, plan: Any, result: Any, state: Any = None) -> VerificationReport:
+        """
+        Check an executed plan against the request.
+
+        Errors (``passed=False``; the first is in ``issues[0]`` and goes back
+        to the planner through the Reflection Agent):
+        * a step failed;
+        * no output layer for a request that is not a question;
+        * an empty vector output;
+        * "find hospitals ..." returned something other than hospitals'
+          geometry type (inputs swapped);
+        * "... in each zone" kept a different number of zones.
+
+        Warnings (advisory): file-level QA of the final output — missing
+        CRS, null or invalid geometries, raster no-data problems.
+        """
+        from geosi_engine.models import Layer
+
+        state = state if state is not None else getattr(self._engine, "state", None)
+        findings: List[VerificationIssue] = []
+
+        def error(category: str, message: str) -> VerificationReport:
+            findings.append(VerificationIssue("error", category, message))
+            set_span_attr("verification.passed", False)
+            return VerificationReport(passed=False, issues=[message], findings=findings)
+
+        failed = [log for log in getattr(result, "logs", []) if log.status.value not in ("success",)]
+        if failed:
+            log = failed[0]
+            return error("execution", f"step {log.step_id} ({log.tool_name}) failed: {log.error_message}")
+
+        steps = getattr(plan, "steps", []) or []
+        final = (getattr(result, "results", None) or {}).get(steps[-1].output_name) if steps else None
+        if not isinstance(final, Layer) and not QUESTION_RE.search(query or ""):
+            # Domain tools (code generation, reports, research, ...) return
+            # documents by design; anything else must produce a layer.
+            try:
+                from geosi_engine.tools.domain_tools import DOMAIN_TOOL_NAMES
+            except Exception:  # pragma: no cover
+                DOMAIN_TOOL_NAMES = ()
+            if not (steps and steps[-1].tool_name in DOMAIN_TOOL_NAMES and final is not None):
+                return error("output", "no result layer was produced — this request needs a "
+                                       "processing tool that outputs a new layer")
+
+        if isinstance(final, Layer):
+            if final.layer_type == "vector" and final.feature_count == 0:
+                return error("output", f"the final output '{final.name}' has 0 features — the inputs "
+                                       f"may be swapped, the wrong tool was used, or the distance/units "
+                                       f"are wrong")
+            each = self._each_layer(query, state)
+            same_family = each is not None and geom_family(final.geometry_type) == each[2]
+            if each and same_family and final.feature_count != each[1]:
+                return error("output", f"the request is about each feature of '{each[0]}' ({each[1]} "
+                                       f"features) but the output has {final.feature_count} — the result "
+                                       f"should keep one feature per '{each[0]}' feature (e.g. use "
+                                       f"'{each[0]}' as the INPUT/POLYGONS layer, keep non-matching "
+                                       f"features)")
+            expected = self._expected_geometry(query, state)
+            if expected and final.layer_type == "vector":
+                got = geom_family(final.geometry_type)
+                if got and got != expected[1]:
+                    return error("output", f"the question asks for {expected[0]} ({expected[1]} "
+                                           f"features) but the final output has {got} features — use "
+                                           f"'{expected[0]}' as the INPUT layer and the other layer as "
+                                           f"the comparison/intersect layer")
+            findings.extend(self._file_qa(final))
+
+        set_span_attr("verification.passed", True)
+        return VerificationReport(
+            passed=True,
+            issues=[f.message for f in findings],
+            findings=findings,
+        )
+
+    def _file_qa(self, layer: Any) -> List[VerificationIssue]:
+        """Advisory QA on the output file; findings are downgraded to warnings."""
+        if not getattr(layer, "filepath", "") or layer.feature_count > _FILE_QA_MAX_FEATURES:
+            return []
+        try:
+            if layer.layer_type == "raster":
+                import rasterio  # noqa: F401
+                report = self.verify_raster(layer.filepath)
+            else:
+                import geopandas  # noqa: F401
+                report = self.verify_vector(layer.filepath)
+        except ImportError:
+            return []  # QA libraries not installed here; semantic checks still ran
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("File QA skipped for %s: %s", layer.filepath, exc)
+            return []
+        out = []
+        for f in report.findings:
+            if f.severity in ("error", "warning") and "0 features" not in f.message and "empty" not in f.message:
+                out.append(VerificationIssue("warning", f.category, f.message, f.layer))
+        return out
+
+    @staticmethod
+    def _each_layer(query: str, state: Any):
+        """("flood_zones", 2, "polygon") for "... in each flood_zones polygon"."""
+        if state is None:
+            return None
+        for m in _EACH_RE.finditer(query or ""):
+            words = m.group(1).lower().split()
+            for name in state.list_layers():
+                n = name.lower()
+                cands = {n, n.rstrip("s"), n.replace("_", " "), n.replace("_", " ").rstrip("s")}
+                if words[0] in cands or " ".join(words) in cands:
+                    layer = state.get_layer(name)
+                    if getattr(layer, "layer_type", "") == "vector" and layer.feature_count:
+                        return name, layer.feature_count, geom_family(layer.geometry_type)
+        return None
+
+    @staticmethod
+    def _expected_geometry(query: str, state: Any):
+        """("hospitals", "point") when the query asks to find features of a layer."""
+        if state is None:
+            return None
+        for m in _SUBJECT_RE.finditer(query or ""):
+            word = m.group(1).lower()
+            for name in state.list_layers():
+                if name.lower() in (word, word.rstrip("s"), word + "s"):
+                    layer = state.get_layer(name)
+                    fam = geom_family(getattr(layer, "geometry_type", ""))
+                    if fam in ("point", "line", "polygon"):
+                        return name, fam
+        return None
+
     @span("verification.verify_execution_result", agent="verification")
     def verify_execution_result(self, result: Any) -> VerificationReport:
         """
@@ -343,6 +503,8 @@ class VerificationAgent:
             output_path = result.output_path
         elif hasattr(result, "output") and isinstance(result.output, dict):
             output_path = result.output.get("OUTPUT") or result.output.get("output")
+        elif getattr(getattr(result, "output", None), "filepath", ""):
+            output_path = result.output.filepath  # a GeoSI Layer
 
         if not output_path:
             # No output file — check for in-memory success flag
@@ -354,7 +516,7 @@ class VerificationAgent:
         ext = output_path.lower().rsplit(".", 1)[-1] if "." in output_path else ""
         if ext in ("tif", "tiff", "img", "vrt"):
             return self.verify_raster(output_path)
-        elif ext in ("shp", "gpkg", "geojson", "json", "kml", "gml"):
+        elif ext in ("shp", "gpkg", "geojson", "json", "kml", "gml", "fgb"):
             return self.verify_vector(output_path)
         else:
             return VerificationReport(
