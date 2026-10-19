@@ -307,7 +307,6 @@ class ReportGenerationAgent:
                     }
                 elif ext in ("tif", "tiff"):
                     import rasterio
-                    import numpy as np
                     with rasterio.open(path) as src:
                         data = src.read(1)
                         valid = data[data != src.nodata] if src.nodata else data.flatten()

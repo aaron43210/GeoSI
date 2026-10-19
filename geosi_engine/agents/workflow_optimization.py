@@ -268,5 +268,5 @@ class WorkflowOptimizationAgent:
             if self._engine and self._engine.data:
                 return self._engine.data.get("database")
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
         return None

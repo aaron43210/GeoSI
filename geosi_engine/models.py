@@ -28,7 +28,7 @@ See FILE_CONNECTIONS.md:
     - USED BY: every other file in geosi_engine/
 """
 
-from typing import Dict, List, Any, Optional, Literal, Union
+from typing import Dict, List, Any, Optional
 from enum import Enum
 from dataclasses import dataclass, field
 from datetime import datetime, timezone

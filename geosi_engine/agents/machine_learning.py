@@ -20,7 +20,6 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 
 from geosi_engine.telemetry import span, set_span_attr
@@ -155,11 +154,8 @@ class MachineLearningAgent:
     def train_classifier(self, job: MLJobRequest) -> MLJobResult:
         """Train a spatial classification model."""
         try:
-            import numpy as np
-            from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
-            from sklearn.svm import SVC
-            from sklearn.model_selection import train_test_split, cross_val_score
-            from sklearn.metrics import classification_report, accuracy_score
+            from sklearn.model_selection import train_test_split
+            from sklearn.metrics import accuracy_score
             import joblib
 
             X, y = self._load_spatial_features(job)
@@ -200,8 +196,6 @@ class MachineLearningAgent:
     def train_regressor(self, job: MLJobRequest) -> MLJobResult:
         """Train a spatial regression model."""
         try:
-            from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-            from sklearn.linear_model import LinearRegression, Ridge
             from sklearn.model_selection import train_test_split
             from sklearn.metrics import mean_squared_error, r2_score
             import joblib
@@ -239,7 +233,6 @@ class MachineLearningAgent:
         try:
             from sklearn.cluster import KMeans, DBSCAN
             from sklearn.metrics import silhouette_score
-            import numpy as np
 
             X, _ = self._load_spatial_features(job)
             if X is None:
@@ -391,7 +384,7 @@ class MachineLearningAgent:
             if self._engine and self._engine.data:
                 return self._engine.data.get("database")
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
         return None
 
     @staticmethod

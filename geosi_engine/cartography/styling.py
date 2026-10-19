@@ -64,7 +64,6 @@ def apply_graduated_symbology(
             QgsClassificationEqualInterval,
             QgsClassificationStdDev,
             QgsStyle,
-            QgsSymbol,
         )
 
         style = QgsStyle.defaultStyle()

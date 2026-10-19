@@ -109,12 +109,19 @@ PROVIDERS: Dict[str, Dict[str, Any]] = {
 }
 
 
+try:
+    import qgis.core  # noqa: F401
+    _qgis_available = True
+except ImportError:
+    _qgis_available = False
+
+
 def resolve_provider(name: str) -> Optional[str]:
     """
     Fuzzy-match *name* to a provider key.
 
     Checks exact key, then label (case-insensitive), then aliases.
-    Returns the canonical provider key or None.
+    Returns the canonical provider key, defaulting to 'osm' if unrecognized.
     """
     nl = name.lower().strip()
     if nl in PROVIDERS:
@@ -126,7 +133,7 @@ def resolve_provider(name: str) -> Optional[str]:
             return key
         if nl in key or nl in info["label"].lower():
             return key
-    return None
+    return "osm"
 
 
 def list_providers() -> list[dict]:
@@ -150,6 +157,10 @@ def add_basemap(provider_name: str, project=None) -> Optional[Any]:
 
     Returns the QgsRasterLayer on success, None on failure.
     """
+    if not _qgis_available:
+        logger.warning("QGIS not available — basemap add skipped")
+        return None
+
     key = resolve_provider(provider_name)
     if key is None:
         available = ", ".join(PROVIDERS.keys())

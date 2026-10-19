@@ -132,7 +132,7 @@ class SessionPool:
             try:
                 engine._session_id = session_id  # used by audit log entries
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
             entry = _SessionEntry(engine=engine)
             self._sessions[session_id] = entry
             self._sessions.move_to_end(session_id, last=False)

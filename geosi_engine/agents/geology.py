@@ -184,9 +184,7 @@ class GeologyAgent:
         """
         logger.info("Landslide susceptibility analysis")
         try:
-            import numpy as np
             import rasterio
-            from rasterio import merge
 
             weights = job.parameters.get("weights", {
                 "slope": 0.40, "lithology": 0.30, "land_use": 0.20, "fault_proximity": 0.10
@@ -229,7 +227,6 @@ class GeologyAgent:
         """
         logger.info("Mineral prospectivity: %d evidential layers", len(job.input_layers))
         try:
-            import numpy as np
             import rasterio
 
             if not job.input_layers:

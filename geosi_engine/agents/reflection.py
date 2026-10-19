@@ -21,7 +21,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
-from geosi_engine.models import ExecutionPlan, ToolStep
+from geosi_engine.models import ExecutionPlan
 from geosi_engine.telemetry import span, set_span_attr
 
 logger = logging.getLogger("geosi_engine.agents.reflection")
@@ -275,7 +275,7 @@ class ReflectionAgent:
             if hasattr(self._engine, "registry"):
                 return self._engine.registry.get_tool(tool_name) is not None
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
         return True  # assume known if registry unavailable (QGIS context)
 
     def _retrieve_similar_failures(self, error: str) -> list[str]:

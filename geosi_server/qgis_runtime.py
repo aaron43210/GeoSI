@@ -38,7 +38,7 @@ _MAX_CONCURRENT = int(os.environ.get("GEOSI_QGIS_CONCURRENCY", "4"))
 _semaphore = threading.Semaphore(_MAX_CONCURRENT)
 
 # Base data directory: each session gets a subdirectory here
-_DATA_DIR = Path(os.environ.get("GEOSI_DATA_DIR", "/tmp/geosi-data"))
+_DATA_DIR = Path(os.environ.get("GEOSI_DATA_DIR", str(Path.home() / ".geosi" / "data")))  # nosec B108
 
 
 def init() -> bool:
@@ -123,7 +123,7 @@ def engine_factory(session_id: str) -> Any:
         engine.workspace = ws
         engine._session_id = session_id
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
     if is_available():
         try:

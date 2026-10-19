@@ -343,7 +343,7 @@ async def _tool_list_layers(params: Dict, session_id: str) -> Dict:
                     "feature_count": getattr(layer, "feature_count", 0),
                 })
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
     return {"layers": layers, "count": len(layers)}
 
 

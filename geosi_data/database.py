@@ -202,7 +202,7 @@ class Database:
                 )
                 return urlunparse(masked)
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
         return url.split("@")[-1] if "@" in url else url
 
     def __repr__(self):

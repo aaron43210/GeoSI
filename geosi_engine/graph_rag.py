@@ -123,7 +123,7 @@ class GraphRAGEngine:
         if not self._neo4j or not self._neo4j.available:
             return []
 
-        from geosi_data.graph_schema import NodeLabel, RelType
+        from geosi_data.graph_schema import RelType
         rel_filter = "|".join(rel_types or [RelType.RELATED_TO, RelType.DERIVED_FROM])
 
         cypher = f"""
@@ -155,10 +155,14 @@ class GraphRAGEngine:
         try:
             if not self._engine or not self._engine.knowledge:
                 return []
-            # retrieve_context is the real KnowledgeManager entrypoint; its
-            # KnowledgeContext.relevant_docs holds the matched doc snippets.
-            ctx = self._engine.knowledge.retrieve_context(query, doc_limit=limit)
-            raw = getattr(ctx, "relevant_docs", []) or []
+            if hasattr(self._engine.knowledge, "search_gis_docs"):
+                try:
+                    raw = self._engine.knowledge.search_gis_docs(query, collection=collection, limit=limit)
+                except TypeError:
+                    raw = self._engine.knowledge.search_gis_docs(query)
+            else:
+                ctx = self._engine.knowledge.retrieve_context(query, doc_limit=limit)
+                raw = getattr(ctx, "relevant_docs", []) or []
             for r in raw:
                 results.append(GraphRAGResult(
                     text=getattr(r, "text", str(r)),

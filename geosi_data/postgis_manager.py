@@ -91,7 +91,7 @@ class PostGISManager:
 
             get_allow_list().register(table)
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
         if not isinstance(gdf, gpd.GeoDataFrame):
             raise RuntimeError(
@@ -138,7 +138,7 @@ class PostGISManager:
 
             safe_table = get_allow_list().validate_and_quote(table_name)
             gdf = gpd.read_postgis(
-                f"SELECT * FROM {safe_table}",
+                f"SELECT * FROM {safe_table}",  # nosec B608 — safe_table validated by TableAllowList
                 self._engine,
                 geom_col="geometry",
             )
@@ -249,7 +249,7 @@ class PostGISManager:
 
                 get_allow_list().register_many(tables)
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
 
             layers: List[Dict[str, Any]] = []
             for table in tables:
@@ -264,7 +264,7 @@ class PostGISManager:
                     with self._engine.connect() as conn:
                         # Use allow-list-quoted identifier; COUNT(*) table ref is safe
                         count_result = conn.execute(
-                            text(f"SELECT COUNT(*) FROM {safe_table}")
+                            text(f"SELECT COUNT(*) FROM {safe_table}")  # nosec B608 — safe_table validated by TableAllowList.validate_and_quote()
                         )
                         info["feature_count"] = count_result.scalar()
 
@@ -281,7 +281,7 @@ class PostGISManager:
                             info["geometry_type"] = geom_row[0]
                             info["srid"] = geom_row[1]
                 except (ValueError, Exception):
-                    pass
+                    logger.debug("suppressed exception", exc_info=True)
                 layers.append(info)
 
             return layers

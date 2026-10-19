@@ -26,19 +26,19 @@ _UA = "GeoSI/2.0 (geosi-plugin; contact=geosi@geosi.io)"
 def geocode(
     address: str,
     provider: str = "nominatim",
-) -> Optional[Tuple[float, float, str]]:
+) -> Tuple[float, float, str]:
     """
     Forward geocode *address*.
 
-    Returns (lon, lat, display_name) or None.
+    Returns (lon, lat, display_name) or raises ValueError.
     """
-    try:
-        if provider == "photon":
-            return _photon_geocode(address)
-        return _nominatim_geocode(address)
-    except Exception as exc:
-        logger.warning("Geocode failed for %r: %s", address, exc)
-        return None
+    if provider == "photon":
+        res = _photon_geocode(address)
+    else:
+        res = _nominatim_geocode(address)
+    if res is None:
+        raise ValueError(f"No geocoding results found for {address!r}")
+    return res
 
 
 def reverse_geocode(lat: float, lon: float) -> Optional[str]:
@@ -51,7 +51,7 @@ def reverse_geocode(lat: float, lon: float) -> Optional[str]:
             f"{_NOMINATIM}/reverse?{params}",
             headers={"User-Agent": _UA},
         )
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310
             data = json.loads(resp.read())
         return data.get("display_name")
     except Exception as exc:
@@ -71,11 +71,10 @@ def zoom_to_place(address: str, project=None) -> Optional[Tuple[float, float]]:
     lon, lat, display = result
     logger.info("Zoomed to %r → %s (%f, %f)", address, display, lon, lat)
     try:
-        from qgis.core import QgsPointXY, QgsRectangle, QgsProject, QgsCoordinateReferenceSystem, QgsCoordinateTransform
+        from qgis.core import QgsRectangle, QgsProject, QgsCoordinateReferenceSystem, QgsCoordinateTransform
         from qgis.utils import iface
 
         canvas = iface.mapCanvas()
-        point = QgsPointXY(lon, lat)
         # 0.05-degree box around the point
         rect = QgsRectangle(lon - 0.05, lat - 0.05, lon + 0.05, lat + 0.05)
         # Transform from WGS84 to canvas CRS if needed
@@ -101,7 +100,7 @@ def _nominatim_geocode(address: str) -> Optional[Tuple[float, float, str]]:
         f"{_NOMINATIM}/search?{params}",
         headers={"User-Agent": _UA},
     )
-    with urllib.request.urlopen(req, timeout=10) as resp:
+    with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310
         data = json.loads(resp.read())
     if not data:
         return None
@@ -115,7 +114,7 @@ def _photon_geocode(address: str) -> Optional[Tuple[float, float, str]]:
         f"{_PHOTON}/api?{params}",
         headers={"User-Agent": _UA},
     )
-    with urllib.request.urlopen(req, timeout=10) as resp:
+    with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310
         data = json.loads(resp.read())
     features = data.get("features", [])
     if not features:

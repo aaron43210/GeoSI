@@ -39,7 +39,6 @@ import re
 import html
 import logging
 import traceback
-from typing import Optional
 
 logger = logging.getLogger("geosi_plugin.prompt_dock")
 
@@ -486,13 +485,12 @@ class GeoSIDock:
     def _on_append_selected(self):
         """Append selected-feature context from the active layer."""
         try:
-            from qgis.core import QgsProject
             layer = None
             try:
                 from qgis.utils import iface as _iface
                 layer = (_iface or self.iface).activeLayer()
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
             if layer is None:
                 self._append_system("No active layer — click a layer in the Layers panel first.")
                 return
@@ -533,7 +531,6 @@ class GeoSIDock:
     })
 
     def _drag_enter(self, event):
-        from qgis.PyQt.QtCore import Qt
         if event.mimeData().hasUrls():
             paths = [u.toLocalFile() for u in event.mimeData().urls()]
             if any(os.path.splitext(p)[1].lower() in self._GIS_EXTS for p in paths):
@@ -609,7 +606,7 @@ class GeoSIDock:
                     try:
                         crs = qgs_layer.crs().authid()
                     except Exception:
-                        pass
+                        logger.debug("suppressed exception", exc_info=True)
 
                     if hasattr(qgs_layer, "featureCount"):
                         # Vector layer
@@ -619,7 +616,7 @@ class GeoSIDock:
                             from qgis.core import QgsWkbTypes
                             geom_type = QgsWkbTypes.displayString(wkb)
                         except Exception:
-                            pass
+                            logger.debug("suppressed exception", exc_info=True)
                     else:
                         # Raster layer
                         layer_type = "raster"
@@ -633,7 +630,7 @@ class GeoSIDock:
                             fields = [f.name() for f in qgs_layer.fields()]
                             field_types, field_values = field_metadata(qgs_layer)
                         except Exception:
-                            pass
+                            logger.debug("suppressed exception", exc_info=True)
                     engine_layer = Layer(
                         name=name,
                         geometry_type=geom_type,
@@ -798,9 +795,8 @@ class GeoSIDock:
         """Return True if the local Ollama endpoint is reachable right now."""
         try:
             from urllib.request import urlopen
-            from urllib.error import URLError
             url = getattr(agent, "_ollama_endpoint", "http://localhost:11434") + "/api/tags"
-            with urlopen(url, timeout=1.0) as resp:
+            with urlopen(url, timeout=1.0) as resp:  # nosec B310
                 return resp.status == 200
         except Exception:
             return False

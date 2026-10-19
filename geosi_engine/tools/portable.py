@@ -6,11 +6,14 @@ These tools work in any environment using GeoPandas, Rasterio, etc.
 They handle data loading, saving, and basic table manipulation.
 """
 
+import logging
 import os
-from typing import Dict, Any, Optional
+from typing import Any, Optional
 
 from geosi_engine.base import PortableTool
 from geosi_engine.models import ToolSpec, ToolParameter, ToolResult, Layer
+
+logger = logging.getLogger("geosi_engine.tools.portable")
 
 
 class LoadLayerTool(PortableTool):
@@ -51,7 +54,7 @@ class LoadLayerTool(PortableTool):
                 try:
                     _ = data.sindex
                 except Exception:
-                    pass
+                    logger.debug("suppressed exception", exc_info=True)
                 layer = Layer(
                     name=name,
                     layer_type="vector",
@@ -274,7 +277,7 @@ class CountFeaturesTool(PortableTool):
                     message=f"Layer '{name}' has {count} feature(s).",
                 )
             except ImportError:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
 
             # Try fiona
             try:
@@ -288,7 +291,7 @@ class CountFeaturesTool(PortableTool):
                     message=f"Layer '{name}' has {count} feature(s).",
                 )
             except ImportError:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
 
             # Try osgeo.ogr (always present in QGIS / GDAL installations)
             try:
@@ -305,7 +308,7 @@ class CountFeaturesTool(PortableTool):
                     message=f"Layer '{name}' has {count} feature(s).",
                 )
             except ImportError:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
 
             return ToolResult(
                 success=False,

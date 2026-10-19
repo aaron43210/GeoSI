@@ -23,7 +23,7 @@ import zipfile
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -255,7 +255,7 @@ async def load_workspace_layer(
                 if geom_types:
                     layer.geometry_type = geom_types[0]
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
         engine.state.add_layer(layer)
         logger.info("Loaded workspace layer %s (%s) into session %s", layer_name, dest, sid)
         return LoadResult(

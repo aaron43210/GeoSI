@@ -24,9 +24,8 @@ import logging
 import os
 import threading
 import time
-from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
-from typing import Any, AsyncGenerator, Dict, Generator, List, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("geosi_data.neo4j_client")
 
@@ -178,7 +177,7 @@ class Neo4jClient:
             try:
                 self._driver.close()
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
 
     def circuit_state(self) -> str:
         return self._cb.state()

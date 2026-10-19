@@ -60,3 +60,6 @@ puppeteer-config.json
 # Plugin packaging output
 dist/
 *.zip
+
+# Third-party reference checkout (TerraLab, GPL) — never commit
+QGIS_AI-Agent/

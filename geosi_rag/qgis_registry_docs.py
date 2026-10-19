@@ -76,6 +76,7 @@ def _full_help_map() -> Dict[str, str]:
                 if full:
                     help_map[alg.id()] = full
             except Exception:  # pragma: no cover - per-alg defensive
+                logger.debug("suppressed exception", exc_info=True)
                 continue
     except Exception as exc:  # pragma: no cover - no QGIS
         logger.debug("Could not pull full help strings: %s", exc)

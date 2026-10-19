@@ -68,10 +68,9 @@ def _load_gdf(layer):
     Raises ``RuntimeError`` with a human-readable reason when geometry cannot
     be produced (missing geopandas, no features, unreadable file).
     """
-    try:
-        import geopandas  # noqa: F401
-    except Exception as exc:  # pragma: no cover - env without geopandas
-        raise RuntimeError(f"geopandas not available: {exc}") from exc
+    import importlib.util
+    if importlib.util.find_spec("geopandas") is None:  # pragma: no cover
+        raise RuntimeError("geopandas not available")
 
     gdf = getattr(layer, "features", None)
     if gdf is None:
@@ -89,7 +88,7 @@ def _to_wgs84(gdf, declared_crs: str):
         try:
             gdf = gdf.set_crs(declared_crs, allow_override=True)
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
     try:
         if gdf.crs is not None:
             gdf = gdf.to_crs(4326)

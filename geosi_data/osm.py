@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("geosi_data.osm")
 
@@ -85,7 +85,7 @@ def geocode_bbox(
             f"{NOMINATIM_URL}?{params}",
             headers={"User-Agent": "GeoSI/2.0 (geosi-plugin)"},
         )
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310
             data = json.loads(resp.read())
         if not data:
             return None
@@ -212,7 +212,7 @@ def fetch_osm_features(
                      "User-Agent": "GeoSI/2.0"},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=45) as resp:
+        with urllib.request.urlopen(req, timeout=45) as resp:  # nosec B310
             raw = json.loads(resp.read())
     except Exception as exc:
         logger.error("Overpass request failed: %s", exc)
@@ -234,10 +234,13 @@ def fetch_osm_features(
         )
         if not layer.isValid():
             # Fall back to temp file
-            import tempfile, os
-            tmp = tempfile.mktemp(suffix=".geojson")
-            with open(tmp, "w") as f:
-                json.dump(geojson, f)
+            import tempfile
+            # Use NamedTemporaryFile (delete=False) instead of insecure mktemp
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".geojson", delete=False
+            ) as tf:
+                tmp = tf.name
+                json.dump(geojson, tf)
             layer = QgsVectorLayer(tmp, layer_name, "ogr")
         if layer.isValid():
             QgsProject.instance().addMapLayer(layer)

@@ -9,10 +9,8 @@ every query → plan → result cycle is recorded here for future
 retrieval and learning.
 """
 
-import json
 import logging
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone
 
 logger = logging.getLogger("geosi_data.metadata_repository")
 

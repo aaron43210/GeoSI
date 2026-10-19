@@ -328,7 +328,7 @@ class QueryParser:
                             return pref
                     return models[0]
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
         return model
 
     # -- public API --------------------------------------------------------
@@ -728,7 +728,7 @@ class QueryParser:
             data=body,
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # nosec B310
             data = json.loads(resp.read().decode("utf-8"))
         text = data["choices"][0]["message"]["content"]
         return self._json_to_request(query, text, available_layers)
@@ -757,7 +757,7 @@ class QueryParser:
         try:
             return json.loads(cleaned)
         except json.JSONDecodeError:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
         # Greedy-match the first balanced JSON object in the response.
         start = cleaned.find("{")
         end = cleaned.rfind("}")

@@ -482,7 +482,7 @@ class AgentLoop:
                 data=payload,
                 headers={"Content-Type": "application/json"},
             )
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, timeout=60) as resp:  # nosec B310
                 if resp.status == 200:
                     data = json.loads(resp.read().decode("utf-8"))
                     text = data.get("response", "").strip()
@@ -621,7 +621,7 @@ class AgentLoop:
             try:
                 self.on_progress(pct)
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
 
     @staticmethod
     def _final_output(plan: ExecutionPlan, result: ExecutionResult):

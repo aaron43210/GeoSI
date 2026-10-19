@@ -19,7 +19,6 @@ Permission tier: Never executes — output is code for human review only.
 from __future__ import annotations
 
 import logging
-import textwrap
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -176,7 +175,7 @@ class CodeGenerationAgent:
                     warnings.append("🛡 ASTGuard flagged potential issues:")
                     warnings.extend(f"   • {v}" for v in violations)
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
 
             result = GeneratedCode(
                 success=True,

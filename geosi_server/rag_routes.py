@@ -10,7 +10,7 @@ Endpoints:
 """
 
 import logging
-from typing import Optional, List
+from typing import List
 
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field

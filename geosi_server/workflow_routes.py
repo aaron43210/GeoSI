@@ -11,9 +11,9 @@ Endpoints:
 """
 
 import logging
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from geosi_server.auth import api_key_auth

@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Optional
 
-from geosi_engine.telemetry import start_span, set_span_attr
+from geosi_engine.telemetry import start_span
 
 logger = logging.getLogger("geosi_engine.agents.supervisor")
 

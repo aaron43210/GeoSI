@@ -57,11 +57,10 @@ def build_print_layout(
         from qgis.core import (
             QgsProject, QgsPrintLayout, QgsLayoutSize, QgsUnitTypes,
             QgsLayoutItemMap, QgsLayoutItemLegend, QgsLayoutItemScaleBar,
-            QgsLayoutItemLabel, QgsLayoutPoint, QgsLayoutItemPage,
-            QgsLayoutMeasurement,
+            QgsLayoutItemLabel,
         )
         from qgis.PyQt.QtCore import QRectF
-        from qgis.PyQt.QtGui import QFont, QColor
+        from qgis.PyQt.QtGui import QFont
     except ImportError:
         logger.warning("QGIS not available — build_print_layout skipped")
         return None
@@ -102,7 +101,7 @@ def build_print_layout(
         try:
             map_item.zoomToExtent(project.viewSettings().defaultViewExtent())
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
     map_item.refresh()
 
@@ -142,7 +141,6 @@ def build_print_layout(
     if include_north_arrow:
         try:
             from qgis.core import QgsLayoutItemPicture
-            from qgis.PyQt.QtCore import Qt
             arrow = QgsLayoutItemPicture(layout)
             # Use QGIS built-in north arrow SVG
             svg = os.path.join(
@@ -183,7 +181,6 @@ def export_layout(
     try:
         from qgis.core import (
             QgsLayoutExporter,
-            QgsProject,
         )
 
         exporter = QgsLayoutExporter(layout)

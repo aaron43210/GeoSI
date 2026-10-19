@@ -114,7 +114,7 @@ class ToolRetriever:
             missing = []
             for spec in specs:
                 text = self._tool_text(spec)
-                key = hashlib.sha1(text.encode("utf-8")).hexdigest()
+                key = hashlib.sha1(text.encode("utf-8"), usedforsecurity=False).hexdigest()  # noqa: S324
                 if key in cache:
                     vectors[spec.name] = cache[key]
                 else:

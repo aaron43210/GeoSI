@@ -19,7 +19,6 @@ PRD references: FR-7.1, FR-7.2, FR-7.3
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import time
@@ -398,7 +397,7 @@ class RAGASRunner:
             if self._engine and self._engine.data:
                 return self._engine.data.get("database")
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
         return None
 
     @staticmethod

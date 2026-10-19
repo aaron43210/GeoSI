@@ -36,7 +36,7 @@ import os
 import json
 import re
 import logging
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Tuple
 from difflib import SequenceMatcher
 
 from geosi_engine.models import (
@@ -182,7 +182,7 @@ class GeoSIAgent:
             import urllib.request
             import json
             req = urllib.request.Request(f"{self._ollama_endpoint}/api/tags")
-            with urllib.request.urlopen(req, timeout=1.5) as resp:
+            with urllib.request.urlopen(req, timeout=1.5) as resp:  # nosec B310
                 if resp.status == 200:
                     data = json.loads(resp.read().decode("utf-8"))
                     models = [m.get("name") for m in data.get("models", [])]
@@ -194,7 +194,7 @@ class GeoSIAgent:
                                 return pref
                         return models[0]
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
         return model
 
     # ── Public API ─────────────────────────────────────────────────────
@@ -533,7 +533,6 @@ class GeoSIAgent:
         This is the most reliable planner — it handles all well-understood
         GIS operations without needing an LLM.
         """
-        query_lower = (request.query or "").lower()
 
         # Conversational, educational, or code-generation queries should not
         # receive a dummy spatial step like count_features.
@@ -1095,7 +1094,7 @@ Return ONLY valid JSON:
         import urllib.request
         try:
             req = urllib.request.Request(f"{self._ollama_endpoint}/api/tags")
-            with urllib.request.urlopen(req, timeout=1.5) as resp:
+            with urllib.request.urlopen(req, timeout=1.5) as resp:  # nosec B310
                 pass
         except Exception as exc:
             raise RuntimeError(f"Ollama unreachable: {exc}")
@@ -1116,7 +1115,7 @@ Return ONLY valid JSON:
             data=payload,
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(post_req, timeout=120) as resp:
+        with urllib.request.urlopen(post_req, timeout=120) as resp:  # nosec B310
             data = json.loads(resp.read().decode("utf-8"))
             text = data.get("response", "")
             return self._json_to_plan(request, text)

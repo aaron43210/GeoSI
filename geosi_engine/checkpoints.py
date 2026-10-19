@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import logging
 import os
-import tempfile
 import threading
 import time
 import uuid
@@ -193,16 +192,12 @@ class CheckpointManager:
             lid = layer.id()
             style_xml = ""
             try:
-                import xml.etree.ElementTree as ET
-                doc = layer.asLayerDefinition() if hasattr(layer, "asLayerDefinition") else None
-                if doc:
-                    style_xml = ET.tostring(doc.documentElement() if hasattr(doc, "documentElement") else doc,
-                                             encoding="unicode")
-                else:
-                    mgr = layer.styleManager()
-                    style_xml = mgr.currentStyle() if mgr else ""
+                from qgis.PyQt.QtXml import QDomDocument
+                doc = QDomDocument("qgis")
+                layer.exportNamedStyle(doc)
+                style_xml = doc.toString()
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
 
             is_memory = "memory" in layer.providerType().lower() if hasattr(layer, "providerType") else False
             memory_gpkg = None
@@ -256,12 +251,16 @@ class CheckpointManager:
     @staticmethod
     def _reapply_style(layer: Any, style_xml: str) -> None:
         try:
-            mgr = layer.styleManager()
-            if mgr and style_xml:
-                mgr.setCurrentStyle(style_xml)
+            from qgis.PyQt.QtXml import QDomDocument
+            doc = QDomDocument("qgis")
+            if not style_xml:
+                return
+            doc.setContent(style_xml)
+            if not doc.documentElement().isNull():
+                layer.importNamedStyle(doc)
                 layer.triggerRepaint()
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
     def _evict_old(self) -> None:
         """Remove oldest checkpoints when over the limit."""
@@ -280,4 +279,4 @@ class CheckpointManager:
                 try:
                     Path(snap.memory_gpkg).unlink(missing_ok=True)
                 except Exception:
-                    pass
+                    logger.debug("suppressed exception", exc_info=True)

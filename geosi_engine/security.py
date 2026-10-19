@@ -243,7 +243,7 @@ class ASTGuard:
             msg = "Code blocked by ASTGuard:\n" + "\n".join(f"  • {v}" for v in violations)
             return False, msg
         try:
-            exec(compile(code, "<generated>", "exec"), globals_, locals_)  # noqa: S102
+            exec(compile(code, "<generated>", "exec"), globals_, locals_)  # nosec B102 — code already AST-validated above
             return True, ""
         except Exception as exc:
             return False, str(exc)

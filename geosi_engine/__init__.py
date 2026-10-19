@@ -106,9 +106,9 @@ class GeoSI:
         # ── Discover portable tools (GeoPandas/Rasterio loaders) ───────
         # These work without QGIS and are always available
         try:
-            portable_count = self.registry.discover_portable_tools()
+            self.registry.discover_portable_tools()
         except Exception:
-            portable_count = 0
+            logger.debug("suppressed exception", exc_info=True)
 
         # ── Register domain agents as tools (PRD "any GIS task") ───────
         # Exposes Code Generation / Report / Research / Remote Sensing /

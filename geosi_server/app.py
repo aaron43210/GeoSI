@@ -20,7 +20,7 @@ import logging
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Depends, Request
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
 logger = logging.getLogger("geosi_server")
@@ -106,7 +106,7 @@ async def lifespan(app: FastAPI):
         from geosi_engine.graph_writer import GraphWriter
         GraphWriter.get_instance().stop()
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
     if _pool:
         try:
             _pool.cleanup()
@@ -116,7 +116,7 @@ async def lifespan(app: FastAPI):
         from geosi_server.qgis_runtime import shutdown as qgis_shutdown
         qgis_shutdown()
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
     logger.info("GeoSI v2 Server shutdown complete.")
 
 
@@ -303,7 +303,7 @@ async def metrics(api_key: str = Depends(api_key_auth)):
         from fastapi.responses import Response
         return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
     except ImportError:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
     # JSON fallback
     cbs = get_supervisor().circuit_breaker_states()

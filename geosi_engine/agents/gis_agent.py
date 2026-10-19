@@ -18,14 +18,13 @@ import logging
 import time
 from typing import Any, Optional
 
-from geosi_engine.models import ApprovalResult, PermissionDecision, ToolResult, ToolStep
+from geosi_engine.models import PermissionDecision, ToolResult, ToolStep
 
 logger = logging.getLogger("geosi_engine.agents.gis_agent")
 
 
 class PermissionDeniedError(Exception):
     """Raised when Permission & Safety Agent denies a tool execution."""
-    pass
 
 
 class ApprovalPendingError(Exception):
@@ -93,7 +92,6 @@ class GISAgent:
         -------
         ToolResult
         """
-        start_ms = time.monotonic() * 1000
 
         # ── Step 1: audit log BEFORE execution ──────────────────────────
         decision: Optional[PermissionDecision] = None

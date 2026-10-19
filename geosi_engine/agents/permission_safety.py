@@ -406,7 +406,6 @@ class PermissionSafetyAgent:
                 return None
 
             from geosi_data.db_models import AuditLogRecord
-            import json
 
             record = AuditLogRecord(
                 session_id=session_id,
@@ -548,7 +547,7 @@ class PermissionSafetyAgent:
             if hasattr(self._engine, "data") and self._engine.data:
                 return self._engine.data.get("database")
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
         return None
 
     def _persist_pending_approval(self, pending: _PendingApproval) -> None:
@@ -558,7 +557,6 @@ class PermissionSafetyAgent:
             if db is None or not db.available:
                 return
             from geosi_data.db_models import PendingApprovalRecord
-            import json
             with db.get_session() as sess:
                 sess.add(PendingApprovalRecord(
                     action_id=pending.action_id,

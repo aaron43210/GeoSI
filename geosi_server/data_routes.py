@@ -14,7 +14,7 @@ Endpoints:
 import logging
 from typing import List, Optional, Dict, Any
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 from geosi_server.auth import api_key_auth, admin_auth

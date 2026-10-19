@@ -125,7 +125,6 @@ def _init_tracer():
 
 def get_tracer():
     """Return the singleton OTel tracer (initialising on first call)."""
-    global _tracer
     if _tracer is None:
         _init_tracer()
     return _tracer
@@ -200,7 +199,7 @@ def span(name: str, agent: Optional[str] = None):
                         from opentelemetry.trace import StatusCode
                         s.set_status(StatusCode.ERROR, str(exc))
                     except Exception:
-                        pass
+                        logger.debug("suppressed exception", exc_info=True)
                     raise
         return wrapper
     return decorator
@@ -236,7 +235,7 @@ def start_span(name: str, **attrs: Any) -> Generator[Any, None, None]:
                 from opentelemetry.trace import StatusCode
                 s.set_status(StatusCode.ERROR, str(exc))
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
             raise
 
 
@@ -256,4 +255,4 @@ def set_span_attr(key: str, value: Any) -> None:
         if current:
             current.set_attribute(key, str(value))
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)

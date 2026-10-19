@@ -39,11 +39,9 @@ logger = logging.getLogger("geosi_mcp.stdio_server")
 
 # ── Try to import fastmcp; fall back to a minimal hand-rolled stdio loop ──
 
-try:
-    import fastmcp  # type: ignore
-    _HAS_FASTMCP = True
-except ImportError:
-    _HAS_FASTMCP = False
+import importlib.util
+
+_HAS_FASTMCP = importlib.util.find_spec("fastmcp") is not None
 
 
 # ── Tool definitions reused from server.py ───────────────────────────────
@@ -83,7 +81,7 @@ def _run_fastmcp() -> None:
     import fastmcp  # type: ignore
 
     transport = os.environ.get("GEOSI_MCP_TRANSPORT", "stdio")
-    host = os.environ.get("GEOSI_MCP_HOST", "0.0.0.0")
+    host = os.environ.get("GEOSI_MCP_HOST", "127.0.0.1")  # nosec B104 — override via env for production
     port = int(os.environ.get("GEOSI_MCP_PORT", "8001"))
 
     mcp = fastmcp.FastMCP("GeoSI")

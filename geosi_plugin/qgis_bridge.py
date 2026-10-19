@@ -52,7 +52,7 @@ import sys
 import tempfile
 import time
 import uuid
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set
 
 # ── Ensure plugin directory is importable ─────────────────────────────────
 plugin_dir = os.path.dirname(__file__)
@@ -371,7 +371,7 @@ def auto_discover_qgis_tools(registry) -> int:
                     if raw_default is not None:
                         default_val = str(raw_default)
                 except Exception:
-                    pass
+                    logger.debug("suppressed exception", exc_info=True)
                 # QGIS fills non-optional params that have a default itself
                 # (e.g. native:buffer SEGMENTS=5), so only params with no
                 # default must come from the plan.
@@ -384,12 +384,12 @@ def auto_discover_qgis_tools(registry) -> int:
                     try:
                         parent_layer = param.parentLayerParameterName() or None
                     except Exception:
-                        pass
+                        logger.debug("suppressed exception", exc_info=True)
                 elif qgis_type == "enum":
                     try:
                         options = [str(o) for o in param.options()]
                     except Exception:
-                        pass
+                        logger.debug("suppressed exception", exc_info=True)
 
                 tool_params.append(ToolParameter(
                     name=param.name(),
@@ -622,7 +622,7 @@ def field_metadata(lyr, max_values: int = 50):
                 if len(uniq) <= max_values:
                     values[f.name()] = [u for u in uniq if u not in (None, "")]
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
     return types, values
 
 
