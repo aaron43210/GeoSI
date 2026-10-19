@@ -19,6 +19,11 @@ for _path in (_PLUGIN_DIR, os.path.dirname(_PLUGIN_DIR)):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
+# Ensure Plugin Reloader picks up engine changes by purging cached submodules
+for _mod_name in list(sys.modules.keys()):
+    if _mod_name.startswith(("geosi_engine", "geosi_plugin.", "geosi_data", "geosi_knowledge", "geosi_rag")):
+        del sys.modules[_mod_name]
+
 
 def classFactory(iface):
     """
