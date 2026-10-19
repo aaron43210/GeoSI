@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — MCP Auth Middleware (FR-5.3)
 ════════════════════════════════════════════════════════════════════
@@ -12,17 +11,17 @@ Security model:
   - All MCP calls pass through Supervisor + Permission & Safety (FR-5.2) —
     never bypass path.
 """
+
 from __future__ import annotations
 
 import hmac
 import logging
 import os
-from typing import Optional
 
 logger = logging.getLogger("geosi_mcp.auth")
 
 
-def get_mcp_token() -> Optional[str]:
+def get_mcp_token() -> str | None:
     """Return the configured MCP token from environment."""
     return os.environ.get("GEOSI_MCP_TOKEN", "").strip() or None
 
@@ -63,7 +62,7 @@ def verify_mcp_token(provided: str) -> bool:
     )
 
 
-def extract_bearer_token(authorization: str) -> Optional[str]:
+def extract_bearer_token(authorization: str) -> str | None:
     """Extract token from 'Bearer <token>' Authorization header."""
     if not authorization:
         return None

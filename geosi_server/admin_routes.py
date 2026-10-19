@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Admin Routes (Phase P1 gap)
 ════════════════════════════════════════════════════════════════════
@@ -8,10 +7,11 @@ Admin-only endpoints (PRD §5.4, §11, FR-2.3):
   DELETE /admin/policy/{id}   — remove an override
   GET  /admin/policy          — list all overrides
 """
+
 from __future__ import annotations
 
 import logging
-from typing import List, Optional
+from datetime import UTC
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -23,6 +23,7 @@ router = APIRouter()
 
 
 # ── Request / Response models ─────────────────────────────────────────
+
 
 class PolicyOverrideIn(BaseModel):
     """Body for creating / updating a policy override."""
@@ -38,7 +39,7 @@ class PolicyOverrideIn(BaseModel):
         pattern="^(allow|ask|deny)$",
         description="Override decision: 'allow' | 'ask' | 'deny'",
     )
-    note: Optional[str] = Field(None, description="Human-readable reason for this override")
+    note: str | None = Field(None, description="Human-readable reason for this override")
 
 
 class PolicyOverrideOut(BaseModel):
@@ -46,22 +47,23 @@ class PolicyOverrideOut(BaseModel):
     algorithm_id: str
     decision: str
     set_by: str
-    note: Optional[str] = None
+    note: str | None = None
     created_at: str
     updated_at: str
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────
 
-@router.get("/policy", response_model=List[PolicyOverrideOut], tags=["Admin"])
+
+@router.get("/policy", response_model=list[PolicyOverrideOut], tags=["Admin"])
 async def list_policy_overrides(api_key: str = Depends(admin_auth)):
     """
     List all per-algorithm policy overrides (FR-2.3).
 
     Returns the full contents of ``geosi_policy_overrides``.
     """
-    from geosi_server.app import get_pool
     from geosi_data.db_models import PolicyOverrideRecord
+    from geosi_server.app import get_pool
 
     engine = get_pool().get_or_create(api_key)
     db = _get_db(engine)
@@ -85,7 +87,7 @@ async def list_policy_overrides(api_key: str = Depends(admin_auth)):
             ]
     except Exception as exc:
         logger.error("Failed to list policy overrides: %s", exc)
-        raise HTTPException(status_code=500, detail="Database error listing policies.")
+        raise HTTPException(status_code=500, detail="Database error listing policies.") from exc
 
 
 @router.post("/policy", response_model=PolicyOverrideOut, status_code=status.HTTP_201_CREATED, tags=["Admin"])
@@ -106,9 +108,10 @@ async def upsert_policy_override(
     - Fast-track ``native:buffer`` → allow (skip HITL for this trusted op):
       ``{"algorithm_id": "native:buffer", "decision": "allow"}``
     """
-    from geosi_server.app import get_pool
+    from datetime import datetime
+
     from geosi_data.db_models import PolicyOverrideRecord
-    from datetime import datetime, timezone
+    from geosi_server.app import get_pool
 
     engine = get_pool().get_or_create(api_key)
     db = _get_db(engine)
@@ -129,7 +132,7 @@ async def upsert_policy_override(
                 existing.decision = req.decision
                 existing.set_by = api_key[:8] + "..."  # anonymise key
                 existing.note = req.note
-                existing.updated_at = datetime.now(timezone.utc)
+                existing.updated_at = datetime.now(UTC)
                 record = existing
             else:
                 record = PolicyOverrideRecord(
@@ -165,7 +168,7 @@ async def upsert_policy_override(
 
     except Exception as exc:
         logger.error("Failed to upsert policy override: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Database error: {exc}")
+        raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
 
 
 @router.delete(
@@ -180,8 +183,8 @@ async def delete_policy_override(
     """
     Remove a policy override, restoring the default risk-based policy for that algorithm.
     """
-    from geosi_server.app import get_pool
     from geosi_data.db_models import PolicyOverrideRecord
+    from geosi_server.app import get_pool
 
     engine = get_pool().get_or_create(api_key)
     db = _get_db(engine)
@@ -191,9 +194,7 @@ async def delete_policy_override(
     try:
         with db.get_session() as session:
             deleted = (
-                session.query(PolicyOverrideRecord)
-                .filter(PolicyOverrideRecord.algorithm_id == algorithm_id)
-                .delete()
+                session.query(PolicyOverrideRecord).filter(PolicyOverrideRecord.algorithm_id == algorithm_id).delete()
             )
         if not deleted:
             raise HTTPException(
@@ -205,10 +206,11 @@ async def delete_policy_override(
         raise
     except Exception as exc:
         logger.error("Failed to delete policy override: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Database error: {exc}")
+        raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
 
 
 # ── Helper ────────────────────────────────────────────────────────────
+
 
 def _get_db(engine):
     """Extract the Database object from a GeoSI engine instance."""

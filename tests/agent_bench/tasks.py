@@ -15,8 +15,8 @@ from __future__ import annotations
 
 from .data import FACTS
 
-
 # ── checker helpers ─────────────────────────────────────────────────────
+
 
 def _layer(ctx, geom=None, raster=False):
     lyr = ctx.raster() if raster else ctx.vector(geom)
@@ -33,6 +33,7 @@ def count(geom, n):
             return err
         got = lyr.featureCount()
         return None if got == n else f"expected {n} {geom} features, got {got}"
+
     return check
 
 
@@ -43,6 +44,7 @@ def at_least(geom, n):
             return err
         got = lyr.featureCount()
         return None if got >= n else f"expected >= {n} {geom} features, got {got}"
+
     return check
 
 
@@ -52,11 +54,13 @@ def raster_crs(authid):
         if err:
             return err
         return None if lyr.crs().authid() == authid else f"crs {lyr.crs().authid()}"
+
     return check
 
 
 def field_values(geom, key_field, value_field, expected, tol=1e-6):
     """Every feature's value_field matches expected[key_field value]."""
+
     def check(ctx):
         lyr, err = _layer(ctx, geom)
         if err:
@@ -72,6 +76,7 @@ def field_values(geom, key_field, value_field, expected, tol=1e-6):
             if want is not None and abs(float(f[vf] or 0) - want) > tol:
                 return f"{f[key_field]}: {vf}={f[vf]} expected {want}"
         return None
+
     return check
 
 
@@ -86,6 +91,7 @@ def has_field(geom, name_part, positive=True):
                     return f"field {fld.name()} has non-positive values"
                 return None
         return f"no field containing '{name_part}' in {[f.name() for f in lyr.fields()]}"
+
     return check
 
 
@@ -95,6 +101,7 @@ def crs(authid, geom=None):
         if err:
             return err
         return None if lyr.crs().authid() == authid else f"crs {lyr.crs().authid()}"
+
     return check
 
 
@@ -104,9 +111,11 @@ def raster_stat(stat, lo, hi, band=1):
         if err:
             return err
         from qgis.core import Qgis
+
         s = lyr.dataProvider().bandStatistics(band, Qgis.RasterBandStatistic.All)
         v = {"min": s.minimumValue, "max": s.maximumValue, "mean": s.mean}[stat]
         return None if lo <= v <= hi else f"band {band} {stat}={v:.3f} not in [{lo}, {hi}]"
+
     return check
 
 
@@ -114,6 +123,7 @@ def answer_mentions(*words):
     def check(ctx):
         missing = [w for w in words if w.lower() not in ctx.answer]
         return None if not missing else f"answer lacks {missing}: {ctx.answer[:120]!r}"
+
     return check
 
 
@@ -124,11 +134,12 @@ def all_of(*checks):
             if err:
                 return err
         return None
+
     return check
 
 
 def no_new_layers(ctx):
-    return None if not ctx.layers else f"unexpected layers {[l.name() for l in ctx.layers]}"
+    return None if not ctx.layers else f"unexpected layers {[lyr.name() for lyr in ctx.layers]}"
 
 
 # ── tasks ───────────────────────────────────────────────────────────────
@@ -141,10 +152,19 @@ TASKS = [
     ("v04", "vector", "create voronoi polygons from hospitals", count("polygon", 10)),
     ("v05", "vector", "fix geometries of parcels", count("polygon", 4)),
     ("v06", "vector", "reproject hospitals to EPSG:4326", all_of(count("point", 10), crs("EPSG:4326"))),
-    ("v07", "vector", "count the hospitals inside each flood_zones polygon",
-     field_values("polygon", "zone", "NUMPOINTS", {k: float(v) for k, v in FACTS["zone_counts"].items()})),
+    (
+        "v07",
+        "vector",
+        "count the hospitals inside each flood_zones polygon",
+        field_values("polygon", "zone", "NUMPOINTS", {k: float(v) for k, v in FACTS["zone_counts"].items()}),
+    ),
     ("v08", "vector", "select hospitals that are inside flood_zones", count("point", FACTS["hospitals_in_any_zone"])),
-    ("v09", "vector", "find hospitals within 1 km of flood_zones", count("point", FACTS["hospitals_within_1km_of_zones"])),
+    (
+        "v09",
+        "vector",
+        "find hospitals within 1 km of flood_zones",
+        count("point", FACTS["hospitals_within_1km_of_zones"]),
+    ),
     ("v10", "vector", "add area field to parcels", has_field("polygon", "area")),
     ("v11", "vector", "calculate the length of each road", has_field("line", "length")),
     ("v12", "vector", "dissolve parcels by owner", count("polygon", 3)),
@@ -153,32 +173,56 @@ TASKS = [
     ("v15", "vector", "convert flood_zones polygons to lines", count("line", 2)),
     ("v16", "vector", "create a 1 km grid of polygons covering parcels", count("polygon", 16)),
     ("v17", "vector", "join each hospital to the flood zone it falls in", count("point", 10)),
-
     # multi-step vector
     ("m01", "multi", "buffer roads by 200 m and dissolve the result", count("polygon", 1)),
-    ("m02", "multi", "buffer flood_zones by 1 km then select hospitals inside the buffer",
-     count("point", FACTS["hospitals_within_1km_of_zones"])),
-    ("m03", "multi", "reproject parcels to EPSG:4326 and then compute their centroids",
-     all_of(count("point", 4), crs("EPSG:4326", "point"))),
+    (
+        "m02",
+        "multi",
+        "buffer flood_zones by 1 km then select hospitals inside the buffer",
+        count("point", FACTS["hospitals_within_1km_of_zones"]),
+    ),
+    (
+        "m03",
+        "multi",
+        "reproject parcels to EPSG:4326 and then compute their centroids",
+        all_of(count("point", 4), crs("EPSG:4326", "point")),
+    ),
     ("m04", "multi", "find hospitals outside all flood_zones and buffer them by 300 m", count("polygon", 5)),
-    ("m05", "multi", "dissolve parcels by owner and add an area field", all_of(count("polygon", 3), has_field("polygon", "area"))),
-
+    (
+        "m05",
+        "multi",
+        "dissolve parcels by owner and add an area field",
+        all_of(count("polygon", 3), has_field("polygon", "area")),
+    ),
     # raster / terrain
     ("r01", "raster", "calculate slope from dem", raster_stat("max", 1, 89)),
     ("r02", "raster", "create a hillshade of dem", raster_stat("max", 1, 255)),
     ("r03", "raster", "compute aspect of dem", raster_stat("max", 180, 360)),
     ("r04", "raster", "generate contour lines every 50 m from dem", at_least("line", 5)),
-    ("r05", "raster", "calculate NDVI from image using band 3 as red and band 4 as NIR", raster_stat("max", 0.75, 0.85)),
+    (
+        "r05",
+        "raster",
+        "calculate NDVI from image using band 3 as red and band 4 as NIR",
+        raster_stat("max", 0.75, 0.85),
+    ),
     ("r06", "raster", "reproject dem to EPSG:4326", raster_crs("EPSG:4326")),
     ("r07", "raster", "clip dem to flood_zones", raster_stat("max", 100, 500)),
-
     # questions (answer must be in text)
     ("q01", "question", "how many hospitals are there?", answer_mentions(str(FACTS["hospitals_count"]))),
     ("q02", "question", "which flood zone has the most hospitals?", answer_mentions(FACTS["zone_with_most_hospitals"])),
-    ("q03", "question", "how many hospitals are inside flood zones?", answer_mentions(str(FACTS["hospitals_in_any_zone"]))),
-    ("q04", "question", "what is the total number of beds across all hospitals?", answer_mentions(str(FACTS["beds_total"]))),
+    (
+        "q03",
+        "question",
+        "how many hospitals are inside flood zones?",
+        answer_mentions(str(FACTS["hospitals_in_any_zone"])),
+    ),
+    (
+        "q04",
+        "question",
+        "what is the total number of beds across all hospitals?",
+        answer_mentions(str(FACTS["beds_total"])),
+    ),
     ("q05", "question", "how many parcels does owner A have?", answer_mentions("2")),
-
     # should refuse / ask instead of guessing
     ("x01", "refuse", "buffer the schools layer by 100 m", no_new_layers),
     ("x02", "refuse", "delete all hospitals", no_new_layers),
@@ -206,7 +250,12 @@ HOLDOUT_TASKS = [
     ("h14", "multi", "create a hillshade from dem then clip it to flood_zones", raster_stat("max", 1, 255)),
     ("h15", "question", "how long is road R1 in metres?", answer_mentions("6000")),
     ("h16", "vector", "find the parcels owned by C", count("polygon", 1)),
-    ("h17", "vector", "add the x and y coordinates of each hospital as fields", has_field("point", "x", positive=False)),
+    (
+        "h17",
+        "vector",
+        "add the x and y coordinates of each hospital as fields",
+        has_field("point", "x", positive=False),
+    ),
     ("h18", "refuse", "drop the roads layer", no_new_layers),
     ("h19", "vector", "clip hospitals to flood_zones", count("point", 5)),
     ("h20", "multi", "extract parcels of owner A and dissolve them", count("polygon", 1)),
@@ -226,8 +275,7 @@ BLIND_TASKS = [
     ("b05", "raster", "create a heatmap of hospitals with a 1 km radius", raster_stat("max", 1e-9, 1e12)),
     ("b06", "question", "which hospital has the most beds?", answer_mentions("H9")),
     ("b07", "question", "list the owners of parcels", answer_mentions("A", "B", "C")),
-    ("b08", "multi", "buffer each road by 100 m, dissolve them, and count the hospitals inside",
-     count("polygon", 1)),
+    ("b08", "multi", "buffer each road by 100 m, dissolve them, and count the hospitals inside", count("polygon", 1)),
     ("b09", "vector", "extract the vertices of roads", at_least("point", 6)),
     ("b10", "question", "how many flood zones have high risk?", answer_mentions("1")),
     ("b11", "multi", "create a 500 m buffer around hospital H3", count("polygon", 1)),

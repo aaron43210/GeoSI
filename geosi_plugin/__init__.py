@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Plugin — classFactory Entry Point
 ════════════════════════════════════════
@@ -36,4 +35,5 @@ def classFactory(iface):
         GeoSIPlugin instance that manages initGui() / unload()
     """
     from .geosi_plugin import GeoSIPlugin
+
     return GeoSIPlugin(iface)

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Engine — Data Models
 
@@ -28,18 +27,18 @@ See FILE_CONNECTIONS.md:
     - USED BY: every other file in geosi_engine/
 """
 
-from typing import Dict, List, Any, Optional
-from enum import Enum
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-import uuid
-
+from enum import Enum
+from typing import Any, Dict, List, Optional
 
 # ═══════════════════════════════════════════════════════════════════════════
 # ENUMERATIONS
 # These are like "status codes" that help us track what's happening.
 # An Enum is a class with a fixed set of named constants.
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 class ExecutionStatus(str, Enum):
     """
@@ -55,6 +54,7 @@ class ExecutionStatus(str, Enum):
         if result.status == ExecutionStatus.SUCCESS:
             print("Operation completed successfully!")
     """
+
     SUCCESS = "success"
     PARTIAL = "partial"
     FAILED = "failed"
@@ -82,19 +82,20 @@ class IntentType(str, Enum):
         if request.intent == IntentType.PROXIMITY:
             # Consider buffer, intersect, nearest-feature tools
     """
-    PROXIMITY = "proximity"                 # Find features near other features
-    OVERLAY = "overlay"                     # Combine multiple layers
-    GEOMETRY = "geometry"                   # Modify geometry shape
-    RASTER = "raster"                       # Raster analysis and processing
-    TERRAIN = "terrain"                     # 3D, elevation, slope, viewshed
-    NETWORK = "network"                     # Routing and network analysis
-    TEMPORAL = "temporal"                   # Time-series and change detection
-    AI_ML = "ai_ml"                         # Machine learning spatial analysis
-    VALIDATION = "validation"               # Check data quality
-    STATISTICS = "statistics"               # Calculate spatial statistics
-    DATA_MANAGEMENT = "data_management"     # Load, save, convert data
-    CARTOGRAPHY = "cartography"             # Map export, geocoding
-    UNKNOWN = "unknown"                     # Unable to classify
+
+    PROXIMITY = "proximity"  # Find features near other features
+    OVERLAY = "overlay"  # Combine multiple layers
+    GEOMETRY = "geometry"  # Modify geometry shape
+    RASTER = "raster"  # Raster analysis and processing
+    TERRAIN = "terrain"  # 3D, elevation, slope, viewshed
+    NETWORK = "network"  # Routing and network analysis
+    TEMPORAL = "temporal"  # Time-series and change detection
+    AI_ML = "ai_ml"  # Machine learning spatial analysis
+    VALIDATION = "validation"  # Check data quality
+    STATISTICS = "statistics"  # Calculate spatial statistics
+    DATA_MANAGEMENT = "data_management"  # Load, save, convert data
+    CARTOGRAPHY = "cartography"  # Map export, geocoding
+    UNKNOWN = "unknown"  # Unable to classify
 
 
 class GeometryType(str, Enum):
@@ -111,6 +112,7 @@ class GeometryType(str, Enum):
     This is the same classification used by QGIS internally (see
     QGIS/src/core/geometry/qgswkbtypes.h for the C++ version).
     """
+
     POINT = "Point"
     LINESTRING = "LineString"
     POLYGON = "Polygon"
@@ -126,6 +128,7 @@ class GeometryType(str, Enum):
 # These describe what a tool IS — its name, parameters, and capabilities.
 # They do NOT contain any execution logic.
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 @dataclass
 class ToolParameter:
@@ -153,6 +156,7 @@ class ToolParameter:
             example="500"
         )
     """
+
     name: str
     param_type: str
     required: bool = True
@@ -208,6 +212,7 @@ class ToolSpec:
             qgis_algorithm="native:buffer"
         )
     """
+
     name: str
     display_name: str = ""
     description: str = ""
@@ -233,6 +238,7 @@ class ToolSpec:
 # LAYER — Represents one spatial data layer
 # This is the core data container. Every tool reads from and writes to Layers.
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 @dataclass
 class Layer:
@@ -281,6 +287,7 @@ class Layer:
         )
         layer.raster = numpy_array
     """
+
     name: str
     geometry_type: str = "Unknown"
     feature_count: int = 0
@@ -302,30 +309,21 @@ class Layer:
 
     def __str__(self):
         """Show layer info in a compact format."""
-        return (
-            f"Layer({self.name}, {self.layer_type}, "
-            f"{self.geometry_type}, {self.feature_count} features)"
-        )
+        return f"Layer({self.name}, {self.layer_type}, " f"{self.geometry_type}, {self.feature_count} features)"
 
     def has_features(self) -> bool:
         """Check if this vector layer has usable features."""
-        return (
-            self.layer_type == "vector"
-            and self.features is not None
-            and self.feature_count > 0
-        )
+        return self.layer_type == "vector" and self.features is not None and self.feature_count > 0
 
     def has_raster(self) -> bool:
         """Check if this raster layer has usable data."""
-        return (
-            self.layer_type == "raster"
-            and self.raster is not None
-        )
+        return self.layer_type == "raster" and self.raster is not None
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # TOOL RESULT — What a tool returns after execution
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 @dataclass
 class ToolResult:
@@ -356,6 +354,7 @@ class ToolResult:
             error="Layer has no features to buffer"
         )
     """
+
     success: bool
     output: Any = None
     message: str = ""
@@ -365,6 +364,7 @@ class ToolResult:
 # ═══════════════════════════════════════════════════════════════════════════
 # ANALYSIS REQUEST — What the user wants (parsed from natural language)
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 @dataclass
 class AnalysisRequest:
@@ -395,6 +395,7 @@ class AnalysisRequest:
             parameters={"distance_value": 500, "distance_unit": "meters"}
         )
     """
+
     query: str = ""
     intent: IntentType = IntentType.UNKNOWN
     entities: Dict[str, Any] = field(default_factory=dict)
@@ -407,6 +408,7 @@ class AnalysisRequest:
 # ═══════════════════════════════════════════════════════════════════════════
 # EXECUTION PLAN — The agent's step-by-step plan
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 @dataclass
 class ToolStep:
@@ -435,6 +437,7 @@ class ToolStep:
             description="Create a 2km buffer around flood zones"
         )
     """
+
     step_id: str = ""
     tool_name: str = ""
     parameters: Dict[str, Any] = field(default_factory=dict)
@@ -472,6 +475,7 @@ class ExecutionPlan:
             reasoning="Buffer flood zones first, then find overlapping hospitals"
         )
     """
+
     plan_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
     request: Optional[AnalysisRequest] = None
     steps: List[ToolStep] = field(default_factory=list)
@@ -486,6 +490,7 @@ class ExecutionPlan:
 # ═══════════════════════════════════════════════════════════════════════════
 # EXECUTION RESULT — What the executor returns after running a plan
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 @dataclass
 class StepLog:
@@ -503,6 +508,7 @@ class StepLog:
         output_features: Number of features in the output (if vector)
         error_message: Error message if the step failed
     """
+
     step_id: str = ""
     tool_name: str = ""
     status: ExecutionStatus = ExecutionStatus.FAILED
@@ -536,6 +542,7 @@ class ExecutionResult:
             results={"hospitals_near_floods": layer_object}
         )
     """
+
     success: bool = False
     answer: str = ""
     reasoning: str = ""
@@ -562,6 +569,7 @@ class ExecutionResult:
 # PRD FR-2, FR-3, §4 Agent responsibilities
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 @dataclass
 class ValidatedParameters:
     """
@@ -569,6 +577,7 @@ class ValidatedParameters:
 
     Produced by the Validation Agent; consumed by the Execution Dispatcher.
     """
+
     tool_name: str
     parameters: Dict[str, Any] = field(default_factory=dict)
     risk_level: str = "read_only"  # "read_only" | "mutating" | "destructive"
@@ -583,12 +592,11 @@ class ApprovalResult:
     Surfaced via the QGIS dock HITL widget (Phase 4) or
     the ``approve_pending_action`` MCP/REST endpoint.
     """
+
     approved: bool
     action_id: str = field(default_factory=lambda: str(uuid.uuid4())[:12])
-    approver: str = "pending"           # "user" | "admin" | "auto" | "pending"
-    timestamp: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    approver: str = "pending"  # "user" | "admin" | "auto" | "pending"
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     reason: Optional[str] = None
 
 
@@ -599,14 +607,13 @@ class PermissionDecision:
 
     Stored in geosi_audit_log before any execution begins.
     """
+
     algorithm_id: str
     risk_level: str
-    decision: str               # "allow" | "ask" | "deny"
+    decision: str  # "allow" | "ask" | "deny"
     policy_source: str = "default"  # "default" | "override_table"
     action_id: Optional[str] = None  # set when decision == "ask"
-    timestamp: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
 @dataclass
@@ -617,10 +624,9 @@ class AgentMessage:
     Using typed messages (rather than free-text) keeps inter-agent
     communication schema-validated and traceable via OTel spans.
     """
-    sender: str      # e.g. "supervisor", "planning", "validation"
+
+    sender: str  # e.g. "supervisor", "planning", "validation"
     recipient: str
     payload: Dict[str, Any] = field(default_factory=dict)
     trace_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    timestamp: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())

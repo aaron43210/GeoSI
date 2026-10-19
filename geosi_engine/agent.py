@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Engine — Agent (v2: Dynamic Tool-Aware Planning)
 ═══════════════════════════════════════════════════════════════════
@@ -32,24 +31,24 @@ Data Structures
     Uses O(1) hash lookups throughout planning pipeline.
 """
 
-import os
 import json
-import re
 import logging
-from typing import Dict, List, Optional, Tuple
+import os
+import re
 from difflib import SequenceMatcher
+from typing import Dict, List, Optional, Tuple
 
+from geosi_engine.conversation import ConversationManager
 from geosi_engine.models import (
     AnalysisRequest,
     ExecutionPlan,
-    ToolStep,
     IntentType,
+    ToolStep,
 )
 from geosi_engine.parser import QueryParser
 from geosi_engine.registry import ToolRegistry
 from geosi_engine.state import StateManager
 from geosi_engine.validation import ValidationEngine, ValidationReport
-from geosi_engine.conversation import ConversationManager
 
 logger = logging.getLogger("geosi_engine.agent")
 
@@ -69,58 +68,53 @@ logger = logging.getLogger("geosi_engine.agent")
 
 _OPERATION_TO_ALGORITHM: Dict[str, str] = {
     # ── Vector operations ──────────────────────────────────────────────
-    "buffer":               "native_buffer",
-    "intersect":            "native_intersection",
-    "clip":                 "native_clip",
-    "union":                "native_union",
-    "difference":           "native_difference",
+    "buffer": "native_buffer",
+    "intersect": "native_intersection",
+    "clip": "native_clip",
+    "union": "native_union",
+    "difference": "native_difference",
     "symmetric_difference": "native_symmetricaldifference",
-    "dissolve":             "native_dissolve",
-    "centroid":             "native_centroids",
-    "fix_geometries":       "native_fixgeometries",
-    "simplify":             "native_simplifygeometries",
-    "convex_hull":          "native_minimumboundinggeometry",
-    "voronoi":              "native_voronoipolygons",
-    "reproject":            "native_reprojectlayer",
-    "join_attributes":      "native_joinattributestable",
+    "dissolve": "native_dissolve",
+    "centroid": "native_centroids",
+    "fix_geometries": "native_fixgeometries",
+    "simplify": "native_simplifygeometries",
+    "convex_hull": "native_minimumboundinggeometry",
+    "voronoi": "native_voronoipolygons",
+    "reproject": "native_reprojectlayer",
+    "join_attributes": "native_joinattributestable",
     "extract_by_attribute": "native_extractbyattribute",
-
     # ── Raster / Terrain operations ────────────────────────────────────
-    "slope":                "native_slope",
-    "aspect":               "native_aspect",
-    "hillshade":            "native_hillshade",
-    "contour":              "gdal_contour",
-    "raster_calc":          "native_rastercalc",
-
+    "slope": "native_slope",
+    "aspect": "native_aspect",
+    "hillshade": "native_hillshade",
+    "contour": "gdal_contour",
+    "raster_calc": "native_rastercalc",
     # ── NDVI / NDWI (spectral indices) ─────────────────────────────────
-    "ndvi":                 "native_rastercalc",
-    "ndwi":                 "native_rastercalc",
-
+    "ndvi": "native_rastercalc",
+    "ndwi": "native_rastercalc",
     # ── Network ────────────────────────────────────────────────────────
-    "shortest_path":        "native_shortestpathpointtopoint",
-
+    "shortest_path": "native_shortestpathpointtopoint",
     # ── Statistics ─────────────────────────────────────────────────────
-    "count_features":       "native_countfeaturesinregions",
-
+    "count_features": "native_countfeaturesinregions",
     # ── Cartography ────────────────────────────────────────────────────
-    "export_geojson":       "native_savefeatures",
+    "export_geojson": "native_savefeatures",
 }
 
 # ── Default plan templates per intent (fallback when LLM is unavailable)
 _DEFAULT_PLANS: Dict[IntentType, List[str]] = {
-    IntentType.PROXIMITY:       ["buffer", "intersect"],
-    IntentType.OVERLAY:         ["intersect"],
-    IntentType.GEOMETRY:        ["dissolve"],
-    IntentType.RASTER:          ["raster_calc"],
-    IntentType.TERRAIN:         ["slope"],
-    IntentType.NETWORK:         ["shortest_path"],
-    IntentType.AI_ML:           ["count_features"],
-    IntentType.CARTOGRAPHY:     ["export_geojson"],
-    IntentType.STATISTICS:      ["count_features"],
+    IntentType.PROXIMITY: ["buffer", "intersect"],
+    IntentType.OVERLAY: ["intersect"],
+    IntentType.GEOMETRY: ["dissolve"],
+    IntentType.RASTER: ["raster_calc"],
+    IntentType.TERRAIN: ["slope"],
+    IntentType.NETWORK: ["shortest_path"],
+    IntentType.AI_ML: ["count_features"],
+    IntentType.CARTOGRAPHY: ["export_geojson"],
+    IntentType.STATISTICS: ["count_features"],
     IntentType.DATA_MANAGEMENT: ["reproject"],
-    IntentType.VALIDATION:      ["count_features"],
-    IntentType.TEMPORAL:        ["count_features"],
-    IntentType.UNKNOWN:         ["count_features"],
+    IntentType.VALIDATION: ["count_features"],
+    IntentType.TEMPORAL: ["count_features"],
+    IntentType.UNKNOWN: ["count_features"],
 }
 
 
@@ -149,9 +143,7 @@ class GeoSIAgent:
         self.parser = QueryParser(use_llm=use_llm)
         self.validator = ValidationEngine()
         self.use_llm = use_llm
-        self.conversation = conversation or ConversationManager(
-            system_prompt="You are GeoSI, a GIS workflow planner."
-        )
+        self.conversation = conversation or ConversationManager(system_prompt="You are GeoSI, a GIS workflow planner.")
         self._ollama_endpoint = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
         self._ollama_model = self._detect_ollama_model()
         self._tool_retriever = None  # created lazily; see _relevant_tools()
@@ -162,11 +154,7 @@ class GeoSIAgent:
         self._api_key = os.environ.get("GEOSI_LLM_API_KEY", "")
         self._api_model = os.environ.get("GEOSI_LLM_MODEL", "")
         self._anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        self._gemini_key = (
-            os.environ.get("GEMINI_API_KEY")
-            or os.environ.get("GOOGLE_API_KEY")
-            or ""
-        )
+        self._gemini_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or ""
         self.layer_suggestions: Optional[List[Tuple[str, float]]] = None
 
         # ── Phase 2: Knowledge Layer ───────────────────────────────────
@@ -179,8 +167,9 @@ class GeoSIAgent:
     def _detect_ollama_model(self) -> str:
         model = os.environ.get("OLLAMA_MODEL", "mistral")
         try:
-            import urllib.request
             import json
+            import urllib.request
+
             req = urllib.request.Request(f"{self._ollama_endpoint}/api/tags")
             with urllib.request.urlopen(req, timeout=1.5) as resp:  # nosec B310
                 if resp.status == 200:
@@ -225,12 +214,8 @@ class GeoSIAgent:
         self._last_knowledge_context = None
         if self.knowledge:
             try:
-                self._last_knowledge_context = self.knowledge.retrieve_context(
-                    request.query
-                )
-                logger.info(
-                    f"Knowledge context: {self._last_knowledge_context}"
-                )
+                self._last_knowledge_context = self.knowledge.retrieve_context(request.query)
+                logger.info(f"Knowledge context: {self._last_knowledge_context}")
             except Exception as e:
                 logger.warning(f"Knowledge retrieval failed: {e}")
 
@@ -239,17 +224,33 @@ class GeoSIAgent:
             valid, error_msg = self.validate_layers_exist(request, state)
             if not valid:
                 return ExecutionPlan(
-                    request=request, steps=[],
+                    request=request,
+                    steps=[],
                     reasoning=error_msg or "Layer validation failed",
                 )
 
         # ── Well-understood operations: skip LLM entirely ──────────────
         operation = request.parameters.get("operation", "")
         well_understood = {
-            "clip", "buffer", "intersect", "union", "difference",
-            "dissolve", "centroid", "convex_hull", "simplify", "voronoi", "fix_geometries",
-            "slope", "aspect", "hillshade", "contour",
-            "ndvi", "ndwi", "reproject", "join_attributes",
+            "clip",
+            "buffer",
+            "intersect",
+            "union",
+            "difference",
+            "dissolve",
+            "centroid",
+            "convex_hull",
+            "simplify",
+            "voronoi",
+            "fix_geometries",
+            "slope",
+            "aspect",
+            "hillshade",
+            "contour",
+            "ndvi",
+            "ndwi",
+            "reproject",
+            "join_attributes",
             "extract_by_attribute",
         }
         # A retry from the agent loop always goes to the LLM with the
@@ -262,8 +263,13 @@ class GeoSIAgent:
 
         # ── Deterministic shortcuts tried before the LLM ───────────────
         if not feedback:
-            for planner in (self._plan_field_statistics, self._plan_attribute_filter,
-                            self._plan_grid, self._plan_merge, self._plan_from_template):
+            for planner in (
+                self._plan_field_statistics,
+                self._plan_attribute_filter,
+                self._plan_grid,
+                self._plan_merge,
+                self._plan_from_template,
+            ):
                 plan = planner(request, state)
                 if plan is not None:
                     logger.info(f"Deterministic plan: {plan.reasoning}")
@@ -302,8 +308,7 @@ class GeoSIAgent:
             self._feedback = None
 
         if feedback:
-            return ExecutionPlan(request=request, steps=[], reasoning="Re-planning failed",
-                                 plan_source="none")
+            return ExecutionPlan(request=request, steps=[], reasoning="Re-planning failed", plan_source="none")
         plan = self._plan_with_rules(request)
         plan.plan_source = "rule_based"
         return plan
@@ -343,6 +348,7 @@ class GeoSIAgent:
             return True
         try:
             import requests
+
             return requests.get(f"{self._ollama_endpoint}/api/tags", timeout=1.5).ok
         except Exception:
             return False
@@ -364,10 +370,10 @@ class GeoSIAgent:
                 logger.warning(f"API answer failed, trying Ollama: {e}")
         try:
             import requests
+
             resp = requests.post(
                 f"{self._ollama_endpoint}/api/generate",
-                json={"model": self._ollama_model, "prompt": prompt, "stream": False,
-                      "options": {"temperature": 0.0}},
+                json={"model": self._ollama_model, "prompt": prompt, "stream": False, "options": {"temperature": 0.0}},
                 timeout=120,
             )
             resp.raise_for_status()
@@ -460,9 +466,7 @@ class GeoSIAgent:
             return False
         return bool(self._SPATIAL_TASK_RE.search(q))
 
-    def validate_layers_exist(
-        self, request: AnalysisRequest, state: StateManager
-    ) -> Tuple[bool, Optional[str]]:
+    def validate_layers_exist(self, request: AnalysisRequest, state: StateManager) -> Tuple[bool, Optional[str]]:
         """
         Validate that requested layers exist in the QGIS project.
         Returns (is_valid, error_message).
@@ -479,10 +483,7 @@ class GeoSIAgent:
 
         available = state.list_layers()
         if not available:
-            return False, (
-                "No layers loaded. Please load a shapefile first, or "
-                "reference one by filename."
-            )
+            return False, ("No layers loaded. Please load a shapefile first, or " "reference one by filename.")
 
         # Check primary layer exists
         primary = request.entities.get("primary_layer")
@@ -502,9 +503,7 @@ class GeoSIAgent:
                 similar = self.find_similar_layers(primary, available, 0.5)
                 self.layer_suggestions = similar
                 if similar:
-                    suggestions = ", ".join(
-                        f"'{s[0]}' ({s[1]:.0%} match)" for s in similar[:3]
-                    )
+                    suggestions = ", ".join(f"'{s[0]}' ({s[1]:.0%} match)" for s in similar[:3])
                     return False, f"Layer '{primary}' not found. Did you mean: {suggestions}?"
                 layers_list = "\n  - ".join(available)
                 return False, f"Layer '{primary}' not found.\n\nAvailable layers:\n  - {layers_list}"
@@ -598,10 +597,14 @@ class GeoSIAgent:
             is_raster = getattr(primary_layer, "layer_type", "") == "raster"
 
             # Raster inputs need the GDAL raster equivalents of vector ops
-            raster_tool = {
-                "reproject": "gdal_warpreproject",
-                "clip": "gdal_cliprasterbymasklayer",
-            }.get(op_name) if is_raster else None
+            raster_tool = (
+                {
+                    "reproject": "gdal_warpreproject",
+                    "clip": "gdal_cliprasterbymasklayer",
+                }.get(op_name)
+                if is_raster
+                else None
+            )
             if raster_tool and self.registry.get_tool(raster_tool):
                 tool_name = raster_tool
                 spec = self.registry.get_tool(raster_tool).spec()
@@ -621,8 +624,13 @@ class GeoSIAgent:
 
             elif op_name == "clip" and tool_name == "gdal_cliprasterbymasklayer":
                 mask = request.entities.get("secondary_layer") or next(
-                    (name for name in (request.available_layers or []) if name != primary
-                     and getattr(self._state_layer(name), "layer_type", "") == "vector"), None)
+                    (
+                        name
+                        for name in (request.available_layers or [])
+                        if name != primary and getattr(self._state_layer(name), "layer_type", "") == "vector"
+                    ),
+                    None,
+                )
                 if mask:
                     params["MASK"] = mask
                     params["CROP_TO_CUTLINE"] = True
@@ -642,7 +650,7 @@ class GeoSIAgent:
                     params["OVERLAY"] = overlay
                     desc_parts.append(f"with {overlay}")
                 else:
-                    for layer in (request.available_layers or []):
+                    for layer in request.available_layers or []:
                         if layer.lower() != (primary or "").lower():
                             params["OVERLAY"] = layer
                             desc_parts.append(f"with {layer}")
@@ -666,17 +674,25 @@ class GeoSIAgent:
                 # taken from the query ("band 3 as red", "band 4 as NIR").
                 q = (request.query or "").lower()
 
-                def band_for(name, default):
-                    m = re.search(rf"band\s*(\d+)\s*(?:as|=|is|for)\s*(?:the\s*)?{name}", q) or \
-                        re.search(rf"{name}\s*(?:band)?\s*(?:=|is|:)?\s*(?:band\s*)?(\d+)", q)
+                def band_for(name, default, q=q):
+                    m = re.search(rf"band\s*(\d+)\s*(?:as|=|is|for)\s*(?:the\s*)?{name}", q) or re.search(
+                        rf"{name}\s*(?:band)?\s*(?:=|is|:)?\s*(?:band\s*)?(\d+)", q
+                    )
                     return int(m.group(1)) if m else default
+
                 if op_name == "ndvi":
                     a, b = band_for("nir", 4), band_for("red", 3)
                 else:
                     a, b = band_for("green", 2), band_for("nir", 4)
                 tool_name = "gdal_rastercalculator"
-                params = {"INPUT_A": primary, "BAND_A": a, "INPUT_B": primary, "BAND_B": b,
-                          "FORMULA": "(A.astype(float)-B)/(A.astype(float)+B)", "RTYPE": 5}
+                params = {
+                    "INPUT_A": primary,
+                    "BAND_A": a,
+                    "INPUT_B": primary,
+                    "BAND_B": b,
+                    "FORMULA": "(A.astype(float)-B)/(A.astype(float)+B)",
+                    "RTYPE": 5,
+                }
                 desc_parts = [f"{op_name.upper()} from bands {a} and {b} of {primary}"]
 
             elif op_name in ("ndvi", "ndwi"):
@@ -708,7 +724,8 @@ class GeoSIAgent:
             steps.append(step)
 
         return ExecutionPlan(
-            request=request, steps=steps,
+            request=request,
+            steps=steps,
             reasoning="Rule-based plan (reliable, no LLM needed)",
         )
 
@@ -728,6 +745,7 @@ class GeoSIAgent:
         """
         if self._tool_retriever is None:
             from geosi_engine.tool_retriever import ToolRetriever
+
             self._tool_retriever = ToolRetriever(self.registry, endpoint=self._ollama_endpoint)
         ranked = self._tool_retriever.rank(query, top_k=top_k)
         return ranked or self._rank_tools_for_query(query)[:top_k]
@@ -738,10 +756,12 @@ class GeoSIAgent:
     _TEMPLATE_MIN_SIMILARITY = 0.84
     _STAT_RE = re.compile(
         r"\b(total|sum|average|mean|median|minimum|maximum|min|max|highest|lowest|largest|smallest|"
-        r"biggest|statistics|stats)\b", re.I)
+        r"biggest|statistics|stats)\b",
+        re.I,
+    )
 
     def _plan_field_statistics(self, request, state) -> Optional[ExecutionPlan]:
-        """"total beds across hospitals" → basic statistics of hospitals.beds."""
+        """ "total beds across hospitals" → basic statistics of hospitals.beds."""
         query = request.query or ""
         if not state or not self._STAT_RE.search(query):
             return None
@@ -753,31 +773,43 @@ class GeoSIAgent:
         mentioned = self._mentioned_layers(query, state)
         # "mean elevation within each zone" is zonal statistics, not a whole-raster summary
         per_zone = bool(re.search(r"\b(each|every|per|by)\b", query, re.I)) or any(
-            state.get_layer(n).layer_type == "vector" for n in mentioned)
+            state.get_layer(n).layer_type == "vector" for n in mentioned
+        )
         for name in mentioned:
             layer = state.get_layer(name)
             if layer.layer_type == "raster" and per_zone:
                 continue
             if layer.layer_type == "raster" and self.registry.get_tool("native_rasterlayerstatistics"):
-                return self._one_step_plan(request, "native_rasterlayerstatistics",
-                                           {"INPUT": name, "BAND": 1}, f"Raster statistics of {name}")
-            for f in (getattr(layer, "fields", None) or []):
+                return self._one_step_plan(
+                    request, "native_rasterlayerstatistics", {"INPUT": name, "BAND": 1}, f"Raster statistics of {name}"
+                )
+            for f in getattr(layer, "fields", None) or []:
                 if f != "fid" and re.search(rf"\b{re.escape(f)}\b", query, re.I):
-                    return self._one_step_plan(request, tool, {"INPUT_LAYER": name, "FIELD_NAME": f},
-                                               f"Field statistics for {name}.{f}")
+                    return self._one_step_plan(
+                        request, tool, {"INPUT_LAYER": name, "FIELD_NAME": f}, f"Field statistics for {name}.{f}"
+                    )
         # "highest elevation" style questions about the only raster
         rasters = [n for n in state.list_layers() if state.get_layer(n).layer_type == "raster"]
-        if len(rasters) == 1 and not per_zone and re.search(r"\b(elevation|height|value|pixel)s?\b", query, re.I) \
-                and self.registry.get_tool("native_rasterlayerstatistics"):
-            return self._one_step_plan(request, "native_rasterlayerstatistics",
-                                       {"INPUT": rasters[0], "BAND": 1}, f"Raster statistics of {rasters[0]}")
+        if (
+            len(rasters) == 1
+            and not per_zone
+            and re.search(r"\b(elevation|height|value|pixel)s?\b", query, re.I)
+            and self.registry.get_tool("native_rasterlayerstatistics")
+        ):
+            return self._one_step_plan(
+                request,
+                "native_rasterlayerstatistics",
+                {"INPUT": rasters[0], "BAND": 1},
+                f"Raster statistics of {rasters[0]}",
+            )
         return None
 
     # ── more deterministic planners ───────────────────────────────────
 
     def _one_step_plan(self, request, tool, params, why) -> ExecutionPlan:
-        step = ToolStep(step_id="step_1", tool_name=tool, parameters=params,
-                        output_name="step_1_output", description=why)
+        step = ToolStep(
+            step_id="step_1", tool_name=tool, parameters=params, output_name="step_1_output", description=why
+        )
         return ExecutionPlan(request=request, steps=[step], reasoning=why)
 
     @staticmethod
@@ -788,8 +820,12 @@ class GeoSIAgent:
         for name in state.list_layers():
             n = name.lower()
             forms = {n, n.replace("_", " "), n.rstrip("s"), n.replace("_", " ").rstrip("s")}
-            spans = [(m.start(), m.end()) for f in forms if len(f) > 2
-                     for m in re.finditer(rf"\b{re.escape(f)}(?![a-z0-9])", low)]
+            spans = [
+                (m.start(), m.end())
+                for f in forms
+                if len(f) > 2
+                for m in re.finditer(rf"\b{re.escape(f)}(?![a-z0-9])", low)
+            ]
             if spans:
                 found.append((min(spans), name))
         # A shorter name inside a longer match ("roads" in "roads_buffer") is not a mention
@@ -811,7 +847,9 @@ class GeoSIAgent:
     ]
     _FILTER_VERB_RE = re.compile(
         r"\b(find|extract|select|give|list|show|get|keep|filter|which|how many|how (?:long|big|large|far|much)|"
-        r"count|where|with|owned|whose|of type|that have|having)\b", re.I)
+        r"count|where|with|owned|whose|of type|that have|having)\b",
+        re.I,
+    )
 
     def _plan_attribute_filter(self, request, state) -> Optional[ExecutionPlan]:
         """
@@ -840,12 +878,14 @@ class GeoSIAgent:
                     continue
                 fpat = re.escape(f).rstrip("s") + "s?"
                 for words, sym in self._CMP_WORDS:
-                    m = (re.search(rf"\b{words}\s+(-?\d+(?:\.\d+)?)\s+{fpat}\b", query, re.I)
-                         or re.search(rf"\b{fpat}\s+(?:is\s+|are\s+)?{words}\s+(-?\d+(?:\.\d+)?)", query, re.I))
+                    m = re.search(rf"\b{words}\s+(-?\d+(?:\.\d+)?)\s+{fpat}\b", query, re.I) or re.search(
+                        rf"\b{fpat}\s+(?:is\s+|are\s+)?{words}\s+(-?\d+(?:\.\d+)?)", query, re.I
+                    )
                     if m:
                         expr = f'"{f}" {sym} {m.group(1)}'
-                        return self._one_step_plan(request, tool, {"INPUT": name, "EXPRESSION": expr},
-                                                   f"Filter {name} where {expr}")
+                        return self._one_step_plan(
+                            request, tool, {"INPUT": name, "EXPRESSION": expr}, f"Filter {name} where {expr}"
+                        )
             # value match: a query token that is a real value of a text field
             tokens = re.findall(r"[A-Za-z0-9_.-]+", query)
             layer_words = {w for n in state.list_layers() for w in re.split(r"[_\s]", n.lower())}
@@ -858,15 +898,16 @@ class GeoSIAgent:
                     if len(sv) > 1 and not hit:
                         hit = sv.lower() in (t.lower() for t in tokens)
                     if hit:
-                        expr = f'"{f}" = \'{sv}\''
-                        return self._one_step_plan(request, tool, {"INPUT": name, "EXPRESSION": expr},
-                                                   f"Filter {name} where {expr}")
+                        expr = f"\"{f}\" = '{sv}'"
+                        return self._one_step_plan(
+                            request, tool, {"INPUT": name, "EXPRESSION": expr}, f"Filter {name} where {expr}"
+                        )
         return None
 
     _GRID_TYPES = [("hexagon", 4), ("diamond", 3), ("point", 0), ("line", 1)]
 
     def _plan_grid(self, request, state) -> Optional[ExecutionPlan]:
-        """"a 2 km hexagon grid over flood_zones" → native:creategrid."""
+        """ "a 2 km hexagon grid over flood_zones" → native:creategrid."""
         query = request.query or ""
         if not state or not re.search(r"\bgrid\b", query, re.I) or not self.registry.get_tool("native_creategrid"):
             return None
@@ -876,20 +917,25 @@ class GeoSIAgent:
             return None
         gtype = next((t for word, t in self._GRID_TYPES if re.search(rf"\b{word}", query, re.I)), 2)
         params = {"TYPE": gtype, "EXTENT": layers[0], "HSPACING": spacing, "VSPACING": spacing, "CRS": layers[0]}
-        return self._one_step_plan(request, "native_creategrid", params,
-                                   f"Grid (type {gtype}) of {spacing:g} m over {layers[0]}")
+        return self._one_step_plan(
+            request, "native_creategrid", params, f"Grid (type {gtype}) of {spacing:g} m over {layers[0]}"
+        )
 
     def _plan_merge(self, request, state) -> Optional[ExecutionPlan]:
-        """"merge A and B into one layer" → native:mergevectorlayers."""
+        """ "merge A and B into one layer" → native:mergevectorlayers."""
         query = request.query or ""
-        if not state or not re.search(r"\b(merge|combine|append)\b", query, re.I) \
-                or not self.registry.get_tool("native_mergevectorlayers"):
+        if (
+            not state
+            or not re.search(r"\b(merge|combine|append)\b", query, re.I)
+            or not self.registry.get_tool("native_mergevectorlayers")
+        ):
             return None
         layers = [n for n in self._mentioned_layers(query, state) if state.get_layer(n).layer_type == "vector"]
         if len(layers) < 2:
             return None
-        return self._one_step_plan(request, "native_mergevectorlayers", {"LAYERS": layers},
-                                   f"Merge {', '.join(layers)}")
+        return self._one_step_plan(
+            request, "native_mergevectorlayers", {"LAYERS": layers}, f"Merge {', '.join(layers)}"
+        )
 
     def _plan_from_template(self, request, state) -> Optional[ExecutionPlan]:
         """Use a verified example directly when the request closely paraphrases it."""
@@ -897,6 +943,7 @@ class GeoSIAgent:
             return None
         self._prompt_state = state
         from geosi_engine.plan_examples import instantiate
+
         self._examples_for(request.query, k=1)  # builds the selector
         scored = self._example_selector.select_scored(request.query, 1, state.list_layers())
         if not scored or scored[0][1] < self._TEMPLATE_MIN_SIMILARITY:
@@ -915,9 +962,16 @@ class GeoSIAgent:
                 st["tool_name"] = alt
         plan = ExecutionPlan(
             request=request,
-            steps=[ToolStep(step_id=st["step_id"], tool_name=st["tool_name"], parameters=dict(st["parameters"]),
-                            output_name=st["output_name"], description=f"As in: {example['query']}")
-                   for st in steps],
+            steps=[
+                ToolStep(
+                    step_id=st["step_id"],
+                    tool_name=st["tool_name"],
+                    parameters=dict(st["parameters"]),
+                    output_name=st["output_name"],
+                    description=f"As in: {example['query']}",
+                )
+                for st in steps
+            ],
             reasoning=f"Matched verified example '{example['query']}' (similarity {score:.2f})",
             plan_source="template",
         )
@@ -944,8 +998,10 @@ class GeoSIAgent:
         """Most similar verified plans from the few-shot library."""
         if getattr(self, "_example_selector", None) is None:
             from geosi_engine.plan_examples import ExampleSelector
+
             if self._tool_retriever is None:
                 from geosi_engine.tool_retriever import ToolRetriever
+
                 self._tool_retriever = ToolRetriever(self.registry, endpoint=self._ollama_endpoint)
             self._example_selector = ExampleSelector(embed_fn=self._tool_retriever._embed)
         state = getattr(self, "_prompt_state", None)
@@ -996,14 +1052,16 @@ class GeoSIAgent:
         """Build the LLM prompt with tool catalog and knowledge context."""
         tool_catalog = []
         for spec in self.registry.list_tools():
-            tool_catalog.append({
-                "name": spec.name,
-                "description": spec.description[:200],  # Token budget
-                "parameters": [
-                    {"name": p.name, "type": p.param_type, "required": p.required}
-                    for p in spec.parameters[:8]  # Limit params per tool
-                ],
-            })
+            tool_catalog.append(
+                {
+                    "name": spec.name,
+                    "description": spec.description[:200],  # Token budget
+                    "parameters": [
+                        {"name": p.name, "type": p.param_type, "required": p.required}
+                        for p in spec.parameters[:8]  # Limit params per tool
+                    ],
+                }
+            )
 
         examples = self._examples_for(request.query)
 
@@ -1032,8 +1090,7 @@ class GeoSIAgent:
             relevant_cats = intent_categories.get(request.intent, [])
             if relevant_cats:
                 tool_catalog = [
-                    t for t in tool_catalog
-                    if any(cat in t.get("description", "").lower() for cat in relevant_cats)
+                    t for t in tool_catalog if any(cat in t.get("description", "").lower() for cat in relevant_cats)
                 ][:80]
             else:
                 tool_catalog = tool_catalog[:80]
@@ -1049,24 +1106,24 @@ class GeoSIAgent:
             fields = [f for f in (getattr(layer, "fields", None) or []) if f != "fid"]
             layer_lines.append(
                 f"- {name}: {layer.layer_type} {layer.geometry_type}, "
-                f"{layer.feature_count} features, crs {layer.crs}"
-                + (f", fields {fields}" if fields else "")
+                f"{layer.feature_count} features, crs {layer.crs}" + (f", fields {fields}" if fields else "")
             )
         layers_section = "\n".join(layer_lines) or "(none)"
 
         feedback_section = ""
         if getattr(self, "_feedback", None):
             feedback_section = (
-                "\nYOUR PREVIOUS ATTEMPT WAS WRONG. Fix it with a different plan:\n"
-                f"{self._feedback}\n"
+                "\nYOUR PREVIOUS ATTEMPT WAS WRONG. Fix it with a different plan:\n" f"{self._feedback}\n"
             )
 
         examples_section = ""
         if examples:
             from geosi_engine.plan_examples import format_examples
+
             examples_section = (
                 "\nWorked examples (same JSON format; adapt tools/parameters, use YOUR layer names):\n"
-                + format_examples(examples) + "\n"
+                + format_examples(examples)
+                + "\n"
             )
 
         knowledge_section = ""
@@ -1111,24 +1168,27 @@ Return ONLY valid JSON:
     def _plan_with_ollama(self, request: AnalysisRequest) -> ExecutionPlan:
         import json
         import urllib.request
+
         try:
             req = urllib.request.Request(f"{self._ollama_endpoint}/api/tags")
             with urllib.request.urlopen(req, timeout=1.5) as resp:  # nosec B310
                 pass
         except Exception as exc:
-            raise RuntimeError(f"Ollama unreachable: {exc}")
+            raise RuntimeError(f"Ollama unreachable: {exc}") from exc
 
         # Each plan is self-contained: the prompt already carries the tools,
         # layers and any retry feedback. Re-sending earlier prompts (each with
         # a full tool catalog) would overflow a small model's context.
         prompt = self._get_prompt(request)
-        payload = json.dumps({
-            "model": self._ollama_model,
-            "prompt": prompt,
-            "stream": False,
-            "format": "json",
-            "options": {"temperature": 0.0},
-        }).encode("utf-8")
+        payload = json.dumps(
+            {
+                "model": self._ollama_model,
+                "prompt": prompt,
+                "stream": False,
+                "format": "json",
+                "options": {"temperature": 0.0},
+            }
+        ).encode("utf-8")
         post_req = urllib.request.Request(
             f"{self._ollama_endpoint}/api/generate",
             data=payload,
@@ -1144,8 +1204,14 @@ Return ONLY valid JSON:
     def _api_configured(self) -> bool:
         return bool(self._api_base and self._api_model)
 
-    def _api_chat(self, prompt: str, json_mode: bool = True, base: Optional[str] = None,
-                  key: Optional[str] = None, model: Optional[str] = None) -> str:
+    def _api_chat(
+        self,
+        prompt: str,
+        json_mode: bool = True,
+        base: Optional[str] = None,
+        key: Optional[str] = None,
+        model: Optional[str] = None,
+    ) -> str:
         """One chat completion; plain HTTP so QGIS needs no extra packages."""
         import requests
 
@@ -1165,6 +1231,7 @@ Return ONLY valid JSON:
             resp = requests.post(f"{base}/chat/completions", json=body, headers=headers, timeout=120)
             if resp.status_code == 429 and attempt < 2:  # rate limited: back off and retry
                 import time
+
                 time.sleep(float(resp.headers.get("retry-after", 2 * (attempt + 1))))
                 continue
             if resp.status_code >= 400:
@@ -1180,8 +1247,7 @@ Return ONLY valid JSON:
         """Gemini through Google's OpenAI-compatible endpoint (plain HTTP)."""
         text = self._api_chat(
             self._get_prompt(request),
-            base=os.environ.get("GEMINI_BASE_URL",
-                                "https://generativelanguage.googleapis.com/v1beta/openai"),
+            base=os.environ.get("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai"),
             key=self._gemini_key,
             model=self._provider_model("gemini"),
         )
@@ -1219,13 +1285,14 @@ Return ONLY valid JSON:
             if text.endswith("```"):
                 text = text[:-3]
         if not text.startswith("{") and "{" in text:
-            text = text[text.index("{"):text.rindex("}") + 1]
+            text = text[text.index("{") : text.rindex("}") + 1]
         data = json.loads(text)
         # Keep only known ToolStep fields; larger models add their own keys
         allowed = set(ToolStep.__dataclass_fields__)
         steps = [ToolStep(**{k: v for k, v in s.items() if k in allowed}) for s in data.get("steps", [])]
         return ExecutionPlan(
-            request=request, steps=steps,
+            request=request,
+            steps=steps,
             reasoning=data.get("reasoning", ""),
         )
 
@@ -1252,9 +1319,7 @@ Return ONLY valid JSON:
             # (outputs are assigned by the bridge).
             by_lower = {p.name.lower(): p.name for p in spec_params}
             step.parameters = {
-                by_lower[k.lower()]: v
-                for k, v in (step.parameters or {}).items()
-                if k.lower() in by_lower
+                by_lower[k.lower()]: v for k, v in (step.parameters or {}).items() if k.lower() in by_lower
             }
             layer_params = {p.name for p in spec_params if p.param_type == "layer"}
             for key, value in (step.parameters or {}).items():
@@ -1270,9 +1335,7 @@ Return ONLY valid JSON:
 
     # ── Plan validation & error recovery ───────────────────────────────
 
-    def validate_plan(
-        self, plan: ExecutionPlan, state: Optional[StateManager] = None
-    ) -> ValidationReport:
+    def validate_plan(self, plan: ExecutionPlan, state: Optional[StateManager] = None) -> ValidationReport:
         """Validate an ExecutionPlan against the tool registry and state."""
         report = ValidationReport()
         known_steps: set = set()
@@ -1281,18 +1344,26 @@ Return ONLY valid JSON:
             spec = tool.spec() if tool else None
             if spec is None:
                 from geosi_engine.validation import ValidationIssue
-                report.add(ValidationIssue(
-                    "error", "unknown_tool",
-                    f"Step {step.step_id}: tool '{step.tool_name}' not found.",
-                ))
+
+                report.add(
+                    ValidationIssue(
+                        "error",
+                        "unknown_tool",
+                        f"Step {step.step_id}: tool '{step.tool_name}' not found.",
+                    )
+                )
                 continue
             for param in spec.parameters:
                 if param.required and param.name not in (step.parameters or {}):
                     from geosi_engine.validation import ValidationIssue
-                    report.add(ValidationIssue(
-                        "error", "missing_parameter",
-                        f"Step {step.step_id}: missing '{param.name}'.",
-                    ))
+
+                    report.add(
+                        ValidationIssue(
+                            "error",
+                            "missing_parameter",
+                            f"Step {step.step_id}: missing '{param.name}'.",
+                        )
+                    )
             if state is not None:
                 pre = self.validator.validate_operation_preconditions(step, state)
                 report.issues.extend(pre.issues)
@@ -1302,7 +1373,9 @@ Return ONLY valid JSON:
         return report
 
     def recover_from_error(
-        self, error: Exception, plan: ExecutionPlan,
+        self,
+        error: Exception,
+        plan: ExecutionPlan,
         failed_step_id: Optional[str] = None,
     ) -> ExecutionPlan:
         """
@@ -1326,6 +1399,7 @@ Return ONLY valid JSON:
         surviving = [s for s in plan.steps if s.step_id not in dropped]
         note = f"\n[recovery] dropped {sorted(dropped)} after error: {error}"
         return ExecutionPlan(
-            request=plan.request, steps=surviving,
+            request=plan.request,
+            steps=surviving,
             reasoning=(plan.reasoning or "") + note,
         )

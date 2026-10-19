@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Tool Retriever — semantic tool selection with an embedding model
 ══════════════════════════════════════════════════════════════════════
@@ -84,7 +83,7 @@ class ToolRetriever:
 
     def _load_cache(self) -> Dict[str, List[float]]:
         try:
-            with open(self.cache_path, "r", encoding="utf-8") as fh:
+            with open(self.cache_path, encoding="utf-8") as fh:
                 data = json.load(fh)
             if data.get("model") == self.model:
                 return data.get("vectors", {})
@@ -121,7 +120,7 @@ class ToolRetriever:
                     missing.append((spec.name, key, text))
             try:
                 for i in range(0, len(missing), _BATCH):
-                    batch = missing[i:i + _BATCH]
+                    batch = missing[i : i + _BATCH]
                     embs = self._embed([f"search_document: {t}" for _, _, t in batch])
                     for (name, key, _), vec in zip(batch, embs):
                         vectors[name] = vec
@@ -148,9 +147,6 @@ class ToolRetriever:
         except Exception as e:
             logger.warning(f"Query embedding failed: {e}")
             return []
-        scored = [
-            (sum(a * b for a, b in zip(q, vec)), name)
-            for name, vec in self._vectors.items()
-        ]
+        scored = [(sum(a * b for a, b in zip(q, vec)), name) for name, vec in self._vectors.items()]
         scored.sort(reverse=True)
         return [name for _, name in scored[:top_k]]

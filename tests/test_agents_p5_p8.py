@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Phase P5–P8 Agent Tests
 Tests for all 8 newly implemented agents:
@@ -12,13 +11,15 @@ Tests for all 8 newly implemented agents:
   14. Code Generation Agent
   +   Reflection Agent (Agent #4)
 """
+
 from __future__ import annotations
 
-import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
+import pytest
 
 # ── Reflection Agent (Agent #4) ───────────────────────────────────────────
+
 
 def test_reflection_critic_passes_clean_plan():
     """Critic should pass a plan with no known-bad tools."""
@@ -30,10 +31,12 @@ def test_reflection_critic_passes_clean_plan():
     engine.registry = None
 
     agent = ReflectionAgent(engine=engine)
-    plan = ExecutionPlan(steps=[
-        ToolStep(tool_name="native:buffer", risk_level="mutating"),
-        ToolStep(tool_name="native:clip", risk_level="mutating"),
-    ])
+    plan = ExecutionPlan(
+        steps=[
+            ToolStep(tool_name="native:buffer", risk_level="mutating"),
+            ToolStep(tool_name="native:clip", risk_level="mutating"),
+        ]
+    )
     report = agent.critic(plan)
     assert report is not None
     assert len(report.errors()) == 0  # No hard errors for unknown tools
@@ -48,9 +51,11 @@ def test_reflection_retry_exhausts_raises():
     agent = ReflectionAgent(engine=engine)
 
     from geosi_engine.models import ExecutionPlan
+
     plan = ExecutionPlan(steps=[])
 
     call_count = 0
+
     def always_fails(p):
         nonlocal call_count
         call_count += 1
@@ -63,6 +68,7 @@ def test_reflection_retry_exhausts_raises():
 
 
 # ── Verification Agent (Agent #10) ───────────────────────────────────────
+
 
 def test_verification_nonexistent_vector():
     """verify_vector on a missing file should produce an error finding."""
@@ -106,6 +112,7 @@ def test_verification_execution_result_no_output():
 
 # ── Report Generation Agent (Agent #11) ──────────────────────────────────
 
+
 def test_report_execution_summary(tmp_path):
     """Generate an execution summary and confirm file is written."""
     from geosi_engine.agents.report_generation import ReportGenerationAgent, ReportRequest
@@ -131,10 +138,12 @@ def test_report_workflow_graph_mermaid(tmp_path):
     from geosi_engine.models import ExecutionPlan, ToolStep
 
     agent = ReportGenerationAgent(engine=MagicMock())
-    plan = ExecutionPlan(steps=[
-        ToolStep(tool_name="native:buffer", risk_level="mutating"),
-        ToolStep(tool_name="native:clip", risk_level="mutating"),
-    ])
+    plan = ExecutionPlan(
+        steps=[
+            ToolStep(tool_name="native:buffer", risk_level="mutating"),
+            ToolStep(tool_name="native:clip", risk_level="mutating"),
+        ]
+    )
     out = tmp_path / "workflow.md"
     req = ReportRequest(
         report_type="workflow_graph",
@@ -160,6 +169,7 @@ def test_report_unknown_type():
 
 # ── Code Generation Agent (Agent #14) ────────────────────────────────────
 
+
 def test_codegen_requires_human_review():
     """GeneratedCode.requires_human_review must ALWAYS be True."""
     from geosi_engine.agents.code_generation import GeneratedCode
@@ -179,9 +189,11 @@ def test_codegen_pyqgis_from_plan():
     from geosi_engine.models import ExecutionPlan, ToolStep
 
     agent = CodeGenerationAgent(engine=MagicMock())
-    plan = ExecutionPlan(steps=[
-        ToolStep(tool_name="native:buffer", risk_level="mutating", parameters={"DISTANCE": 500}),
-    ])
+    plan = ExecutionPlan(
+        steps=[
+            ToolStep(tool_name="native:buffer", risk_level="mutating", parameters={"DISTANCE": 500}),
+        ]
+    )
     req = CodeRequest(target_language="pyqgis", plan=plan)
     result = agent.generate(req)
 
@@ -198,9 +210,11 @@ def test_codegen_geopandas_from_plan():
     from geosi_engine.models import ExecutionPlan, ToolStep
 
     agent = CodeGenerationAgent(engine=MagicMock())
-    plan = ExecutionPlan(steps=[
-        ToolStep(tool_name="native:clip", risk_level="mutating"),
-    ])
+    plan = ExecutionPlan(
+        steps=[
+            ToolStep(tool_name="native:clip", risk_level="mutating"),
+        ]
+    )
     req = CodeRequest(target_language="geopandas", plan=plan)
     result = agent.generate(req)
 
@@ -224,6 +238,7 @@ def test_codegen_auto_language_detection():
 
 # ── Research Agent (Agent #12) ────────────────────────────────────────────
 
+
 def test_research_search_no_knowledge():
     """Research search should succeed gracefully when knowledge is unavailable."""
     from geosi_engine.agents.research import ResearchAgent, ResearchQuery
@@ -244,17 +259,20 @@ def test_research_search_no_knowledge():
 
 # ── Workflow Optimization Agent (Agent #13) ───────────────────────────────
 
+
 def test_workflow_opt_detects_redundant_steps():
     """WFO should flag back-to-back identical tool steps."""
     from geosi_engine.agents.workflow_optimization import WorkflowOptimizationAgent
     from geosi_engine.models import ExecutionPlan, ToolStep
 
     agent = WorkflowOptimizationAgent(engine=MagicMock())
-    plan = ExecutionPlan(steps=[
-        ToolStep(tool_name="native:buffer", parameters={"DISTANCE": 500}),
-        ToolStep(tool_name="native:buffer", parameters={"DISTANCE": 500}),  # identical
-        ToolStep(tool_name="native:clip"),
-    ])
+    plan = ExecutionPlan(
+        steps=[
+            ToolStep(tool_name="native:buffer", parameters={"DISTANCE": 500}),
+            ToolStep(tool_name="native:buffer", parameters={"DISTANCE": 500}),  # identical
+            ToolStep(tool_name="native:clip"),
+        ]
+    )
     report = agent.analyze(plan)
 
     assert report.success
@@ -277,6 +295,7 @@ def test_workflow_opt_compare():
 
 
 # ── Remote Sensing Agent (Agent #7) ───────────────────────────────────────
+
 
 def test_rs_supported_indices():
     """All expected spectral indices must be registered."""
@@ -302,6 +321,7 @@ def test_rs_unknown_index():
 
 # ── Machine Learning Agent (Agent #8) ────────────────────────────────────
 
+
 def test_ml_unknown_job_type():
     """Unknown ML job type should return error."""
     from geosi_engine.agents.machine_learning import MachineLearningAgent, MLJobRequest
@@ -321,6 +341,7 @@ def test_ml_unknown_job_type():
 
 
 # ── Geology Agent (Agent #9) ──────────────────────────────────────────────
+
 
 def test_geology_unknown_operation():
     """Unknown geology operation should return error."""
@@ -346,10 +367,16 @@ def test_geology_supported_operations():
     from geosi_engine.agents.geology import GEOLOGY_OPERATIONS
 
     required = [
-        "geological_mapping", "structural_analysis", "stratigraphic_modeling",
-        "cross_section", "fault_visualization", "fold_analysis",
-        "borehole_correlation", "mineral_prospectivity",
-        "landslide_susceptibility", "ai_interpretation",
+        "geological_mapping",
+        "structural_analysis",
+        "stratigraphic_modeling",
+        "cross_section",
+        "fault_visualization",
+        "fold_analysis",
+        "borehole_correlation",
+        "mineral_prospectivity",
+        "landslide_susceptibility",
+        "ai_interpretation",
     ]
     for op in required:
         assert op in GEOLOGY_OPERATIONS, f"Missing geology op: {op}"

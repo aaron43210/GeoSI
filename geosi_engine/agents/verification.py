@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Verification Agent (Core Agent #10)
 ════════════════════════════════════════════════════════════════════
@@ -15,14 +14,15 @@ PRD §4.1 Agent #10 — Production requirements
 * Read-only by design — QA only, no execution.
 * Auto-tier: ``allow`` (always read-only).
 """
+
 from __future__ import annotations
 
 import logging
+import re as _re
 from dataclasses import dataclass, field
 from typing import Any, List, Optional
-import re as _re
 
-from geosi_engine.telemetry import span, set_span_attr
+from geosi_engine.telemetry import set_span_attr, span
 
 logger = logging.getLogger("geosi_engine.agents.verification")
 
@@ -39,14 +39,21 @@ _SUBJECT_RE = _re.compile(
     _re.IGNORECASE,
 )
 _EACH_RE = _re.compile(r"\b(?:each|every|per)\s+([a-z_]+(?:\s[a-z_]+)?)", _re.IGNORECASE)
-_GEOM_FAMILY = {"point": "point", "multipoint": "point", "line": "line", "linestring": "line",
-                "multilinestring": "line", "polygon": "polygon", "multipolygon": "polygon"}
+_GEOM_FAMILY = {
+    "point": "point",
+    "multipoint": "point",
+    "line": "line",
+    "linestring": "line",
+    "multilinestring": "line",
+    "polygon": "polygon",
+    "multipolygon": "polygon",
+}
 # File-level QA reads the whole output; skip it for very large layers
 _FILE_QA_MAX_FEATURES = 100_000
 
 
 def geom_family(geometry_type: str) -> str:
-    """"Point"/"MultiPolygon"/"LineString" → "point"/"polygon"/"line"."""
+    """ "Point"/"MultiPolygon"/"LineString" → "point"/"polygon"/"line"."""
     g = (geometry_type or "").lower().replace(" ", "")
     for key, fam in _GEOM_FAMILY.items():
         if g.startswith(key):
@@ -57,8 +64,9 @@ def geom_family(geometry_type: str) -> str:
 @dataclass
 class VerificationIssue:
     """One verification finding."""
-    severity: str           # "error" | "warning" | "info"
-    category: str           # "geometry" | "crs" | "raster_qa" | "value_range" | "topology"
+
+    severity: str  # "error" | "warning" | "info"
+    category: str  # "geometry" | "crs" | "raster_qa" | "value_range" | "topology"
     message: str
     layer: Optional[str] = None
 
@@ -66,9 +74,10 @@ class VerificationIssue:
 @dataclass
 class VerificationReport:
     """Full QA report for an execution result or layer."""
+
     passed: bool
     layer: Optional[str] = None
-    issues: List[str] = field(default_factory=list)   # plain string list for compat
+    issues: List[str] = field(default_factory=list)  # plain string list for compat
     findings: List[VerificationIssue] = field(default_factory=list)
     statistics: dict = field(default_factory=dict)
 
@@ -122,66 +131,92 @@ class VerificationAgent:
 
         try:
             import geopandas as gpd
+
             gdf = gpd.read_file(layer_path)
             stats["feature_count"] = len(gdf)
 
             # CRS check
             if gdf.crs is None:
-                findings.append(VerificationIssue(
-                    severity="error", category="crs",
-                    message=f"Layer '{layer_path}' has no CRS defined.", layer=layer_path,
-                ))
+                findings.append(
+                    VerificationIssue(
+                        severity="error",
+                        category="crs",
+                        message=f"Layer '{layer_path}' has no CRS defined.",
+                        layer=layer_path,
+                    )
+                )
             else:
                 stats["crs"] = str(gdf.crs)
 
             # Null geometry check
             null_count = int(gdf.geometry.isna().sum())
             if null_count > 0:
-                findings.append(VerificationIssue(
-                    severity="error", category="geometry",
-                    message=f"{null_count} null geometries found in '{layer_path}'.", layer=layer_path,
-                ))
+                findings.append(
+                    VerificationIssue(
+                        severity="error",
+                        category="geometry",
+                        message=f"{null_count} null geometries found in '{layer_path}'.",
+                        layer=layer_path,
+                    )
+                )
             stats["null_geometries"] = null_count
 
             # Validity check
             invalid_count = int((~gdf.geometry.dropna().is_valid).sum())
             if invalid_count > 0:
-                findings.append(VerificationIssue(
-                    severity="warning", category="geometry",
-                    message=(f"{invalid_count} invalid geometries (Shapely is_valid=False). "
-                             "Consider running Fix Geometries."),
-                    layer=layer_path,
-                ))
+                findings.append(
+                    VerificationIssue(
+                        severity="warning",
+                        category="geometry",
+                        message=(
+                            f"{invalid_count} invalid geometries (Shapely is_valid=False). "
+                            "Consider running Fix Geometries."
+                        ),
+                        layer=layer_path,
+                    )
+                )
             stats["invalid_geometries"] = invalid_count
 
             # Feature count
             if len(gdf) == 0:
-                findings.append(VerificationIssue(
-                    severity="warning", category="geometry",
-                    message=f"Layer '{layer_path}' is empty (0 features).", layer=layer_path,
-                ))
+                findings.append(
+                    VerificationIssue(
+                        severity="warning",
+                        category="geometry",
+                        message=f"Layer '{layer_path}' is empty (0 features).",
+                        layer=layer_path,
+                    )
+                )
 
         except ImportError as exc:
             # FAIL CLOSED: missing dependency means nothing was checked.
             # A partial Docker build or broken venv must not produce passed=True.
             logger.error(
                 "geopandas not installed — vector verification cannot run on '%s': %s",
-                layer_path, exc,
+                layer_path,
+                exc,
             )
-            findings.append(VerificationIssue(
-                severity="error", category="geometry",
-                message=(
-                    f"Verification dependency missing (geopandas): '{exc}'. "
-                    f"Layer '{layer_path}' was NOT checked — marking as FAILED. "
-                    "Install geopandas to enable vector verification."
-                ),
-                layer=layer_path,
-            ))
+            findings.append(
+                VerificationIssue(
+                    severity="error",
+                    category="geometry",
+                    message=(
+                        f"Verification dependency missing (geopandas): '{exc}'. "
+                        f"Layer '{layer_path}' was NOT checked — marking as FAILED. "
+                        "Install geopandas to enable vector verification."
+                    ),
+                    layer=layer_path,
+                )
+            )
         except Exception as exc:
-            findings.append(VerificationIssue(
-                severity="error", category="geometry",
-                message=f"Could not read layer '{layer_path}': {exc}", layer=layer_path,
-            ))
+            findings.append(
+                VerificationIssue(
+                    severity="error",
+                    category="geometry",
+                    message=f"Could not read layer '{layer_path}': {exc}",
+                    layer=layer_path,
+                )
+            )
 
         errors = [f for f in findings if f.severity == "error"]
         passed = len(errors) == 0
@@ -189,9 +224,11 @@ class VerificationAgent:
         set_span_attr("verification.issues", len(findings))
 
         return VerificationReport(
-            passed=passed, layer=layer_path,
+            passed=passed,
+            layer=layer_path,
             issues=[f.message for f in findings],
-            findings=findings, statistics=stats,
+            findings=findings,
+            statistics=stats,
         )
 
     @span("verification.verify_raster", agent="verification")
@@ -213,8 +250,8 @@ class VerificationAgent:
         set_span_attr("verification.layer", layer_path)
 
         try:
-            import rasterio
             import numpy as np
+            import rasterio
 
             with rasterio.open(layer_path) as src:
                 stats["crs"] = str(src.crs) if src.crs else "none"
@@ -223,10 +260,14 @@ class VerificationAgent:
                 stats["nodata"] = src.nodata
 
                 if src.crs is None:
-                    findings.append(VerificationIssue(
-                        severity="error", category="crs",
-                        message=f"Raster '{layer_path}' has no CRS.", layer=layer_path,
-                    ))
+                    findings.append(
+                        VerificationIssue(
+                            severity="error",
+                            category="crs",
+                            message=f"Raster '{layer_path}' has no CRS.",
+                            layer=layer_path,
+                        )
+                    )
 
                 for b in range(1, src.count + 1):
                     data = src.read(b)
@@ -236,10 +277,14 @@ class VerificationAgent:
                         valid = data.flatten()
 
                     if valid.size == 0:
-                        findings.append(VerificationIssue(
-                            severity="error", category="raster_qa",
-                            message=f"Band {b} of '{layer_path}' contains only nodata values.", layer=layer_path,
-                        ))
+                        findings.append(
+                            VerificationIssue(
+                                severity="error",
+                                category="raster_qa",
+                                message=f"Band {b} of '{layer_path}' contains only nodata values.",
+                                layer=layer_path,
+                            )
+                        )
                     else:
                         b_min, b_max = float(valid.min()), float(valid.max())
                         stats[f"band_{b}_min"] = b_min
@@ -250,54 +295,71 @@ class VerificationAgent:
                             out_of_range = int(((valid < lo) | (valid > hi)).sum())
                             if out_of_range > 0:
                                 pct = out_of_range / valid.size * 100
-                                findings.append(VerificationIssue(
-                                    severity="warning", category="value_range",
-                                    message=(
-                                        f"Band {b}: {out_of_range} pixels ({pct:.1f}%) "
-                                        f"outside expected range [{lo}, {hi}]."
-                                    ),
-                                    layer=layer_path,
-                                ))
+                                findings.append(
+                                    VerificationIssue(
+                                        severity="warning",
+                                        category="value_range",
+                                        message=(
+                                            f"Band {b}: {out_of_range} pixels ({pct:.1f}%) "
+                                            f"outside expected range [{lo}, {hi}]."
+                                        ),
+                                        layer=layer_path,
+                                    )
+                                )
 
                         # NaN/Inf check
                         if np.issubdtype(data.dtype, np.floating):
                             nan_count = int(np.isnan(valid).sum() + np.isinf(valid).sum())
                             if nan_count > 0:
-                                findings.append(VerificationIssue(
-                                    severity="warning", category="raster_qa",
-                                    message=f"Band {b}: {nan_count} NaN/Inf values detected.", layer=layer_path,
-                                ))
+                                findings.append(
+                                    VerificationIssue(
+                                        severity="warning",
+                                        category="raster_qa",
+                                        message=f"Band {b}: {nan_count} NaN/Inf values detected.",
+                                        layer=layer_path,
+                                    )
+                                )
 
         except ImportError as exc:
             # FAIL CLOSED: missing dependency means nothing was checked.
             # A partial Docker build or broken venv must not produce passed=True.
             logger.error(
                 "rasterio/numpy not installed — raster verification cannot run on '%s': %s",
-                layer_path, exc,
+                layer_path,
+                exc,
             )
-            findings.append(VerificationIssue(
-                severity="error", category="raster_qa",
-                message=(
-                    f"Verification dependency missing (rasterio): '{exc}'. "
-                    f"Raster '{layer_path}' was NOT checked — marking as FAILED. "
-                    "Install rasterio to enable raster verification."
-                ),
-                layer=layer_path,
-            ))
+            findings.append(
+                VerificationIssue(
+                    severity="error",
+                    category="raster_qa",
+                    message=(
+                        f"Verification dependency missing (rasterio): '{exc}'. "
+                        f"Raster '{layer_path}' was NOT checked — marking as FAILED. "
+                        "Install rasterio to enable raster verification."
+                    ),
+                    layer=layer_path,
+                )
+            )
         except Exception as exc:
-            findings.append(VerificationIssue(
-                severity="error", category="raster_qa",
-                message=f"Could not open raster '{layer_path}': {exc}", layer=layer_path,
-            ))
+            findings.append(
+                VerificationIssue(
+                    severity="error",
+                    category="raster_qa",
+                    message=f"Could not open raster '{layer_path}': {exc}",
+                    layer=layer_path,
+                )
+            )
 
         errors = [f for f in findings if f.severity == "error"]
         passed = len(errors) == 0
         set_span_attr("verification.passed", passed)
 
         return VerificationReport(
-            passed=passed, layer=layer_path,
+            passed=passed,
+            layer=layer_path,
             issues=[f.message for f in findings],
-            findings=findings, statistics=stats,
+            findings=findings,
+            statistics=stats,
         )
 
     @span("verification.verify_crs_match", agent="verification")
@@ -317,6 +379,7 @@ class VerificationAgent:
         # lookups and interpreter lock contention on every iteration.
         try:
             import fiona
+
             _fiona_available = True
         except ImportError:
             _fiona_available = False
@@ -331,26 +394,38 @@ class VerificationAgent:
                 else:
                     # Fallback: full read — slower but functional
                     import geopandas as gpd
+
                     crs = str(gpd.read_file(path).crs)
                 crs_set.add(crs)
                 stats[path] = crs
             except Exception as exc:
-                findings.append(VerificationIssue(
-                    severity="error", category="crs",
-                    message=f"Could not read CRS from '{path}': {exc}", layer=path,
-                ))
+                findings.append(
+                    VerificationIssue(
+                        severity="error",
+                        category="crs",
+                        message=f"Could not read CRS from '{path}': {exc}",
+                        layer=path,
+                    )
+                )
 
         if len(crs_set) > 1:
-            findings.append(VerificationIssue(
-                severity="error", category="crs",
-                message=f"CRS mismatch across layers: {crs_set}. Reproject all layers to a common CRS before overlay.",
-            ))
+            findings.append(
+                VerificationIssue(
+                    severity="error",
+                    category="crs",
+                    message=(
+                        f"CRS mismatch across layers: {crs_set}. "
+                        "Reproject all layers to a common CRS before overlay."
+                    ),
+                )
+            )
 
         errors = [f for f in findings if f.severity == "error"]
         return VerificationReport(
             passed=len(errors) == 0,
             issues=[f.message for f in findings],
-            findings=findings, statistics=stats,
+            findings=findings,
+            statistics=stats,
         )
 
     # ------------------------------------------------------------------
@@ -399,30 +474,41 @@ class VerificationAgent:
             except Exception:  # pragma: no cover
                 DOMAIN_TOOL_NAMES = ()
             if not (steps and steps[-1].tool_name in DOMAIN_TOOL_NAMES and final is not None):
-                return error("output", "no result layer was produced — this request needs a "
-                                       "processing tool that outputs a new layer")
+                return error(
+                    "output",
+                    "no result layer was produced — this request needs a " "processing tool that outputs a new layer",
+                )
 
         if isinstance(final, Layer):
             if final.layer_type == "vector" and final.feature_count == 0:
-                return error("output", f"the final output '{final.name}' has 0 features — the inputs "
-                                       f"may be swapped, the wrong tool was used, or the distance/units "
-                                       f"are wrong")
+                return error(
+                    "output",
+                    f"the final output '{final.name}' has 0 features — the inputs "
+                    f"may be swapped, the wrong tool was used, or the distance/units "
+                    f"are wrong",
+                )
             each = self._each_layer(query, state)
             same_family = each is not None and geom_family(final.geometry_type) == each[2]
             if each and same_family and final.feature_count != each[1]:
-                return error("output", f"the request is about each feature of '{each[0]}' ({each[1]} "
-                                       f"features) but the output has {final.feature_count} — the result "
-                                       f"should keep one feature per '{each[0]}' feature (e.g. use "
-                                       f"'{each[0]}' as the INPUT/POLYGONS layer, keep non-matching "
-                                       f"features)")
+                return error(
+                    "output",
+                    f"the request is about each feature of '{each[0]}' ({each[1]} "
+                    f"features) but the output has {final.feature_count} — the result "
+                    f"should keep one feature per '{each[0]}' feature (e.g. use "
+                    f"'{each[0]}' as the INPUT/POLYGONS layer, keep non-matching "
+                    f"features)",
+                )
             expected = self._expected_geometry(query, state)
             if expected and final.layer_type == "vector":
                 got = geom_family(final.geometry_type)
                 if got and got != expected[1]:
-                    return error("output", f"the question asks for {expected[0]} ({expected[1]} "
-                                           f"features) but the final output has {got} features — use "
-                                           f"'{expected[0]}' as the INPUT layer and the other layer as "
-                                           f"the comparison/intersect layer")
+                    return error(
+                        "output",
+                        f"the question asks for {expected[0]} ({expected[1]} "
+                        f"features) but the final output has {got} features — use "
+                        f"'{expected[0]}' as the INPUT layer and the other layer as "
+                        f"the comparison/intersect layer",
+                    )
             findings.extend(self._file_qa(final))
 
         set_span_attr("verification.passed", True)
@@ -439,9 +525,11 @@ class VerificationAgent:
         try:
             if layer.layer_type == "raster":
                 import rasterio  # noqa: F401
+
                 report = self.verify_raster(layer.filepath)
             else:
                 import geopandas  # noqa: F401
+
                 report = self.verify_vector(layer.filepath)
         except ImportError:
             return []  # QA libraries not installed here; semantic checks still ran
@@ -511,8 +599,8 @@ class VerificationAgent:
             # No output file — check for in-memory success flag
             if getattr(result, "success", True):
                 return VerificationReport(
-                    passed=True, issues=[],
-                    statistics={"note": "In-memory result — no file verification needed."})
+                    passed=True, issues=[], statistics={"note": "In-memory result — no file verification needed."}
+                )
             return VerificationReport(passed=False, issues=["Execution result has no output path and reports failure."])
 
         # Dispatch by extension

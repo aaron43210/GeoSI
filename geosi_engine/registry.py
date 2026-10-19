@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Engine — Tool Registry (v2: Dynamic Registration)
 ═══════════════════════════════════════════════════════════════════
@@ -35,12 +34,12 @@ Thread Safety
     list_tools) can happen from any thread after initialization completes.
 """
 
+import importlib
 import logging
 import pkgutil
-import importlib
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
-from geosi_engine.models import ToolSpec, ToolResult
+from geosi_engine.models import ToolResult, ToolSpec
 
 logger = logging.getLogger("geosi_engine.registry")
 
@@ -238,15 +237,13 @@ class ToolRegistry:
         Returns:
             Number of portable tools discovered
         """
-        from geosi_engine.base import GISTool
         import geosi_engine.tools as tools_pkg
+        from geosi_engine.base import GISTool
 
         count = 0
-        for finder, module_name, is_pkg in pkgutil.iter_modules(tools_pkg.__path__):
+        for _finder, module_name, _is_pkg in pkgutil.iter_modules(tools_pkg.__path__):
             try:
-                module = importlib.import_module(
-                    f"geosi_engine.tools.{module_name}"
-                )
+                module = importlib.import_module(f"geosi_engine.tools.{module_name}")
                 for attr_name in dir(module):
                     obj = getattr(module, attr_name)
                     if (

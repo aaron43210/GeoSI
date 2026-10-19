@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI — Checkpoint & 1-Click Undo Engine
 ═══════════════════════════════════════════════════════════════════════
@@ -23,6 +22,7 @@ the user clicks Undo, call rollback(checkpoint_id).
 The manager is QGIS-optional — on non-QGIS environments (tests, server)
 it is a no-op that returns stub checkpoints.
 """
+
 from __future__ import annotations
 
 import logging
@@ -36,8 +36,7 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("geosi_engine.checkpoints")
 
-_SNAPSHOTS_DIR = Path(os.environ.get("GEOSI_SNAPSHOTS_DIR",
-                                     Path.home() / ".geosi" / "snapshots"))
+_SNAPSHOTS_DIR = Path(os.environ.get("GEOSI_SNAPSHOTS_DIR", Path.home() / ".geosi" / "snapshots"))
 
 
 @dataclass
@@ -45,11 +44,11 @@ class LayerSnapshot:
     layer_id: str
     name: str
     source: str
-    layer_type: str      # "vector" | "raster" | "plugin"
+    layer_type: str  # "vector" | "raster" | "plugin"
     provider: str
     crs_wkt: str
-    style_xml: str       # QML style XML
-    memory_gpkg: Optional[str] = None   # temp file for memory layers
+    style_xml: str  # QML style XML
+    memory_gpkg: Optional[str] = None  # temp file for memory layers
     memory_layer_name: Optional[str] = None
 
 
@@ -113,8 +112,7 @@ class CheckpointManager:
             self._checkpoints[cp.checkpoint_id] = cp
             self._evict_old()
 
-        logger.info("Checkpoint %s created (%d layers)", cp.checkpoint_id,
-                    len(cp.layer_ids_before))
+        logger.info("Checkpoint %s created (%d layers)", cp.checkpoint_id, len(cp.layer_ids_before))
         return cp
 
     def rollback(self, checkpoint_id: str, project: Any = None) -> bool:
@@ -183,6 +181,7 @@ class CheckpointManager:
     def _get_project() -> Optional[Any]:
         try:
             from qgis.core import QgsProject
+
             return QgsProject.instance()
         except ImportError:
             return None
@@ -193,6 +192,7 @@ class CheckpointManager:
             style_xml = ""
             try:
                 from qgis.PyQt.QtXml import QDomDocument
+
                 doc = QDomDocument("qgis")
                 layer.exportNamedStyle(doc)
                 style_xml = doc.toString()
@@ -206,13 +206,16 @@ class CheckpointManager:
             if is_memory:
                 gpkg_path = str(_SNAPSHOTS_DIR / f"{cp_id}_{lid[:8]}.gpkg")
                 try:
-                    from qgis.core import QgsVectorFileWriter, QgsCoordinateTransformContext
+                    from qgis.core import QgsCoordinateTransformContext, QgsVectorFileWriter
+
                     opts = QgsVectorFileWriter.SaveVectorOptions()
                     opts.layerName = layer.name()
                     opts.fileEncoding = "UTF-8"
                     QgsVectorFileWriter.writeAsVectorFormatV3(
-                        layer, gpkg_path,
-                        QgsCoordinateTransformContext(), opts,
+                        layer,
+                        gpkg_path,
+                        QgsCoordinateTransformContext(),
+                        opts,
                     )
                     memory_gpkg = gpkg_path
                     memory_name = layer.name()
@@ -238,9 +241,11 @@ class CheckpointManager:
     def _restore_memory_layer(snap: LayerSnapshot, project: Any) -> None:
         try:
             from qgis.core import QgsVectorLayer
+
             layer = QgsVectorLayer(
                 f"{snap.memory_gpkg}|layername={snap.memory_layer_name}",
-                snap.name, "ogr",
+                snap.name,
+                "ogr",
             )
             if layer.isValid():
                 project.addMapLayer(layer)
@@ -252,6 +257,7 @@ class CheckpointManager:
     def _reapply_style(layer: Any, style_xml: str) -> None:
         try:
             from qgis.PyQt.QtXml import QDomDocument
+
             doc = QDomDocument("qgis")
             if not style_xml:
                 return
@@ -266,9 +272,8 @@ class CheckpointManager:
         """Remove oldest checkpoints when over the limit."""
         if len(self._checkpoints) <= self._max:
             return
-        sorted_ids = sorted(self._checkpoints,
-                            key=lambda k: self._checkpoints[k].created_at)
-        for cid in sorted_ids[:len(self._checkpoints) - self._max]:
+        sorted_ids = sorted(self._checkpoints, key=lambda k: self._checkpoints[k].created_at)
+        for cid in sorted_ids[: len(self._checkpoints) - self._max]:
             cp = self._checkpoints.pop(cid)
             self._cleanup(cp)
 

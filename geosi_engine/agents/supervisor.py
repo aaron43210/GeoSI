@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Supervisor Agent
 ════════════════════════════════════════════════════════════════════
@@ -24,13 +23,14 @@ Responsibilities
    returns an ``approval_pending`` action id; ``resume()`` continues it.
 5. Telemetry — an OpenTelemetry span per request when configured.
 """
+
 from __future__ import annotations
 
 import dataclasses
 import logging
 import os
-import time
 import threading
+import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Optional
@@ -52,9 +52,10 @@ _CB_RESET_S = float(os.environ.get("CIRCUIT_BREAKER_RESET_SECONDS", "120"))
 # Circuit Breaker
 # ---------------------------------------------------------------------------
 
+
 class CBState(str, Enum):
-    CLOSED = "closed"       # normal operation
-    OPEN = "open"           # failing — skip this provider
+    CLOSED = "closed"  # normal operation
+    OPEN = "open"  # failing — skip this provider
     HALF_OPEN = "half_open"  # probe: allow one trial call
 
 
@@ -146,6 +147,7 @@ def _breaker(provider: str) -> CircuitBreaker:
 # Request / Response types
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SupervisorRequest:
     query: str
@@ -158,15 +160,15 @@ class SupervisorRequest:
 @dataclass
 class SupervisorResponse:
     success: bool
-    result: Any = None                      # the answer text
+    result: Any = None  # the answer text
     error: Optional[str] = None
     plan_json: Optional[dict[str, Any]] = None
     execution_summary: Optional[dict[str, Any]] = None
     approval_pending: Optional[str] = None  # action_id when paused for approval
     session_id: str = ""
     latency_ms: float = 0.0
-    execution_result: Any = None            # full ExecutionResult (output layers, logs)
-    report: str = ""                        # Markdown execution report
+    execution_result: Any = None  # full ExecutionResult (output layers, logs)
+    report: str = ""  # Markdown execution report
     warnings: list[str] = field(default_factory=list)
     plan_source: str = ""
 
@@ -174,6 +176,7 @@ class SupervisorResponse:
 # ---------------------------------------------------------------------------
 # Supervisor Agent
 # ---------------------------------------------------------------------------
+
 
 class SupervisorAgent:
     """
@@ -213,8 +216,7 @@ class SupervisorAgent:
         """Process one request end-to-end in its session."""
         start = time.monotonic()
         with start_span(
-            "supervisor.handle",
-            **{"session.id": request.session_id, "surface": request.surface}
+            "supervisor.handle", **{"session.id": request.session_id, "surface": request.surface}
         ) as root_span:
             try:
                 root_span.set_attribute("query.length", len(request.query))
@@ -226,15 +228,15 @@ class SupervisorAgent:
                 root_span.set_attribute("success", response.success)
                 return response
             except Exception as exc:
-                logger.error("Supervisor failed for session %s: %s", request.session_id, exc,
-                             exc_info=True)
+                logger.error("Supervisor failed for session %s: %s", request.session_id, exc, exc_info=True)
                 return SupervisorResponse(
-                    success=False, error=str(exc), session_id=request.session_id,
+                    success=False,
+                    error=str(exc),
+                    session_id=request.session_id,
                     latency_ms=(time.monotonic() - start) * 1000,
                 )
 
-    def resume(self, action_id: str, approved: bool,
-               session_id: Optional[str] = None) -> SupervisorResponse:
+    def resume(self, action_id: str, approved: bool, session_id: Optional[str] = None) -> SupervisorResponse:
         """
         Resolve a pending approval and continue the paused run.
 
@@ -245,12 +247,14 @@ class SupervisorAgent:
         start = time.monotonic()
         pending = PermissionSafetyAgent._APPROVALS.get(action_id)
         if pending is None:
-            return SupervisorResponse(success=False, error=f"No pending approval {action_id!r}.",
-                                      session_id=session_id or "")
+            return SupervisorResponse(
+                success=False, error=f"No pending approval {action_id!r}.", session_id=session_id or ""
+            )
         session_id = session_id or pending.session_id
         if pending.session_id != session_id:
-            return SupervisorResponse(success=False, session_id=session_id,
-                                      error="This approval belongs to a different session.")
+            return SupervisorResponse(
+                success=False, session_id=session_id, error="This approval belongs to a different session."
+            )
         PermissionSafetyAgent._APPROVALS.resolve(action_id, approved)
         with start_span("supervisor.resume", **{"session.id": session_id, "approved": approved}):
             try:
@@ -260,8 +264,9 @@ class SupervisorAgent:
                 return self._response(engine, result, session_id, start)
             except Exception as exc:
                 logger.error("Resume failed for %s: %s", action_id, exc, exc_info=True)
-                return SupervisorResponse(success=False, error=str(exc), session_id=session_id,
-                                          latency_ms=(time.monotonic() - start) * 1000)
+                return SupervisorResponse(
+                    success=False, error=str(exc), session_id=session_id, latency_ms=(time.monotonic() - start) * 1000
+                )
 
     def circuit_breaker_states(self) -> list[dict[str, Any]]:
         """Return all circuit breaker statuses for the /health endpoint."""
@@ -363,12 +368,14 @@ def _execution_summary(plan: Any, result: Any) -> dict[str, Any]:
         }
         if log is not None:
             status = getattr(log.status, "value", str(log.status))
-            entry.update({
-                "success": status == "success",
-                "duration_ms": round(log.duration_ms, 1),
-                "output_features": log.output_features,
-                "error": log.error_message,
-            })
+            entry.update(
+                {
+                    "success": status == "success",
+                    "duration_ms": round(log.duration_ms, 1),
+                    "output_features": log.output_features,
+                    "error": log.error_message,
+                }
+            )
             if status == "pending_approval":
                 entry["approval_pending"] = result.approval_pending
         steps.append(entry)

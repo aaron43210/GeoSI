@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Neo4j Graph Client (Phase P9, FR-8.4)
 ════════════════════════════════════════════════════════════════════
@@ -18,6 +17,7 @@ All writes are async — never block the agent pipeline.
 
 PRD references: FR-8.4, §10
 """
+
 from __future__ import annotations
 
 import logging
@@ -39,6 +39,7 @@ _CIRCUIT_BREAKER_RESET_S = float(os.environ.get("NEO4J_CB_RESET_S", "60.0"))
 @dataclass
 class Neo4jNode:
     """Lightweight node representation (avoids full Neo4j record objects in memory)."""
+
     node_id: str
     labels: List[str]
     properties: Dict[str, Any] = field(default_factory=dict)
@@ -47,6 +48,7 @@ class Neo4jNode:
 @dataclass
 class Neo4jRelationship:
     """Lightweight relationship representation."""
+
     from_id: str
     to_id: str
     rel_type: str
@@ -88,9 +90,7 @@ class _CircuitBreaker:
             self._failures += 1
             if self._failures >= self._threshold:
                 self._opened_at = time.monotonic()
-                logger.warning(
-                    "Neo4j circuit breaker OPEN after %d failures.", self._failures
-                )
+                logger.warning("Neo4j circuit breaker OPEN after %d failures.", self._failures)
 
     def state(self) -> str:
         with self._lock:
@@ -149,6 +149,7 @@ class Neo4jClient:
         """Initialise the Neo4j driver (lazy — does not actually open a socket)."""
         try:
             from neo4j import GraphDatabase
+
             self._driver = GraphDatabase.driver(
                 self._uri,
                 auth=(self._user, self._password),
@@ -227,10 +228,7 @@ class Neo4jClient:
         """
         if not self.available:
             return False
-        cypher = (
-            f"MERGE (n:{label} {{{node_id_field}: $id_val}}) "
-            f"SET n += $props RETURN n"
-        )
+        cypher = f"MERGE (n:{label} {{{node_id_field}: $id_val}}) " f"SET n += $props RETURN n"
         params = {
             "id_val": properties.get(node_id_field),
             "props": {k: v for k, v in properties.items() if k != node_id_field},
@@ -239,8 +237,12 @@ class Neo4jClient:
 
     def upsert_relationship(
         self,
-        from_label: str, from_id_field: str, from_id_val: Any,
-        to_label: str, to_id_field: str, to_id_val: Any,
+        from_label: str,
+        from_id_field: str,
+        from_id_val: Any,
+        to_label: str,
+        to_id_field: str,
+        to_id_val: Any,
         rel_type: str,
         rel_props: Optional[Dict[str, Any]] = None,
     ) -> bool:
@@ -256,11 +258,14 @@ class Neo4jClient:
             f"MERGE (a)-[r:{rel_type}]->(b) "
             f"SET r += $props RETURN r"
         )
-        return self._run_write([cypher], params={
-            "from_val": from_id_val,
-            "to_val": to_id_val,
-            "props": rel_props or {},
-        })
+        return self._run_write(
+            [cypher],
+            params={
+                "from_val": from_id_val,
+                "to_val": to_id_val,
+                "props": rel_props or {},
+            },
+        )
 
     # ------------------------------------------------------------------
     # Read operations
@@ -286,8 +291,11 @@ class Neo4jClient:
 
     def find_related(
         self,
-        from_label: str, from_id_field: str, from_id_val: Any,
-        rel_type: str, depth: int = 1,
+        from_label: str,
+        from_id_field: str,
+        from_id_val: Any,
+        rel_type: str,
+        depth: int = 1,
     ) -> List[Neo4jNode]:
         """
         Find nodes related to a given node up to `depth` hops.
@@ -296,19 +304,18 @@ class Neo4jClient:
         if not self.available:
             return []
         rel_pattern = f"-[:{rel_type}*1..{depth}]->"
-        cypher = (
-            f"MATCH (a:{from_label} {{{from_id_field}: $val}}){rel_pattern}(b) "
-            f"RETURN DISTINCT b LIMIT 50"
-        )
+        cypher = f"MATCH (a:{from_label} {{{from_id_field}: $val}}){rel_pattern}(b) " f"RETURN DISTINCT b LIMIT 50"
         results = self._run_read(cypher, {"val": from_id_val})
         nodes: list[Neo4jNode] = []
         for record in results:
             n = record["b"]
-            nodes.append(Neo4jNode(
-                node_id=str(n.id),
-                labels=list(n.labels),
-                properties=dict(n),
-            ))
+            nodes.append(
+                Neo4jNode(
+                    node_id=str(n.id),
+                    labels=list(n.labels),
+                    properties=dict(n),
+                )
+            )
         return nodes
 
     def cypher_query(self, cypher: str, params: Optional[Dict] = None) -> List[Dict[str, Any]]:
@@ -331,9 +338,11 @@ class Neo4jClient:
             return False
         try:
             with self._driver.session() as session:
+
                 def _tx(tx):
                     for cypher in cyphers:
                         tx.run(cypher, **(params or {}))
+
                 session.execute_write(_tx)
             self._cb.record_success()
             return True
@@ -348,9 +357,7 @@ class Neo4jClient:
             return []
         try:
             with self._driver.session() as session:
-                result = session.execute_read(
-                    lambda tx: list(tx.run(cypher, **(params or {})))
-                )
+                result = session.execute_read(lambda tx: list(tx.run(cypher, **(params or {}))))
             self._cb.record_success()
             return result
         except Exception as exc:

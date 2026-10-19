@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — MCP Server (Phase P4, FR-5)
 ════════════════════════════════════════════════════════════════════
@@ -14,21 +13,23 @@ Security (FR-5.2, FR-5.3):
 Protocol: JSON-RPC 2.0 over HTTP POST /mcp/call
 Discovery: GET /mcp/tools  |  Manifest: GET /mcp/manifest
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
-from geosi_mcp.auth import verify_mcp_token, extract_bearer_token
+from geosi_mcp.auth import extract_bearer_token, verify_mcp_token
 
 logger = logging.getLogger("geosi_mcp.server")
 router = APIRouter()
 
 
 # ── MCP Protocol models ───────────────────────────────────────────────────
+
 
 class MCPToolParam(BaseModel):
     name: str
@@ -40,38 +41,39 @@ class MCPToolParam(BaseModel):
 class MCPTool(BaseModel):
     name: str
     description: str
-    parameters: List[MCPToolParam]
+    parameters: list[MCPToolParam]
 
 
 class MCPCallRequest(BaseModel):
     jsonrpc: str = "2.0"
-    id: Optional[Any] = None
+    id: Any | None = None
     method: str
-    params: Dict[str, Any] = Field(default_factory=dict)
+    params: dict[str, Any] = Field(default_factory=dict)
 
 
 class MCPCallResponse(BaseModel):
     jsonrpc: str = "2.0"
-    id: Optional[Any] = None
-    result: Optional[Any] = None
-    error: Optional[Dict[str, Any]] = None
+    id: Any | None = None
+    result: Any | None = None
+    error: dict[str, Any] | None = None
 
 
 class MCPManifest(BaseModel):
     name: str = "geosi-mcp"
     version: str = "2.0.0"
     description: str = "GeoSI v2 — Autonomous Geospatial Intelligence MCP Server"
-    tools: List[MCPTool] = Field(default_factory=list)
+    tools: list[MCPTool] = Field(default_factory=list)
 
 
 # ── Tool registry (Pydantic v2 — all kwargs) ──────────────────────────────
+
 
 def _p(name: str, typ: str, desc: str, required: bool = True) -> MCPToolParam:
     """Shorthand constructor — Pydantic v2 keyword-only BaseModel init."""
     return MCPToolParam(name=name, type=typ, description=desc, required=required)
 
 
-_TOOLS: List[MCPTool] = [
+_TOOLS: list[MCPTool] = [
     MCPTool(
         name="run_query",
         description=(
@@ -80,9 +82,9 @@ _TOOLS: List[MCPTool] = [
             "Returns the execution result and plan."
         ),
         parameters=[
-            _p("query",            "string", "Natural-language GIS query"),
-            _p("session_id",       "string", "Session identifier",                         required=False),
-            _p("available_layers", "array",  "Layer names currently loaded in QGIS",       required=False),
+            _p("query", "string", "Natural-language GIS query"),
+            _p("session_id", "string", "Session identifier", required=False),
+            _p("available_layers", "array", "Layer names currently loaded in QGIS", required=False),
         ],
     ),
     MCPTool(
@@ -92,9 +94,9 @@ _TOOLS: List[MCPTool] = [
             "Returns relevant GIS documentation, workflow examples, and research papers."
         ),
         parameters=[
-            _p("query",      "string",  "Search query"),
-            _p("collection", "string",  "Qdrant collection to search (default: gis_docs)", required=False),
-            _p("limit",      "integer", "Maximum number of results (default: 5)",          required=False),
+            _p("query", "string", "Search query"),
+            _p("collection", "string", "Qdrant collection to search (default: gis_docs)", required=False),
+            _p("limit", "integer", "Maximum number of results (default: 5)", required=False),
         ],
     ),
     MCPTool(
@@ -104,9 +106,9 @@ _TOOLS: List[MCPTool] = [
             "Returns a structured ExecutionPlan with tool IDs, parameters, and risk levels."
         ),
         parameters=[
-            _p("task",             "string", "Task description for workflow planning"),
-            _p("available_layers", "array",  "Layers currently available",   required=False),
-            _p("session_id",       "string", "Session identifier",            required=False),
+            _p("task", "string", "Task description for workflow planning"),
+            _p("available_layers", "array", "Layers currently available", required=False),
+            _p("session_id", "string", "Session identifier", required=False),
         ],
     ),
     MCPTool(
@@ -137,18 +139,19 @@ _TOOLS: List[MCPTool] = [
             "Required for mutating/destructive operations flagged by the Permission & Safety Agent."
         ),
         parameters=[
-            _p("action_id", "string",  "The action_id from the HITL approval request"),
-            _p("approved",  "boolean", "True to approve, False to reject"),
-            _p("reason",    "string",  "Optional human-readable reason", required=False),
+            _p("action_id", "string", "The action_id from the HITL approval request"),
+            _p("approved", "boolean", "True to approve, False to reject"),
+            _p("reason", "string", "Optional human-readable reason", required=False),
         ],
     ),
 ]
 
 # O(1) lookup dict — built once at module load
-_TOOL_MAP: Dict[str, MCPTool] = {t.name: t for t in _TOOLS}
+_TOOL_MAP: dict[str, MCPTool] = {t.name: t for t in _TOOLS}
 
 
 # ── Auth dependency ───────────────────────────────────────────────────────
+
 
 async def mcp_auth(authorization: str = Header(default="")) -> str:
     """Extract and verify MCP bearer token (FR-5.3)."""
@@ -164,13 +167,14 @@ async def mcp_auth(authorization: str = Header(default="")) -> str:
 
 # ── Endpoints ─────────────────────────────────────────────────────────────
 
+
 @router.get("/manifest", response_model=MCPManifest, tags=["MCP"])
 async def mcp_manifest():
     """Return the MCP server manifest and tool list."""
     return MCPManifest(tools=_TOOLS)
 
 
-@router.get("/tools", response_model=List[MCPTool], tags=["MCP"])
+@router.get("/tools", response_model=list[MCPTool], tags=["MCP"])
 async def mcp_tools():
     """List all available MCP tools (FR-5.1)."""
     return _TOOLS
@@ -203,27 +207,29 @@ async def mcp_call(req: MCPCallRequest, token: str = Depends(mcp_auth)):
 
 # ── Tool dispatch ─────────────────────────────────────────────────────────
 
-async def _dispatch_tool(tool_name: str, params: Dict[str, Any], session_id: str) -> Any:
+
+async def _dispatch_tool(tool_name: str, params: dict[str, Any], session_id: str) -> Any:
     """Route MCP call to the correct async handler. O(1) via dict lookup."""
     handlers = {
-        "run_query":              _tool_run_query,
-        "search_gis_docs":        _tool_search_gis_docs,
-        "suggest_workflow":       _tool_suggest_workflow,
-        "list_layers":            _tool_list_layers,
-        "get_layer":              _tool_get_layer,
+        "run_query": _tool_run_query,
+        "search_gis_docs": _tool_search_gis_docs,
+        "suggest_workflow": _tool_suggest_workflow,
+        "list_layers": _tool_list_layers,
+        "get_layer": _tool_get_layer,
         "approve_pending_action": _tool_approve_pending_action,
     }
     return await handlers[tool_name](params, session_id)
 
 
-async def _tool_run_query(params: Dict, session_id: str) -> Dict:
+async def _tool_run_query(params: dict, session_id: str) -> dict:
     """run_query → SupervisorAgent.handle() (FR-5.1, FR-5.2)."""
     query = params.get("query", "")
     if not query:
         raise ValueError("'query' parameter is required.")
     try:
-        from geosi_server.app import get_pool
         from geosi_engine.agents.supervisor import SupervisorAgent, SupervisorRequest
+        from geosi_server.app import get_pool
+
         pool = get_pool()
         sid = params.get("session_id") or session_id
         supervisor = SupervisorAgent(pool)
@@ -245,7 +251,7 @@ async def _tool_run_query(params: Dict, session_id: str) -> Dict:
         raise ValueError(f"run_query failed: {exc}") from exc
 
 
-async def _tool_search_gis_docs(params: Dict, session_id: str) -> Dict:
+async def _tool_search_gis_docs(params: dict, session_id: str) -> dict:
     """search_gis_docs → Qdrant hybrid search (FR-5.1)."""
     query = params.get("query", "")
     if not query:
@@ -256,13 +262,14 @@ async def _tool_search_gis_docs(params: Dict, session_id: str) -> Dict:
     results = []
     try:
         from geosi_server.app import get_pool
+
         pool = get_pool()
         engine = pool.get_or_create(session_id)
         if engine.knowledge:
             raw = engine.knowledge.search_gis_docs(query, collection=collection, limit=limit)
             results = [
                 {
-                    "text":  getattr(r, "text", str(r)),
+                    "text": getattr(r, "text", str(r)),
                     "score": float(getattr(r, "score", 0.0)),
                     "source": getattr(r, "source", ""),
                     "title": getattr(r, "title", ""),
@@ -274,14 +281,15 @@ async def _tool_search_gis_docs(params: Dict, session_id: str) -> Dict:
     return {"results": results, "count": len(results), "query": query}
 
 
-async def _tool_suggest_workflow(params: Dict, session_id: str) -> Dict:
+async def _tool_suggest_workflow(params: dict, session_id: str) -> dict:
     """suggest_workflow → PlanningAgent.plan() (FR-5.1)."""
     task = params.get("task", "")
     if not task:
         raise ValueError("'task' parameter is required.")
     try:
-        from geosi_server.app import get_pool
         from geosi_engine.agents.planning import PlanningAgent
+        from geosi_server.app import get_pool
+
         pool = get_pool()
         sid = params.get("session_id") or session_id
         engine = pool.get_or_create(sid)
@@ -293,24 +301,24 @@ async def _tool_suggest_workflow(params: Dict, session_id: str) -> Dict:
         )
         steps = [
             {
-                "tool_name":   getattr(s, "tool_name", ""),
-                "risk_level":  getattr(s, "risk_level", ""),
+                "tool_name": getattr(s, "tool_name", ""),
+                "risk_level": getattr(s, "risk_level", ""),
                 "description": getattr(s, "description", ""),
-                "parameters":  getattr(s, "parameters", {}),
+                "parameters": getattr(s, "parameters", {}),
             }
             for s in getattr(plan, "steps", [])
         ]
         return {
-            "plan_id":   getattr(plan, "plan_id", ""),
+            "plan_id": getattr(plan, "plan_id", ""),
             "reasoning": getattr(plan, "reasoning", ""),
-            "steps":     steps,
+            "steps": steps,
             "step_count": len(steps),
         }
     except Exception as exc:
         raise ValueError(f"suggest_workflow failed: {exc}") from exc
 
 
-async def _tool_list_layers(params: Dict, session_id: str) -> Dict:
+async def _tool_list_layers(params: dict, session_id: str) -> dict:
     """
     list_layers — QGIS QgsProject.instance().mapLayers() (FR-5.1).
     QGIS API: QgsProject.instance().mapLayers() → O(N) dict iteration.
@@ -319,35 +327,41 @@ async def _tool_list_layers(params: Dict, session_id: str) -> Dict:
     layers = []
     try:
         from qgis.core import QgsProject
+
         for lid, layer in QgsProject.instance().mapLayers().items():
-            layers.append({
-                "id":    lid,
-                "name":  layer.name(),
-                "type":  layer.type().name,
-                "crs":   layer.crs().authid(),
-                "valid": layer.isValid(),
-            })
+            layers.append(
+                {
+                    "id": lid,
+                    "name": layer.name(),
+                    "type": layer.type().name,
+                    "crs": layer.crs().authid(),
+                    "valid": layer.isValid(),
+                }
+            )
     except ImportError:
         try:
             from geosi_server.app import get_pool
+
             engine = get_pool().get_or_create(session_id)
             state = getattr(engine, "state", None)
             for name, layer in getattr(state, "layers", {}).items():
                 # ``layer`` is a GeoSI Layer dataclass, not a dict — read its
                 # attributes explicitly (``**layer`` would raise TypeError).
-                layers.append({
-                    "name": name,
-                    "type": getattr(layer, "layer_type", "vector"),
-                    "geometry_type": getattr(layer, "geometry_type", "Unknown"),
-                    "crs": getattr(layer, "crs", ""),
-                    "feature_count": getattr(layer, "feature_count", 0),
-                })
+                layers.append(
+                    {
+                        "name": name,
+                        "type": getattr(layer, "layer_type", "vector"),
+                        "geometry_type": getattr(layer, "geometry_type", "Unknown"),
+                        "crs": getattr(layer, "crs", ""),
+                        "feature_count": getattr(layer, "feature_count", 0),
+                    }
+                )
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
     return {"layers": layers, "count": len(layers)}
 
 
-async def _tool_get_layer(params: Dict, session_id: str) -> Dict:
+async def _tool_get_layer(params: dict, session_id: str) -> dict:
     """
     get_layer — QGIS layer metadata (FR-5.1).
     QGIS API refs:
@@ -361,7 +375,8 @@ async def _tool_get_layer(params: Dict, session_id: str) -> Dict:
 
     info: dict = {"name": layer_name}
     try:
-        from qgis.core import QgsProject, QgsVectorLayer, QgsRasterLayer
+        from qgis.core import QgsProject, QgsRasterLayer, QgsVectorLayer
+
         layer = next(
             (lyr for lyr in QgsProject.instance().mapLayers().values() if lyr.name() == layer_name),
             None,
@@ -369,16 +384,20 @@ async def _tool_get_layer(params: Dict, session_id: str) -> Dict:
         if layer is None:
             raise ValueError(f"Layer '{layer_name}' not found in QGIS project.")
         ext = layer.extent()
-        info.update({
-            "type":   layer.type().name,
-            "crs":    layer.crs().authid(),
-            "valid":  layer.isValid(),
-            "extent": {
-                "xmin": ext.xMinimum(), "ymin": ext.yMinimum(),
-                "xmax": ext.xMaximum(), "ymax": ext.yMaximum(),
-            },
-            "source": layer.dataProvider().dataSourceUri() if layer.dataProvider() else "",
-        })
+        info.update(
+            {
+                "type": layer.type().name,
+                "crs": layer.crs().authid(),
+                "valid": layer.isValid(),
+                "extent": {
+                    "xmin": ext.xMinimum(),
+                    "ymin": ext.yMinimum(),
+                    "xmax": ext.xMaximum(),
+                    "ymax": ext.yMaximum(),
+                },
+                "source": layer.dataProvider().dataSourceUri() if layer.dataProvider() else "",
+            }
+        )
         if isinstance(layer, QgsVectorLayer):
             info["feature_count"] = layer.featureCount()
             info["geometry_type"] = layer.geometryType().name
@@ -392,7 +411,7 @@ async def _tool_get_layer(params: Dict, session_id: str) -> Dict:
     return info
 
 
-async def _tool_approve_pending_action(params: Dict, session_id: str) -> Dict:
+async def _tool_approve_pending_action(params: dict, session_id: str) -> dict:
     """approve_pending_action → HITL via PermissionSafetyAgent (FR-5.1)."""
     action_id = params.get("action_id", "")
     if not action_id:
@@ -402,6 +421,7 @@ async def _tool_approve_pending_action(params: Dict, session_id: str) -> Dict:
 
     try:
         from geosi_engine.agents.permission_safety import PermissionSafetyAgent
+
         success = PermissionSafetyAgent._APPROVALS.resolve(action_id, approved=approved)
         if not success:
             raise ValueError(f"No pending approval found for action_id='{action_id}'.")

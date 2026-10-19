@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Code Generation Agent (Optional Agent #14)
 ════════════════════════════════════════════════════════════════════
@@ -16,6 +15,7 @@ This is a launch-blocking acceptance criterion (PRD §14).
 
 Permission tier: Never executes — output is code for human review only.
 """
+
 from __future__ import annotations
 
 import logging
@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from geosi_engine.telemetry import span, set_span_attr
+from geosi_engine.telemetry import set_span_attr, span
 
 logger = logging.getLogger("geosi_engine.agents.code_generation")
 
@@ -75,9 +75,10 @@ from rasterio.transform import from_bounds
 @dataclass
 class CodeRequest:
     """A code generation request."""
-    target_language: str        # "pyqgis" | "geopandas" | "rasterio" | "auto"
+
+    target_language: str  # "pyqgis" | "geopandas" | "rasterio" | "auto"
     plan: Optional[Any] = None  # ExecutionPlan
-    query: str = ""             # natural-language description
+    query: str = ""  # natural-language description
     context_layers: List[str] = field(default_factory=list)
     session_id: str = ""
     include_comments: bool = True
@@ -92,10 +93,11 @@ class GeneratedCode:
     CRITICAL: This output is NEVER auto-executed. It is presented
     to the user for review only (PRD §4.2, §14).
     """
+
     success: bool
     target_language: str
-    code: str = ""             # The generated source code
-    filename: str = ""         # Suggested filename
+    code: str = ""  # The generated source code
+    filename: str = ""  # Suggested filename
     plan_id: Optional[str] = None
     warnings: List[str] = field(default_factory=list)
     # SAFETY FIELD: always True — enforced by the agent, never overridden
@@ -170,6 +172,7 @@ class CodeGenerationAgent:
             # ASTGuard static analysis (non-blocking: adds to warnings only)
             try:
                 from geosi_engine.security import ASTGuard
+
                 guard_ok, violations = ASTGuard.check(code)
                 if not guard_ok:
                     warnings.append("🛡 ASTGuard flagged potential issues:")
@@ -187,14 +190,14 @@ class CodeGenerationAgent:
             )
             logger.info(
                 "Code generated: language=%s plan_id=%s lines=%d",
-                lang, plan_id, len(code.splitlines()),
+                lang,
+                plan_id,
+                len(code.splitlines()),
             )
             return result
 
         except Exception as exc:
-            return GeneratedCode(
-                success=False, target_language=lang, error=str(exc)
-            )
+            return GeneratedCode(success=False, target_language=lang, error=str(exc))
 
     # ------------------------------------------------------------------
     # PyQGIS generator
@@ -289,7 +292,7 @@ class CodeGenerationAgent:
 
         lines.append("\n# ── Save results ─────────────────────────────────────────────────")
         if steps:
-            lines.append(f'if result_{len(steps)} is not None:')
+            lines.append(f"if result_{len(steps)} is not None:")
             lines.append(f'    result_{len(steps)}.to_file("geosi_output_{plan_id}.gpkg", driver="GPKG")')
         lines.append('print("Done.")')
         return "\n".join(lines)

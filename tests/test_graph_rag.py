@@ -1,15 +1,14 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — GraphRAG Engine Tests (Phase P10, FR-8.4)
 Tests RRF fusion, graceful Neo4j fallback, Research agent graph_search.
 """
+
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock
 
-
 # ── GraphRAGEngine Tests ───────────────────────────────────────────────────
+
 
 def test_graph_rag_rrf_merge_combines_both_lists():
     """RRF must merge results from both Qdrant and Neo4j lists."""
@@ -140,10 +139,12 @@ def test_graph_rag_cross_reference_unavailable_neo4j():
 def test_graph_rag_rrf_constant_k_parameter():
     """RRF constant k=60 must be used (standard recommendation)."""
     from geosi_engine.graph_rag import _RRF_K
+
     assert _RRF_K == 60, f"RRF k should be 60, got {_RRF_K}"
 
 
 # ── Research Agent GraphRAG Integration ──────────────────────────────────
+
 
 def test_research_agent_graph_search_no_knowledge():
     """graph_search must succeed with no knowledge/Neo4j."""
@@ -176,5 +177,5 @@ def test_research_agent_graph_search_returns_research_result():
 def test_research_agent_has_graph_search_method():
     """ResearchAgent must expose a graph_search method (P10 requirement)."""
     from geosi_engine.agents.research import ResearchAgent
-    assert hasattr(ResearchAgent, "graph_search"), \
-        "ResearchAgent missing graph_search() — P10 requirement not met"
+
+    assert hasattr(ResearchAgent, "graph_search"), "ResearchAgent missing graph_search() — P10 requirement not met"

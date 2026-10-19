@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Session Pool
 ════════════════════════════════════════════════════════════════════
@@ -19,11 +18,12 @@ Design
 
 PRD references: FR-6.1, FR-6.2 (G10 fix)
 """
+
 from __future__ import annotations
 
 import logging
-import time
 import threading
+import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional

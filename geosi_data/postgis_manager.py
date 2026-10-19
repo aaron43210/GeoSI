@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Data Layer — PostGIS Manager
 ═══════════════════════════════════════════════════════════════════
@@ -14,9 +13,9 @@ Design:
     - Raster layers store only metadata (filepath), not pixel data
 """
 
-import re
 import logging
-from typing import List, Dict, Optional, Any
+import re
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("geosi_data.postgis_manager")
 
@@ -74,9 +73,7 @@ class PostGISManager:
             raise RuntimeError("PostGIS is not available")
 
         if not hasattr(layer, "features") or layer.features is None:
-            raise RuntimeError(
-                f"Layer '{layer.name}' has no features (GeoDataFrame) to save"
-            )
+            raise RuntimeError(f"Layer '{layer.name}' has no features (GeoDataFrame) to save")
 
         import geopandas as gpd
 
@@ -94,10 +91,7 @@ class PostGISManager:
             logger.debug("suppressed exception", exc_info=True)
 
         if not isinstance(gdf, gpd.GeoDataFrame):
-            raise RuntimeError(
-                f"Layer '{layer.name}' features must be a GeoDataFrame, "
-                f"got {type(gdf).__name__}"
-            )
+            raise RuntimeError(f"Layer '{layer.name}' features must be a GeoDataFrame, " f"got {type(gdf).__name__}")
 
         gdf.to_postgis(
             table,
@@ -107,10 +101,7 @@ class PostGISManager:
             index_label="gid",
         )
 
-        logger.info(
-            f"Saved layer '{layer.name}' → PostGIS table '{table}' "
-            f"({layer.feature_count} features)"
-        )
+        logger.info(f"Saved layer '{layer.name}' → PostGIS table '{table}' " f"({layer.feature_count} features)")
         return table
 
     def load_layer(self, table_name: str, layer_name: Optional[str] = None):
@@ -131,6 +122,7 @@ class PostGISManager:
             raise RuntimeError("PostGIS is not available")
 
         import geopandas as gpd
+
         from geosi_engine.models import Layer
 
         try:
@@ -145,7 +137,7 @@ class PostGISManager:
         except ValueError as exc:
             raise RuntimeError(f"Unsafe table name rejected: {exc}") from exc
         except Exception as e:
-            raise RuntimeError(f"Failed to load table '{table_name}': {e}")
+            raise RuntimeError(f"Failed to load table '{table_name}': {e}") from e
 
         # Derive layer name from table name if not provided
         name = layer_name or table_name.replace("geosi_lyr_", "")
@@ -180,10 +172,7 @@ class PostGISManager:
         layer.features = gdf
         layer.bounds = bounds
 
-        logger.info(
-            f"Loaded layer '{name}' from PostGIS table '{table_name}' "
-            f"({len(gdf)} features)"
-        )
+        logger.info(f"Loaded layer '{name}' from PostGIS table '{table_name}' " f"({len(gdf)} features)")
         return layer
 
     def delete_layer(self, table_name: str) -> bool:
@@ -232,11 +221,13 @@ class PostGISManager:
         try:
             with self._engine.connect() as conn:
                 # Find all geosi_lyr_* tables
-                result = conn.execute(text(
-                    "SELECT table_name FROM information_schema.tables "
-                    "WHERE table_schema = 'public' "
-                    "AND table_name LIKE 'geosi_lyr_%'"
-                ))
+                result = conn.execute(
+                    text(
+                        "SELECT table_name FROM information_schema.tables "
+                        "WHERE table_schema = 'public' "
+                        "AND table_name LIKE 'geosi_lyr_%'"
+                    )
+                )
                 tables = [row[0] for row in result]
 
             # These names come from the DB catalog (trusted) and all carry the
@@ -271,10 +262,7 @@ class PostGISManager:
 
                         # Parameterized geometry_columns lookup (G4 fix)
                         geom_result = conn.execute(
-                            text(
-                                "SELECT type, srid FROM geometry_columns "
-                                "WHERE f_table_name = :tname"
-                            ),
+                            text("SELECT type, srid FROM geometry_columns " "WHERE f_table_name = :tname"),
                             {"tname": table},
                         )
                         geom_row = geom_result.fetchone()

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Neo4j Graph Schema Definitions (Phase P9, FR-8.4)
 ════════════════════════════════════════════════════════════════════
@@ -19,12 +18,13 @@ Relationship types:
   (Dataset)-[:DERIVED_FROM]->(Dataset)
   (Dataset)-[:RELATED_TO]->(Dataset)   ← used by GraphRAG (P10)
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict
 
-
 # ── Node label constants ──────────────────────────────────────────────────
+
 
 class NodeLabel:
     DATASET = "Dataset"
@@ -35,6 +35,7 @@ class NodeLabel:
 
 
 # ── Relationship type constants ───────────────────────────────────────────
+
 
 class RelType:
     USED = "USED"
@@ -47,6 +48,7 @@ class RelType:
 
 
 # ── Node property builders ────────────────────────────────────────────────
+
 
 def build_dataset_props(
     name: str,
@@ -117,9 +119,11 @@ def build_tool_props(tool_name: str, provider: str = "", risk_level: str = "") -
 
 # ── Internal helpers ──────────────────────────────────────────────────────
 
+
 def _make_dataset_id(name: str, path: str) -> str:
     """Deterministic dataset ID from name + path. O(1)."""
     import hashlib
+
     return hashlib.sha256(f"{name}:{path}".encode()).hexdigest()[:16]
 
 

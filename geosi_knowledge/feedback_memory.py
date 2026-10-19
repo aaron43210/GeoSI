@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Knowledge — Feedback Memory
 ═══════════════════════════════════════════════════════════════════
@@ -10,13 +9,13 @@ Learns from execution success/failure to:
     - Guide the planning agent away from unreliable paths
 """
 
-import os
 import json
 import logging
+import os
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("geosi_knowledge.feedback_memory")
 
@@ -37,14 +36,13 @@ class FeedbackSignal:
         suggestion: Workaround or suggestion
         timestamp: When this feedback was recorded
     """
+
     query: str = ""
     tool_sequence: List[str] = field(default_factory=list)
     success: bool = True
     error_type: Optional[str] = None
     suggestion: Optional[str] = None
-    timestamp: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def __repr__(self):
         status = "✅" if self.success else f"❌ {self.error_type}"
@@ -64,6 +62,7 @@ class FailurePattern:
         workaround: Known workaround (if any)
         example_queries: Queries that triggered this failure
     """
+
     tool_name: str = ""
     error_type: str = ""
     frequency: int = 0
@@ -71,10 +70,7 @@ class FailurePattern:
     example_queries: List[str] = field(default_factory=list)
 
     def __repr__(self):
-        return (
-            f"FailurePattern(tool={self.tool_name}, "
-            f"error={self.error_type}, freq={self.frequency})"
-        )
+        return f"FailurePattern(tool={self.tool_name}, " f"error={self.error_type}, freq={self.frequency})"
 
 
 class FeedbackMemory:
@@ -102,9 +98,7 @@ class FeedbackMemory:
         self._max_signals = 500
 
         # Per-tool statistics (tool_name → {success: int, fail: int})
-        self._tool_stats: Dict[str, Dict[str, int]] = defaultdict(
-            lambda: {"success": 0, "fail": 0}
-        )
+        self._tool_stats: Dict[str, Dict[str, int]] = defaultdict(lambda: {"success": 0, "fail": 0})
 
         # Error pattern tracking (error_type → count)
         self._error_patterns: Dict[str, List[Dict]] = defaultdict(list)
@@ -156,7 +150,7 @@ class FeedbackMemory:
         # Store signal
         self._signals.append(signal)
         if len(self._signals) > self._max_signals:
-            self._signals = self._signals[-self._max_signals:]
+            self._signals = self._signals[-self._max_signals :]
 
         # Update per-tool statistics
         for tool in tool_sequence:
@@ -167,19 +161,18 @@ class FeedbackMemory:
 
         # Track error pattern
         if error_type:
-            self._error_patterns[error_type].append({
-                "query": query,
-                "tools": tool_sequence,
-                "timestamp": signal.timestamp,
-            })
+            self._error_patterns[error_type].append(
+                {
+                    "query": query,
+                    "tools": tool_sequence,
+                    "timestamp": signal.timestamp,
+                }
+            )
 
         # Persist
         self._save_feedback()
 
-        logger.debug(
-            f"Feedback recorded: {'✅' if success else '❌'} "
-            f"query='{query[:50]}...', error={error_type}"
-        )
+        logger.debug(f"Feedback recorded: {'✅' if success else '❌'} " f"query='{query[:50]}...', error={error_type}")
         return signal
 
     def get_relevant_feedback(
@@ -203,10 +196,22 @@ class FeedbackMemory:
             return []
 
         import re
+
         query_terms = set(re.findall(r"\b\w{3,}\b", query.lower()))
         stop_words = {
-            "the", "and", "for", "from", "with", "this", "that",
-            "are", "was", "will", "can", "how", "what",
+            "the",
+            "and",
+            "for",
+            "from",
+            "with",
+            "this",
+            "that",
+            "are",
+            "was",
+            "will",
+            "can",
+            "how",
+            "what",
         }
         query_terms -= stop_words
 
@@ -222,9 +227,7 @@ class FeedbackMemory:
         scored.sort(key=lambda x: x[0], reverse=True)
         return [signal for _, signal in scored[:limit]]
 
-    def get_tool_reliability(
-        self, tool_name: Optional[str] = None
-    ) -> Any:
+    def get_tool_reliability(self, tool_name: Optional[str] = None) -> Any:
         """
         Get success rate per tool.
 
@@ -274,9 +277,7 @@ class FeedbackMemory:
                 error_type=error_type,
                 frequency=len(occurrences),
                 workaround=self._generate_suggestion(error_type, [tool_name]),
-                example_queries=[
-                    occ["query"] for occ in occurrences[-3:]
-                ],
+                example_queries=[occ["query"] for occ in occurrences[-3:]],
             )
             patterns.append(pattern)
 
@@ -382,7 +383,7 @@ class FeedbackMemory:
             return
 
         try:
-            with open(self.feedback_file, "r", encoding="utf-8") as f:
+            with open(self.feedback_file, encoding="utf-8") as f:
                 data = json.load(f)
 
             # Load signals
@@ -399,11 +400,13 @@ class FeedbackMemory:
 
                 # Rebuild error patterns
                 if signal.error_type:
-                    self._error_patterns[signal.error_type].append({
-                        "query": signal.query,
-                        "tools": signal.tool_sequence,
-                        "timestamp": signal.timestamp,
-                    })
+                    self._error_patterns[signal.error_type].append(
+                        {
+                            "query": signal.query,
+                            "tools": signal.tool_sequence,
+                            "timestamp": signal.timestamp,
+                        }
+                    )
 
             # Load tool stats
             for tool, stats in data.get("tool_stats", {}).items():

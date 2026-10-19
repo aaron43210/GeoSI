@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Engine - Query Parser (Superintelligence Edition)
 
@@ -43,8 +42,8 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from geosi_engine.models import AnalysisRequest, IntentType
 from geosi_engine.conversation import ConversationManager
+from geosi_engine.models import AnalysisRequest, IntentType
 
 logger = logging.getLogger("geosi_engine.parser")
 
@@ -55,92 +54,242 @@ logger = logging.getLogger("geosi_engine.parser")
 
 _INTENT_KEYWORDS: Dict[IntentType, Dict[str, int]] = {
     IntentType.PROXIMITY: {
-        "buffer": 3, "within": 2, "near": 2, "nearby": 2, "closest": 3,
-        "nearest": 3, "distance": 2, "radius": 3, "around": 2,
-        "proximity": 3, "surrounding": 2, "catchment": 2, "service radius": 3,
+        "buffer": 3,
+        "within": 2,
+        "near": 2,
+        "nearby": 2,
+        "closest": 3,
+        "nearest": 3,
+        "distance": 2,
+        "radius": 3,
+        "around": 2,
+        "proximity": 3,
+        "surrounding": 2,
+        "catchment": 2,
+        "service radius": 3,
     },
     IntentType.OVERLAY: {
-        "intersect": 3, "intersection": 3, "union": 3, "clip": 3,
-        "difference": 3, "overlay": 3, "combine": 2, "merge": 2,
-        "spatial join": 3, "join": 3, "attribute join": 3, "overlap": 2,
-        "symmetric difference": 3, "erase": 2, "split": 2, "extract": 2,
-        "subset": 3, "crop": 3, "shapefile from": 2, "region from": 2,
-        "area from": 2, "filter": 3,
+        "intersect": 3,
+        "intersection": 3,
+        "union": 3,
+        "clip": 3,
+        "difference": 3,
+        "overlay": 3,
+        "combine": 2,
+        "merge": 2,
+        "spatial join": 3,
+        "join": 3,
+        "attribute join": 3,
+        "overlap": 2,
+        "symmetric difference": 3,
+        "erase": 2,
+        "split": 2,
+        "extract": 2,
+        "subset": 3,
+        "crop": 3,
+        "shapefile from": 2,
+        "region from": 2,
+        "area from": 2,
+        "filter": 3,
     },
     IntentType.GEOMETRY: {
-        "centroid": 3, "simplify": 3, "smooth": 2, "dissolve": 3,
-        "convex hull": 3, "concave hull": 3, "densify": 2,
-        "multipart": 2, "singlepart": 2, "explode": 2, "voronoi": 3,
-        "delaunay": 3, "bounding box": 3, "minimum bounding": 3,
-        "extract vertices": 2, "line to polygon": 2, "polygon to line": 2,
+        "centroid": 3,
+        "simplify": 3,
+        "smooth": 2,
+        "dissolve": 3,
+        "convex hull": 3,
+        "concave hull": 3,
+        "densify": 2,
+        "multipart": 2,
+        "singlepart": 2,
+        "explode": 2,
+        "voronoi": 3,
+        "delaunay": 3,
+        "bounding box": 3,
+        "minimum bounding": 3,
+        "extract vertices": 2,
+        "line to polygon": 2,
+        "polygon to line": 2,
     },
     IntentType.RASTER: {
-        "raster": 3, "pixel": 2, "band": 2, "ndvi": 5, "ndwi": 5,
-        "ndbi": 3, "evi": 3, "savi": 3, "zonal": 3, "reclassify": 3,
-        "raster calculator": 3, "composite": 2, "mosaic": 3,
-        "nodata": 2, "resample": 2, "interpolate raster": 3,
-        "vegetative index": 5, "water index": 5, "satellite": 2,
+        "raster": 3,
+        "pixel": 2,
+        "band": 2,
+        "ndvi": 5,
+        "ndwi": 5,
+        "ndbi": 3,
+        "evi": 3,
+        "savi": 3,
+        "zonal": 3,
+        "reclassify": 3,
+        "raster calculator": 3,
+        "composite": 2,
+        "mosaic": 3,
+        "nodata": 2,
+        "resample": 2,
+        "interpolate raster": 3,
+        "vegetative index": 5,
+        "water index": 5,
+        "satellite": 2,
     },
     IntentType.TERRAIN: {
-        "slope": 3, "aspect": 3, "hillshade": 3, "elevation": 2,
-        "dem": 3, "dsm": 3, "dtm": 3, "contour": 3, "viewshed": 3,
-        "profile": 2, "watershed": 3, "flow direction": 3,
-        "flow accumulation": 3, "curvature": 3, "ruggedness": 2,
-        "terrain": 2, "tri": 2, "tpi": 2, "roughness": 2,
+        "slope": 3,
+        "aspect": 3,
+        "hillshade": 3,
+        "elevation": 2,
+        "dem": 3,
+        "dsm": 3,
+        "dtm": 3,
+        "contour": 3,
+        "viewshed": 3,
+        "profile": 2,
+        "watershed": 3,
+        "flow direction": 3,
+        "flow accumulation": 3,
+        "curvature": 3,
+        "ruggedness": 2,
+        "terrain": 2,
+        "tri": 2,
+        "tpi": 2,
+        "roughness": 2,
     },
     IntentType.NETWORK: {
-        "route": 3, "routing": 3, "shortest path": 3, "shortest route": 3,
-        "network": 2, "service area": 3, "travel time": 3,
-        "isochrone": 3, "cost distance": 3, "origin": 2, "destination": 2,
-        "driving": 2, "walking": 2, "transit": 2,
+        "route": 3,
+        "routing": 3,
+        "shortest path": 3,
+        "shortest route": 3,
+        "network": 2,
+        "service area": 3,
+        "travel time": 3,
+        "isochrone": 3,
+        "cost distance": 3,
+        "origin": 2,
+        "destination": 2,
+        "driving": 2,
+        "walking": 2,
+        "transit": 2,
     },
     IntentType.TEMPORAL: {
-        "temporal": 3, "time series": 3, "change detection": 3,
-        "before": 1, "after": 1, "trend": 2, "animate": 2,
-        "period": 1, "between": 1, "over time": 3, "historical": 2,
+        "temporal": 3,
+        "time series": 3,
+        "change detection": 3,
+        "before": 1,
+        "after": 1,
+        "trend": 2,
+        "animate": 2,
+        "period": 1,
+        "between": 1,
+        "over time": 3,
+        "historical": 2,
     },
     IntentType.AI_ML: {
-        "cluster": 3, "classify": 3, "classification": 3, "hotspot": 3,
-        "interpolate": 2, "density": 2, "kriging": 3, "idw": 3,
-        "dbscan": 3, "kmeans": 3, "k-means": 3, "anomaly": 3,
-        "predict": 2, "regression": 3, "autocorrelation": 3,
-        "machine learning": 3, " ml ": 2, "random forest": 3,
-        "getis-ord": 3, "moran": 3,
+        "cluster": 3,
+        "classify": 3,
+        "classification": 3,
+        "hotspot": 3,
+        "interpolate": 2,
+        "density": 2,
+        "kriging": 3,
+        "idw": 3,
+        "dbscan": 3,
+        "kmeans": 3,
+        "k-means": 3,
+        "anomaly": 3,
+        "predict": 2,
+        "regression": 3,
+        "autocorrelation": 3,
+        "machine learning": 3,
+        " ml ": 2,
+        "random forest": 3,
+        "getis-ord": 3,
+        "moran": 3,
     },
     IntentType.VALIDATION: {
-        "valid": 2, "validity": 3, "topology": 3, "duplicate": 2,
-        "null geometry": 3, "snap": 2, "gap": 2,
-        "fix geometries": 3, "repair": 2, "check": 1, "quality": 1,
+        "valid": 2,
+        "validity": 3,
+        "topology": 3,
+        "duplicate": 2,
+        "null geometry": 3,
+        "snap": 2,
+        "gap": 2,
+        "fix geometries": 3,
+        "repair": 2,
+        "check": 1,
+        "quality": 1,
         "self intersect": 3,
     },
     IntentType.CARTOGRAPHY: {
-        "export": 2, "geojson": 3, "shapefile": 3, "csv": 2, "kml": 3,
-        "geopackage": 3, "geocode": 3, "address": 2, "label": 2,
-        "style": 2, "atlas": 3, "map layout": 3, "print map": 3,
+        "export": 2,
+        "geojson": 3,
+        "shapefile": 3,
+        "csv": 2,
+        "kml": 3,
+        "geopackage": 3,
+        "geocode": 3,
+        "address": 2,
+        "label": 2,
+        "style": 2,
+        "atlas": 3,
+        "map layout": 3,
+        "print map": 3,
     },
     IntentType.STATISTICS: {
-        "statistics": 3, "count": 1, "sum": 1, "average": 2, "mean": 2,
-        "median": 2, "minimum": 1, "maximum": 1, "std": 2,
-        "standard deviation": 3, "histogram": 3, "summary": 2,
+        "statistics": 3,
+        "count": 1,
+        "sum": 1,
+        "average": 2,
+        "mean": 2,
+        "median": 2,
+        "minimum": 1,
+        "maximum": 1,
+        "std": 2,
+        "standard deviation": 3,
+        "histogram": 3,
+        "summary": 2,
     },
     IntentType.DATA_MANAGEMENT: {
-        "load": 1, "save": 1, "import": 1, "open": 1, "convert": 2,
-        "reproject": 3, "transform": 2, "crs": 3, "coordinate system": 3,
+        "load": 1,
+        "save": 1,
+        "import": 1,
+        "open": 1,
+        "convert": 2,
+        "reproject": 3,
+        "transform": 2,
+        "crs": 3,
+        "coordinate system": 3,
         "projection": 2,
     },
 }
 
 # Distance units -> meters
 _UNIT_TO_METERS: Dict[str, float] = {
-    "mm": 0.001, "millimeter": 0.001, "millimetre": 0.001,
-    "cm": 0.01, "centimeter": 0.01, "centimetre": 0.01,
-    "m": 1.0, "meter": 1.0, "metre": 1.0, "meters": 1.0, "metres": 1.0,
-    "km": 1000.0, "kilometer": 1000.0, "kilometre": 1000.0,
-    "kilometers": 1000.0, "kilometres": 1000.0,
-    "mi": 1609.344, "mile": 1609.344, "miles": 1609.344,
-    "ft": 0.3048, "foot": 0.3048, "feet": 0.3048,
-    "yd": 0.9144, "yard": 0.9144, "yards": 0.9144,
-    "nmi": 1852.0, "nautical mile": 1852.0,
+    "mm": 0.001,
+    "millimeter": 0.001,
+    "millimetre": 0.001,
+    "cm": 0.01,
+    "centimeter": 0.01,
+    "centimetre": 0.01,
+    "m": 1.0,
+    "meter": 1.0,
+    "metre": 1.0,
+    "meters": 1.0,
+    "metres": 1.0,
+    "km": 1000.0,
+    "kilometer": 1000.0,
+    "kilometre": 1000.0,
+    "kilometers": 1000.0,
+    "kilometres": 1000.0,
+    "mi": 1609.344,
+    "mile": 1609.344,
+    "miles": 1609.344,
+    "ft": 0.3048,
+    "foot": 0.3048,
+    "feet": 0.3048,
+    "yd": 0.9144,
+    "yard": 0.9144,
+    "yards": 0.9144,
+    "nmi": 1852.0,
+    "nautical mile": 1852.0,
 }
 
 _DISTANCE_PATTERN = re.compile(
@@ -168,17 +317,41 @@ _OPERATION_MAP: Dict[str, List[str]] = {
     "buffer": ["buffer", "grow by", "ring around"],
     "intersect": ["intersect", "overlap", "common area", "inside both"],
     "union": ["union"],
-    "clip": ["clip", "cut to", "crop", "extract", "subset", "shapefile from",
-             "region from", "area from", "need", "get"],
+    "clip": [
+        "clip",
+        "cut to",
+        "crop",
+        "extract",
+        "subset",
+        "shapefile from",
+        "region from",
+        "area from",
+        "need",
+        "get",
+    ],
     "difference": ["difference", "erase", "subtract"],
     "centroid": ["centroid", "center point", "centre point"],
     "dissolve": ["dissolve"],
     "convex_hull": ["convex hull"],
     "voronoi": ["voronoi", "thiessen"],
-    "fix_geometries": ["fix geometries", "fix geometry", "repair geometries",
-                       "repair geometry", "invalid geometries", "make valid"],
-    "watershed": ["watershed", "watershed analysis", "flow accumulation", "flow direction",
-                  "catchment", "drainage basin", "pour point", "delineate"],
+    "fix_geometries": [
+        "fix geometries",
+        "fix geometry",
+        "repair geometries",
+        "repair geometry",
+        "invalid geometries",
+        "make valid",
+    ],
+    "watershed": [
+        "watershed",
+        "watershed analysis",
+        "flow accumulation",
+        "flow direction",
+        "catchment",
+        "drainage basin",
+        "pour point",
+        "delineate",
+    ],
     "slope": ["slope"],
     "aspect": ["aspect"],
     "hillshade": ["hillshade"],
@@ -192,8 +365,15 @@ _OPERATION_MAP: Dict[str, List[str]] = {
     "export_geojson": ["export geojson", "save geojson", "to geojson"],
     "geocode": ["geocode", "address to"],
     "extract_by_attribute": ["filter", "select where", "find where", "attribute equals"],
-    "spatial_join": ["spatial join", "join by location", "falls in", "falls within",
-                     "located in", "lies in", "lies within"],
+    "spatial_join": [
+        "spatial join",
+        "join by location",
+        "falls in",
+        "falls within",
+        "located in",
+        "lies in",
+        "lies within",
+    ],
     "join_attributes": ["join", "attribute join", "join with", "link with"],
 }
 
@@ -214,6 +394,7 @@ def _default_cache_path() -> Path:
         # Active QGIS profile dir on any OS; ~/.geosi outside QGIS.
         try:
             from qgis.core import QgsApplication
+
             profile = QgsApplication.qgisSettingsDirPath()
             base = Path(profile) / "geosi" if profile else Path.home() / ".geosi"
         except ImportError:
@@ -231,7 +412,7 @@ class _LocalCache:
     def __init__(self, max_entries: int = 512) -> None:
         self.max_entries = max_entries
         self._lock = threading.Lock()
-        self._entries: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+        self._entries: OrderedDict[str, Dict[str, Any]] = OrderedDict()
         self._path = _default_cache_path()
         self._load()
 
@@ -241,7 +422,7 @@ class _LocalCache:
                 with self._path.open("r", encoding="utf-8") as fh:
                     data = json.load(fh)
                 if isinstance(data, dict):
-                    for k, v in list(data.items())[-self.max_entries:]:
+                    for k, v in list(data.items())[-self.max_entries :]:
                         if isinstance(v, dict):
                             self._entries[k] = v
         except Exception as exc:  # pragma: no cover
@@ -293,6 +474,7 @@ class _LocalCache:
 # Main parser
 # ---------------------------------------------------------------------------
 
+
 class QueryParser:
     """Natural-language GIS query parser with LLM + rules + cache."""
 
@@ -310,11 +492,7 @@ class QueryParser:
         self._ollama_endpoint = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
         self._ollama_model = self._detect_ollama_model()
         self._anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        self._gemini_key = (
-            os.environ.get("GEMINI_API_KEY")
-            or os.environ.get("GOOGLE_API_KEY")
-            or ""
-        )
+        self._gemini_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or ""
         self._openai_key = os.environ.get("OPENAI_API_KEY", "")
         self._cache = _LocalCache() if use_cache else None
 
@@ -323,6 +501,7 @@ class QueryParser:
         model = os.environ.get("OLLAMA_MODEL", "mistral")
         try:
             import requests
+
             endpoint = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
             resp = requests.get(f"{endpoint}/api/tags", timeout=1.5)
             if resp.status_code == 200:
@@ -360,9 +539,7 @@ class QueryParser:
             cached = self._cache.lookup(cache_key)
             if cached and isinstance(cached.get("payload"), dict):
                 try:
-                    return self._request_from_payload(
-                        query, cached["payload"], available_layers
-                    )
+                    return self._request_from_payload(query, cached["payload"], available_layers)
                 except Exception as exc:
                     logger.debug("Cache payload rejected: %s", exc)
 
@@ -376,9 +553,7 @@ class QueryParser:
             # Keywords identified a clear intent — use it, skip LLM entirely.
             # This is faster and more reliable for clip, buffer, ndvi, etc.
             logger.info(f"Keyword parser identified intent={kw_req.intent}, skipping LLM")
-            self._store_cache(
-                cache_key, query, available_layers, kw_req, kw_confidence, "keywords"
-            )
+            self._store_cache(cache_key, query, available_layers, kw_req, kw_confidence, "keywords")
             return kw_req
 
         # 3. LLM providers — only for ambiguous/complex queries where
@@ -401,17 +576,13 @@ class QueryParser:
                 if req.intent == IntentType.UNKNOWN:
                     logger.warning(f"{name} returned UNKNOWN intent, trying next parser")
                     continue
-                self._store_cache(
-                    cache_key, query, available_layers, req, confidence, name
-                )
+                self._store_cache(cache_key, query, available_layers, req, confidence, name)
                 return req
             except Exception as exc:
                 logger.warning("%s parse failed: %s", name, exc)
 
         # 4. If everything failed, return the keyword result (even if UNKNOWN)
-        self._store_cache(
-            cache_key, query, available_layers, kw_req, kw_confidence, "keywords"
-        )
+        self._store_cache(cache_key, query, available_layers, kw_req, kw_confidence, "keywords")
         return kw_req
 
     # -- normalization / hashing ------------------------------------------
@@ -433,9 +604,7 @@ class QueryParser:
 
     # -- rule-based --------------------------------------------------------
 
-    def _parse_with_keywords(
-        self, query: str, available_layers: List[str]
-    ) -> Tuple[AnalysisRequest, float]:
+    def _parse_with_keywords(self, query: str, available_layers: List[str]) -> Tuple[AnalysisRequest, float]:
         # Convert to lowercase for case-insensitive matching throughout
         lowered = query.lower()
 
@@ -487,9 +656,7 @@ class QueryParser:
             parameters["threshold_op"] = ">="
 
         # Detect lower bounds like "below 500" or "less than 100"
-        thr_lo = re.search(
-            r"\b(?:below|under|less than|at most)\s+(\d+(?:\.\d+)?)", lowered
-        )
+        thr_lo = re.search(r"\b(?:below|under|less than|at most)\s+(\d+(?:\.\d+)?)", lowered)
         if thr_lo:
             parameters["threshold"] = float(thr_lo.group(1))
             parameters["threshold_op"] = "<="
@@ -522,9 +689,8 @@ class QueryParser:
         # Extract pour point / coordinate references
         # Matches patterns like: "at point 77.5, 8.5", "at 77.5 8.5", "coordinates 77.5, 8.5"
         coord_match = re.search(
-            r'(?:at\s+(?:point\s+)?|pour\s+point\s+|coordinates?\s+|point\s+)'
-            r'(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)',
-            lowered
+            r"(?:at\s+(?:point\s+)?|pour\s+point\s+|coordinates?\s+|point\s+)" r"(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)",
+            lowered,
         )
         if coord_match:
             parameters["point_x"] = float(coord_match.group(1))
@@ -552,14 +718,12 @@ class QueryParser:
     # Cache keyed by (normalized query, layers tuple). Retries + LLM
     # fallbacks within a session reuse the same expensive SequenceMatcher
     # result instead of re-running dynamic string alignment.
-    _layer_match_cache: "OrderedDict[Tuple[str, Tuple[str, ...]], Dict[str, Any]]" = OrderedDict()
+    _layer_match_cache: OrderedDict[Tuple[str, Tuple[str, ...]], Dict[str, Any]] = OrderedDict()
     _layer_match_cache_max = 256
     _layer_match_cache_lock = threading.Lock()
 
     @classmethod
-    def _extract_layers(
-        cls, query: str, available_layers: List[str]
-    ) -> Dict[str, Any]:
+    def _extract_layers(cls, query: str, available_layers: List[str]) -> Dict[str, Any]:
         lowered = query.lower()
         layers_key = tuple(available_layers)
         cache_key = (lowered, layers_key)
@@ -615,7 +779,7 @@ class QueryParser:
             "Return ONLY JSON. No markdown, no prose, no code fences.\n\n"
             f"Available layers: {layer_list}\n"
             f"Valid intents: {intents}\n\n"
-            f"User query: \"{query}\"\n\n"
+            f'User query: "{query}"\n\n'
             "JSON schema:\n"
             "{\n"
             '  "intent": "<one of valid intents>",\n'
@@ -643,9 +807,7 @@ class QueryParser:
             "Intent MUST be one of the valid intents."
         )
 
-    def _parse_with_ollama(
-        self, query: str, available_layers: List[str]
-    ) -> Tuple[AnalysisRequest, float]:
+    def _parse_with_ollama(self, query: str, available_layers: List[str]) -> Tuple[AnalysisRequest, float]:
         import requests
 
         # Fast availability probe so we fail over to other providers / rules
@@ -654,7 +816,7 @@ class QueryParser:
         try:
             requests.get(f"{self._ollama_endpoint}/api/tags", timeout=1.5)
         except Exception as exc:
-            raise RuntimeError(f"Ollama not reachable at {self._ollama_endpoint}: {exc}")
+            raise RuntimeError(f"Ollama not reachable at {self._ollama_endpoint}: {exc}") from exc
 
         self.conversation.add_user_message(self._prompt(query, available_layers))
         context = self.conversation.get_context(include_system=True)
@@ -676,9 +838,7 @@ class QueryParser:
 
         return self._json_to_request(query, text, available_layers)
 
-    def _parse_with_anthropic(
-        self, query: str, available_layers: List[str]
-    ) -> Tuple[AnalysisRequest, float]:
+    def _parse_with_anthropic(self, query: str, available_layers: List[str]) -> Tuple[AnalysisRequest, float]:
         import anthropic
 
         client = anthropic.Anthropic(api_key=self._anthropic_key)
@@ -689,14 +849,10 @@ class QueryParser:
             system="Return only valid JSON matching the schema.",
             messages=[{"role": "user", "content": self._prompt(query, available_layers)}],
         )
-        text = "".join(
-            getattr(block, "text", "") for block in response.content
-        )
+        text = "".join(getattr(block, "text", "") for block in response.content)
         return self._json_to_request(query, text, available_layers)
 
-    def _parse_with_gemini(
-        self, query: str, available_layers: List[str]
-    ) -> Tuple[AnalysisRequest, float]:
+    def _parse_with_gemini(self, query: str, available_layers: List[str]) -> Tuple[AnalysisRequest, float]:
         import google.generativeai as genai
 
         genai.configure(api_key=self._gemini_key)
@@ -710,20 +866,20 @@ class QueryParser:
         response = model.generate_content(self._prompt(query, available_layers))
         return self._json_to_request(query, response.text, available_layers)
 
-    def _parse_with_openai(
-        self, query: str, available_layers: List[str]
-    ) -> Tuple[AnalysisRequest, float]:
+    def _parse_with_openai(self, query: str, available_layers: List[str]) -> Tuple[AnalysisRequest, float]:
         import urllib.request
 
-        body = json.dumps({
-            "model": os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
-            "temperature": 0.0,
-            "response_format": {"type": "json_object"},
-            "messages": [
-                {"role": "system", "content": "Return only valid JSON."},
-                {"role": "user", "content": self._prompt(query, available_layers)},
-            ],
-        }).encode("utf-8")
+        body = json.dumps(
+            {
+                "model": os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
+                "temperature": 0.0,
+                "response_format": {"type": "json_object"},
+                "messages": [
+                    {"role": "system", "content": "Return only valid JSON."},
+                    {"role": "user", "content": self._prompt(query, available_layers)},
+                ],
+            }
+        ).encode("utf-8")
         req = urllib.request.Request(
             "https://api.openai.com/v1/chat/completions",
             headers={
@@ -740,16 +896,12 @@ class QueryParser:
 
     # -- JSON -> AnalysisRequest ------------------------------------------
 
-    def _json_to_request(
-        self, query: str, text: str, available_layers: List[str]
-    ) -> Tuple[AnalysisRequest, float]:
+    def _json_to_request(self, query: str, text: str, available_layers: List[str]) -> Tuple[AnalysisRequest, float]:
         data = self._extract_json(text)
         if not isinstance(data, dict):
             raise ValueError("LLM did not return a JSON object")
 
-        return self._request_from_payload(query, data, available_layers), float(
-            data.get("confidence") or 0.75
-        )
+        return self._request_from_payload(query, data, available_layers), float(data.get("confidence") or 0.75)
 
     @staticmethod
     def _extract_json(text: str) -> Any:
@@ -767,7 +919,7 @@ class QueryParser:
         start = cleaned.find("{")
         end = cleaned.rfind("}")
         if start != -1 and end > start:
-            return json.loads(cleaned[start: end + 1])
+            return json.loads(cleaned[start : end + 1])
         raise ValueError("no JSON object found in LLM output")
 
     def _request_from_payload(
@@ -823,6 +975,7 @@ class QueryParser:
         # Strip file extensions (.shp, .geojson, etc.) from layer references
         # and match the stem against loaded layers.
         import os as _os
+
         for key in ("primary_layer", "secondary_layer"):
             name = request.entities.get(key)
             if isinstance(name, str) and available_layers:
@@ -836,14 +989,8 @@ class QueryParser:
         # Warn when a referenced layer is not actually loaded.
         for key in ("primary_layer", "secondary_layer"):
             name = request.entities.get(key)
-            if (
-                isinstance(name, str)
-                and available_layers
-                and name not in available_layers
-            ):
-                request.constraints.append(
-                    f"Layer '{name}' is not loaded; load it before running the plan."
-                )
+            if isinstance(name, str) and available_layers and name not in available_layers:
+                request.constraints.append(f"Layer '{name}' is not loaded; load it before running the plan.")
 
         if request.intent == IntentType.UNKNOWN:
             request.constraints.append(

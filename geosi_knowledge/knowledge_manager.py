@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Knowledge — Knowledge Manager
 ═══════════════════════════════════════════════════════════════════
@@ -21,11 +20,11 @@ Main method:
 
 import logging
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
 
-from geosi_knowledge.workflow_memory import WorkflowMemory, WorkflowExample
-from geosi_knowledge.query_memory import QueryMemory, QueryPattern
 from geosi_knowledge.feedback_memory import FeedbackMemory, FeedbackSignal
+from geosi_knowledge.query_memory import QueryMemory, QueryPattern
+from geosi_knowledge.workflow_memory import WorkflowExample, WorkflowMemory
 
 logger = logging.getLogger("geosi_knowledge.knowledge_manager")
 
@@ -47,6 +46,7 @@ class KnowledgeContext:
         tool_warnings: Warnings about unreliable tools
         user_preferences: Inferred user preferences
     """
+
     relevant_docs: List[Any] = field(default_factory=list)
     similar_workflows: List[WorkflowExample] = field(default_factory=list)
     query_patterns: List[QueryPattern] = field(default_factory=list)
@@ -57,12 +57,7 @@ class KnowledgeContext:
 
     def has_knowledge(self) -> bool:
         """Check if any knowledge was retrieved."""
-        return bool(
-            self.relevant_docs
-            or self.similar_workflows
-            or self.query_patterns
-            or self.feedback_signals
-        )
+        return bool(self.relevant_docs or self.similar_workflows or self.query_patterns or self.feedback_signals)
 
     def __repr__(self):
         return (
@@ -109,9 +104,7 @@ class KnowledgeManager:
         self._rag_initialized = rag_service is not None
 
         # Initialize memory components
-        self.workflow_memory = workflow_memory or WorkflowMemory(
-            rag_service=rag_service
-        )
+        self.workflow_memory = workflow_memory or WorkflowMemory(rag_service=rag_service)
         self.query_memory = query_memory or QueryMemory()
         self.feedback_memory = feedback_memory or FeedbackMemory()
 
@@ -128,6 +121,7 @@ class KnowledgeManager:
         if not self._rag_initialized:
             try:
                 from geosi_rag.rag_service import RAGService
+
                 self.rag = RAGService()
                 self.workflow_memory.rag = self.rag
                 self._rag_initialized = True
@@ -182,18 +176,14 @@ class KnowledgeManager:
         self._ensure_rag()
         if self.rag and self.rag.available:
             try:
-                rag_result = self.rag.query(
-                    query, doc_limit=doc_limit, workflow_limit=0
-                )
+                rag_result = self.rag.query(query, doc_limit=doc_limit, workflow_limit=0)
                 context.relevant_docs = rag_result.documents
             except Exception as e:
                 logger.debug(f"RAG retrieval failed: {e}")
 
         # 2. Find similar past workflows
         try:
-            context.similar_workflows = self.workflow_memory.find_similar(
-                query, limit=workflow_limit
-            )
+            context.similar_workflows = self.workflow_memory.find_similar(query, limit=workflow_limit)
         except Exception as e:
             logger.debug(f"Workflow search failed: {e}")
 
@@ -205,9 +195,7 @@ class KnowledgeManager:
 
         # 4. Get feedback signals
         try:
-            context.feedback_signals = self.feedback_memory.get_relevant_feedback(
-                query, limit=feedback_limit
-            )
+            context.feedback_signals = self.feedback_memory.get_relevant_feedback(query, limit=feedback_limit)
         except Exception as e:
             logger.debug(f"Feedback search failed: {e}")
 
@@ -222,16 +210,12 @@ class KnowledgeManager:
             all_tools = set()
             for wf in context.similar_workflows:
                 all_tools.update(wf.tool_sequence)
-            context.tool_warnings = self.feedback_memory.get_tool_warnings(
-                list(all_tools)
-            )
+            context.tool_warnings = self.feedback_memory.get_tool_warnings(list(all_tools))
 
         # 7. Assemble context prompt for the LLM
         context.context_prompt = self._build_context_prompt(context)
 
-        logger.info(
-            f"Knowledge retrieved for '{query[:50]}...': {context}"
-        )
+        logger.info(f"Knowledge retrieved for '{query[:50]}...': {context}")
         return context
 
     def learn_from_execution(
@@ -294,10 +278,7 @@ class KnowledgeManager:
         except Exception as e:
             logger.debug(f"Feedback memory update failed: {e}")
 
-        logger.info(
-            f"Learned from execution: "
-            f"{'✅' if success else '❌'} '{query[:50]}...'"
-        )
+        logger.info(f"Learned from execution: " f"{'✅' if success else '❌'} '{query[:50]}...'")
 
     def search_gis_docs(
         self,
@@ -380,16 +361,10 @@ class KnowledgeManager:
         if context.relevant_docs:
             sections.append("## Relevant GIS Documentation\n")
             for i, doc in enumerate(context.relevant_docs[:5], 1):
-                source_label = (
-                    doc.source.split("/")[-1] if hasattr(doc, "source") and doc.source
-                    else "docs"
-                )
+                source_label = doc.source.split("/")[-1] if hasattr(doc, "source") and doc.source else "docs"
                 text = doc.text if hasattr(doc, "text") else str(doc)
                 score = doc.score if hasattr(doc, "score") else 0
-                sections.append(
-                    f"[{i}] {source_label} (relevance: {score:.2f})\n"
-                    f"{text[:400]}\n"
-                )
+                sections.append(f"[{i}] {source_label} (relevance: {score:.2f})\n" f"{text[:400]}\n")
 
         # Similar workflows
         if context.similar_workflows:
@@ -399,7 +374,7 @@ class KnowledgeManager:
                 status = "✅ succeeded" if wf.success else "❌ failed"
                 sections.append(
                     f"[{i}] {wf.name} ({status})\n"
-                    f"  Query: \"{wf.user_query}\"\n"
+                    f'  Query: "{wf.user_query}"\n'
                     f"  Tools: {tools}\n"
                     f"  {wf.description[:200]}\n"
                 )
@@ -409,8 +384,7 @@ class KnowledgeManager:
             sections.append("\n## User Patterns\n")
             for pattern in context.query_patterns[:3]:
                 sections.append(
-                    f"- {pattern.pattern}: seen {pattern.frequency}x, "
-                    f"success rate {pattern.avg_success_rate:.0%}\n"
+                    f"- {pattern.pattern}: seen {pattern.frequency}x, " f"success rate {pattern.avg_success_rate:.0%}\n"
                 )
 
         # Feedback warnings
@@ -420,10 +394,7 @@ class KnowledgeManager:
                 sections.append("\n## Known Issues\n")
                 for signal in failure_signals[:3]:
                     if signal.suggestion:
-                        sections.append(
-                            f"⚠ Similar query failed ({signal.error_type}): "
-                            f"{signal.suggestion}\n"
-                        )
+                        sections.append(f"⚠ Similar query failed ({signal.error_type}): " f"{signal.suggestion}\n")
 
         # Tool warnings
         if context.tool_warnings:

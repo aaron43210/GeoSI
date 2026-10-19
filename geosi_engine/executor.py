@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Engine — Execution Engine
 
@@ -11,17 +10,17 @@ See FILE_CONNECTIONS.md:
     - USED BY: geosi_plugin/, geosi_server/
 """
 
-import time
 import logging
-from typing import Dict, Any
+import time
+from typing import Any, Dict
 
 from geosi_engine.models import (
     ExecutionPlan,
     ExecutionResult,
     ExecutionStatus,
+    Layer,
     StepLog,
     ToolResult,
-    Layer,
 )
 from geosi_engine.registry import ToolRegistry
 from geosi_engine.state import StateManager
@@ -195,24 +194,26 @@ class ExecutionEngine:
                 if step_runner is not None:
                     tool_result = step_runner(step, self.state)
                 else:
-                    tool_result = self.registry.execute_tool(
-                        step.tool_name, **resolved_params
-                    )
+                    tool_result = self.registry.execute_tool(step.tool_name, **resolved_params)
             except Exception as exc:
                 if getattr(exc, "action_id", None):
                     # Paused: a human must approve this step first
                     approval_pending = exc.action_id
-                    logs.append(StepLog(
-                        step_id=step.step_id, tool_name=step.tool_name,
-                        status=ExecutionStatus.PENDING_APPROVAL,
-                        duration_ms=(time.time() - step_start) * 1000,
-                        error_message=str(exc),
-                    ))
+                    logs.append(
+                        StepLog(
+                            step_id=step.step_id,
+                            tool_name=step.tool_name,
+                            status=ExecutionStatus.PENDING_APPROVAL,
+                            duration_ms=(time.time() - step_start) * 1000,
+                            error_message=str(exc),
+                        )
+                    )
                     all_success = False
                     break
                 denied = type(exc).__name__ == "PermissionDeniedError"
-                tool_result = ToolResult(success=False, error=str(exc),
-                                         message="Refused by policy" if denied else "Step raised an error")
+                tool_result = ToolResult(
+                    success=False, error=str(exc), message="Refused by policy" if denied else "Step raised an error"
+                )
 
             # Compute execution time in milliseconds
             elapsed = (time.time() - step_start) * 1000
@@ -231,11 +232,7 @@ class ExecutionEngine:
             log = StepLog(
                 step_id=step.step_id,
                 tool_name=step.tool_name,
-                status=(
-                    ExecutionStatus.SUCCESS
-                    if tool_result.success
-                    else ExecutionStatus.FAILED
-                ),
+                status=(ExecutionStatus.SUCCESS if tool_result.success else ExecutionStatus.FAILED),
                 duration_ms=elapsed,
                 output_features=feature_count,
                 error_message=tool_result.error,
@@ -247,9 +244,7 @@ class ExecutionEngine:
             # (partial results are better than aborting the plan)
             if not tool_result.success:
                 all_success = False
-                logger.warning(
-                    f"  ⚠ Step {step.step_id} failed: {tool_result.error}"
-                )
+                logger.warning(f"  ⚠ Step {step.step_id} failed: {tool_result.error}")
                 if denied:
                     break  # a policy refusal ends the plan
                 # Continue with remaining steps (partial execution)
@@ -261,8 +256,9 @@ class ExecutionEngine:
         answer = self._build_answer(plan, logs, last_result)
         reasoning = self._build_reasoning(plan, logs)
         if approval_pending:
-            answer = (f"⏸ Approval required before continuing: approve or reject action "
-                      f"`{approval_pending}` to proceed.")
+            answer = (
+                f"⏸ Approval required before continuing: approve or reject action " f"`{approval_pending}` to proceed."
+            )
         elif denied:
             answer = f"⛔ Stopped by policy: {last_result.error if last_result else 'denied'}"
 
@@ -279,13 +275,9 @@ class ExecutionEngine:
         # Collect error messages from all failed steps
         if not all_success:
             failed = [log for log in logs if log.status == ExecutionStatus.FAILED]
-            error = "; ".join(
-                f"{log.step_id}: {log.error_message}" for log in failed if log.error_message
-            )
+            error = "; ".join(f"{log.step_id}: {log.error_message}" for log in failed if log.error_message)
 
-        logger.info(
-            f"◼ Plan {plan.plan_id} {status.value} in {total_elapsed:.0f}ms"
-        )
+        logger.info(f"◼ Plan {plan.plan_id} {status.value} in {total_elapsed:.0f}ms")
 
         return ExecutionResult(
             success=success,
@@ -302,9 +294,7 @@ class ExecutionEngine:
 
     # ── Answer generation ─────────────────────────────────────────────
 
-    def _build_answer(
-        self, plan: ExecutionPlan, logs: list, last_result: Any
-    ) -> str:
+    def _build_answer(self, plan: ExecutionPlan, logs: list, last_result: Any) -> str:
         """Generate a human-readable answer from execution results."""
         succeeded = sum(1 for log in logs if log.status == ExecutionStatus.SUCCESS)
         total = len(logs)
@@ -313,10 +303,7 @@ class ExecutionEngine:
             msg = last_result.message or "Analysis completed successfully."
             return f"✅ {msg}"
         elif succeeded > 0:
-            return (
-                f"⚠ Partial success: {succeeded}/{total} steps completed. "
-                f"Check logs for details."
-            )
+            return f"⚠ Partial success: {succeeded}/{total} steps completed. " f"Check logs for details."
         else:
             return "❌ Analysis failed. Check error logs for details."
 

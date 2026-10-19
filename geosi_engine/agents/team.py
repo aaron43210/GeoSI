@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Agent Team
 ════════════════════════════════════════════════════════════════════
@@ -20,6 +19,7 @@ through the same pipeline and permission gate as every other tool. The
 SupervisorAgent owns sessions, circuit breakers and approvals, and drives
 this team through ``AgentLoop``.
 """
+
 from __future__ import annotations
 
 from typing import Any, Optional

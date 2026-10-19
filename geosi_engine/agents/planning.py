@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Planning Agent
 ════════════════════════════════════════════════════════════════════
@@ -36,6 +35,7 @@ tool does outside the session:
 The QGIS bridge classifies each discovered algorithm (``ToolSpec.risk_level``);
 parameters can raise the level (an explicit output path, ``OVERWRITE``).
 """
+
 from __future__ import annotations
 
 import logging
@@ -53,10 +53,20 @@ _RISK_ORDER = {"read_only": 0, "mutating": 1, "destructive": 2}
 # Name fragments of non-QGIS tools that delete or overwrite data. QGIS
 # algorithms are classified by the bridge instead: "native:deletecolumn"
 # writes a new layer without the column and is not destructive.
-_DESTRUCTIVE_KEYWORDS: frozenset[str] = frozenset({
-    "deletefield", "delete_field", "drop_table", "droptable", "truncate",
-    "executesql", "execute_sql", "delete_layer", "destroy", "overwrite",
-})
+_DESTRUCTIVE_KEYWORDS: frozenset[str] = frozenset(
+    {
+        "deletefield",
+        "delete_field",
+        "drop_table",
+        "droptable",
+        "truncate",
+        "executesql",
+        "execute_sql",
+        "delete_layer",
+        "destroy",
+        "overwrite",
+    }
+)
 
 # Domain-agent tools declare their own risk (they may write model artifacts).
 try:  # pragma: no cover - import guard
@@ -154,8 +164,7 @@ class PlanningAgent:
         agent = getattr(self._engine, "agent", None)
         state = getattr(self._engine, "state", None)
         if agent is None:
-            return ExecutionPlan(reasoning=f"No planner available for: {query}",
-                                 plan_source="empty_fallback")
+            return ExecutionPlan(reasoning=f"No planner available for: {query}", plan_source="empty_fallback")
 
         if self._supervisor is not None:
             agent.breakers = self._supervisor.provider_breakers()
@@ -164,7 +173,8 @@ class PlanningAgent:
         if available_layers:
             known = set(request.available_layers or [])
             request.available_layers = list(request.available_layers or []) + [
-                n for n in available_layers if n not in known]
+                n for n in available_layers if n not in known
+            ]
         plan = agent.plan(request, state, feedback=feedback)
         plan.request = plan.request or request
 

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Permission & Safety Agent
 ════════════════════════════════════════════════════════════════════
@@ -26,6 +25,7 @@ Responsibilities
 5. ``resolve_approval(action_id, approved)`` — called by the QGIS
    HITL dock widget (Phase 4) or ``approve_pending_action`` MCP tool.
 """
+
 from __future__ import annotations
 
 import logging
@@ -61,9 +61,7 @@ class _PendingApproval:
     step_data: dict[str, Any]
     session_id: str
     risk_level: str
-    created_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     resolved: bool = False
     approved: Optional[bool] = None
     consumed: bool = False  # an approved action is used by exactly one execution
@@ -113,9 +111,13 @@ class _ApprovalRegistry:
         """
         with self._lock:
             for p in self._pending.values():
-                if (p.resolved and p.approved and not p.consumed
-                        and p.session_id == session_id
-                        and p.step_data.get("signature") == signature):
+                if (
+                    p.resolved
+                    and p.approved
+                    and not p.consumed
+                    and p.session_id == session_id
+                    and p.step_data.get("signature") == signature
+                ):
                     p.consumed = True
                     return p.action_id
         return None
@@ -124,8 +126,7 @@ class _ApprovalRegistry:
         """Drop approvals older than *max_age_seconds* (bounded memory)."""
         cutoff = datetime.now(timezone.utc).timestamp() - max_age_seconds
         with self._lock:
-            old = [k for k, p in self._pending.items()
-                   if datetime.fromisoformat(p.created_at).timestamp() < cutoff]
+            old = [k for k, p in self._pending.items() if datetime.fromisoformat(p.created_at).timestamp() < cutoff]
             for k in old:
                 del self._pending[k]
             return len(old)
@@ -134,6 +135,7 @@ class _ApprovalRegistry:
 # ---------------------------------------------------------------------------
 # Permission & Safety Agent
 # ---------------------------------------------------------------------------
+
 
 class PermissionSafetyAgent:
     """
@@ -175,9 +177,7 @@ class PermissionSafetyAgent:
         # Step 1: check override table
         override = self._load_policy_override(algorithm_id)
         if override is not None:
-            logger.debug(
-                "Policy override for '%s': %s", algorithm_id, override
-            )
+            logger.debug("Policy override for '%s': %s", algorithm_id, override)
             return PermissionDecision(
                 algorithm_id=algorithm_id,
                 risk_level=risk_level,
@@ -200,7 +200,7 @@ class PermissionSafetyAgent:
         mapping = {
             "read_only": "allow",
             "mutating": "ask",
-            "destructive": "ask",   # ask + confirmation phrase enforced by HITL
+            "destructive": "ask",  # ask + confirmation phrase enforced by HITL
         }
         return mapping.get(risk_level, "ask")
 
@@ -217,6 +217,7 @@ class PermissionSafetyAgent:
                 return None
             with db.get_session() as session:
                 from geosi_data.db_models import PolicyOverrideRecord
+
                 record = (
                     session.query(PolicyOverrideRecord)
                     .filter(PolicyOverrideRecord.algorithm_id == algorithm_id)
@@ -296,9 +297,7 @@ class PermissionSafetyAgent:
         """
         success = self._APPROVALS.resolve(action_id, approved)
         if success:
-            logger.info(
-                "Approval resolved: action_id=%s, approved=%s", action_id, approved
-            )
+            logger.info("Approval resolved: action_id=%s, approved=%s", action_id, approved)
         return success
 
     def poll_approval(self, action_id: str) -> Optional[bool]:
@@ -331,14 +330,18 @@ class PermissionSafetyAgent:
         proceed.
         """
         if _DESTRUCTIVE_INTENT_RE.search(query or ""):
-            return ("⚠ GeoSI does not delete or overwrite data. If you meant to create a "
-                    "filtered copy, ask e.g. \"extract hospitals where beds > 100\".")
+            return (
+                "⚠ GeoSI does not delete or overwrite data. If you meant to create a "
+                'filtered copy, ask e.g. "extract hospitals where beds > 100".'
+            )
         result = scan_text(query or "")
         if not result.is_clean:
             logger.warning("Request refused by guardrails: %s", result.flags)
-            return ("⚠ This request contains instructions aimed at the assistant itself "
-                    f"({', '.join(result.flags[:3])}), so it was not run. Please rephrase it "
-                    "as a GIS task.")
+            return (
+                "⚠ This request contains instructions aimed at the assistant itself "
+                f"({', '.join(result.flags[:3])}), so it was not run. Please rephrase it "
+                "as a GIS task."
+            )
         return None
 
     def scan_rag_context(self, context_obj: Any) -> Any:
@@ -428,15 +431,14 @@ class PermissionSafetyAgent:
             logger.error("Failed to write audit log: %s", exc)
             return None
 
-    def update_audit_log(
-        self, audit_id: str, status: str, error: Optional[str] = None
-    ) -> None:
+    def update_audit_log(self, audit_id: str, status: str, error: Optional[str] = None) -> None:
         """Update an existing audit log row with the execution outcome."""
         try:
             db = self._get_db()
             if db is None or not db.available or not audit_id:
                 return
             from geosi_data.db_models import AuditLogRecord
+
             with db.get_session() as sess:
                 record = sess.get(AuditLogRecord, audit_id)
                 if record:
@@ -478,21 +480,22 @@ class PermissionSafetyAgent:
             if db is None or not db.available:
                 return False
             from geosi_data.db_models import PolicyOverrideRecord
+
             with db.get_session() as sess:
                 record = (
-                    sess.query(PolicyOverrideRecord)
-                    .filter(PolicyOverrideRecord.algorithm_id == algorithm_id)
-                    .first()
+                    sess.query(PolicyOverrideRecord).filter(PolicyOverrideRecord.algorithm_id == algorithm_id).first()
                 )
                 if record:
                     record.decision = decision
                     record.set_by = set_by
                 else:
-                    sess.add(PolicyOverrideRecord(
-                        algorithm_id=algorithm_id,
-                        decision=decision,
-                        set_by=set_by,
-                    ))
+                    sess.add(
+                        PolicyOverrideRecord(
+                            algorithm_id=algorithm_id,
+                            decision=decision,
+                            set_by=set_by,
+                        )
+                    )
             return True
         except Exception as exc:
             logger.error("Failed to set policy override: %s", exc)
@@ -505,11 +508,10 @@ class PermissionSafetyAgent:
             if db is None or not db.available:
                 return False
             from geosi_data.db_models import PolicyOverrideRecord
+
             with db.get_session() as sess:
                 deleted = (
-                    sess.query(PolicyOverrideRecord)
-                    .filter(PolicyOverrideRecord.algorithm_id == algorithm_id)
-                    .delete()
+                    sess.query(PolicyOverrideRecord).filter(PolicyOverrideRecord.algorithm_id == algorithm_id).delete()
                 )
                 return deleted > 0
         except Exception as exc:
@@ -523,6 +525,7 @@ class PermissionSafetyAgent:
             if db is None or not db.available:
                 return []
             from geosi_data.db_models import PolicyOverrideRecord
+
             with db.get_session() as sess:
                 records = sess.query(PolicyOverrideRecord).all()
                 return [
@@ -558,13 +561,16 @@ class PermissionSafetyAgent:
             if db is None or not db.available:
                 return
             from geosi_data.db_models import PendingApprovalRecord
+
             with db.get_session() as sess:
-                sess.add(PendingApprovalRecord(
-                    action_id=pending.action_id,
-                    session_id=pending.session_id,
-                    step_data_json=pending.step_data,
-                    risk_level=pending.risk_level,
-                    status="pending",
-                ))
+                sess.add(
+                    PendingApprovalRecord(
+                        action_id=pending.action_id,
+                        session_id=pending.session_id,
+                        step_data_json=pending.step_data,
+                        risk_level=pending.risk_level,
+                        status="pending",
+                    )
+                )
         except Exception as exc:
             logger.debug("Failed to persist pending approval to DB: %s", exc)

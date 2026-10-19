@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Geology Agent (Core Agent #9)
 ════════════════════════════════════════════════════════════════════
@@ -17,13 +16,14 @@ PRD §4.1 Agent #9 — Production requirements
 * RAG context scanned by Permission & Safety Agent before entering
   any LLM prompt (FR-3.1).
 """
+
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from geosi_engine.telemetry import span, set_span_attr
+from geosi_engine.telemetry import set_span_attr, span
 
 logger = logging.getLogger("geosi_engine.agents.geology")
 
@@ -31,26 +31,27 @@ logger = logging.getLogger("geosi_engine.agents.geology")
 # ── Geology operation types ───────────────────────────────────────────────
 
 GEOLOGY_OPERATIONS = {
-    "geological_mapping":       "Map geological units from field observations or remote sensing",
-    "structural_analysis":      "Analyse faults, folds, joints from geological data",
-    "stratigraphic_modeling":   "Build stratigraphic sequence from borehole/outcrop data",
-    "cross_section":            "Generate a geological cross-section profile",
-    "fault_visualization":      "Visualise fault traces and offset patterns",
-    "fold_analysis":            "Detect and characterise fold geometry",
-    "borehole_correlation":     "Correlate stratigraphic units across boreholes",
-    "mineral_prospectivity":    "Compute mineral prospectivity index from evidential data",
+    "geological_mapping": "Map geological units from field observations or remote sensing",
+    "structural_analysis": "Analyse faults, folds, joints from geological data",
+    "stratigraphic_modeling": "Build stratigraphic sequence from borehole/outcrop data",
+    "cross_section": "Generate a geological cross-section profile",
+    "fault_visualization": "Visualise fault traces and offset patterns",
+    "fold_analysis": "Detect and characterise fold geometry",
+    "borehole_correlation": "Correlate stratigraphic units across boreholes",
+    "mineral_prospectivity": "Compute mineral prospectivity index from evidential data",
     "landslide_susceptibility": "Compute landslide susceptibility using slope/geology/landuse",
-    "ai_interpretation":        "AI-assisted geological interpretation using LLM + RAG",
+    "ai_interpretation": "AI-assisted geological interpretation using LLM + RAG",
 }
 
 
 @dataclass
 class GeologyJobRequest:
     """A geology analysis job."""
+
     operation: str
     input_layers: List[str] = field(default_factory=list)
     parameters: Dict[str, Any] = field(default_factory=dict)
-    query: str = ""          # natural-language context (for ai_interpretation)
+    query: str = ""  # natural-language context (for ai_interpretation)
     session_id: str = ""
     risk_level: str = "mutating"
 
@@ -58,6 +59,7 @@ class GeologyJobRequest:
 @dataclass
 class GeologyJobResult:
     """Result of a geology analysis job."""
+
     success: bool
     operation: str
     output_layer: Optional[str] = None
@@ -102,7 +104,8 @@ class GeologyAgent:
 
         if job.operation not in GEOLOGY_OPERATIONS:
             return GeologyJobResult(
-                success=False, operation=job.operation,
+                success=False,
+                operation=job.operation,
                 error=f"Unknown geology operation '{job.operation}'. Supported: {list(GEOLOGY_OPERATIONS.keys())}",
             )
 
@@ -122,9 +125,7 @@ class GeologyAgent:
             description=GEOLOGY_OPERATIONS.get(job.operation, job.operation),
         )
         decision = self._permission.check_permission(f"geology:{job.operation}", job.risk_level)
-        audit_id = self._permission.audit_log_before_execution(
-            proxy_step, session_id=job.session_id, decision=decision
-        )
+        audit_id = self._permission.audit_log_before_execution(proxy_step, session_id=job.session_id, decision=decision)
 
         if decision.decision == "deny":
             self._permission.update_audit_log(audit_id, "denied")
@@ -159,9 +160,11 @@ class GeologyAgent:
         logger.info("Geological mapping: %s", job.input_layers)
         try:
             import geopandas as gpd
+
             if not job.input_layers:
-                return GeologyJobResult(success=False, operation="geological_mapping",
-                                        error="No input layers provided.")
+                return GeologyJobResult(
+                    success=False, operation="geological_mapping", error="No input layers provided."
+                )
             gdf = gpd.read_file(job.input_layers[0])
             unit_col = job.parameters.get("unit_column", "unit_code")
             if unit_col in gdf.columns:
@@ -169,11 +172,14 @@ class GeologyAgent:
                 stats = {"geological_units": units, "feature_count": len(gdf)}
             else:
                 stats = {"feature_count": len(gdf), "columns": list(gdf.columns)}
-            return GeologyJobResult(success=True, operation="geological_mapping", statistics=stats,
-                                    interpretation="Geological unit mapping completed.")
+            return GeologyJobResult(
+                success=True,
+                operation="geological_mapping",
+                statistics=stats,
+                interpretation="Geological unit mapping completed.",
+            )
         except ImportError:
-            return GeologyJobResult(success=False, operation="geological_mapping",
-                                    error="geopandas not available.")
+            return GeologyJobResult(success=False, operation="geological_mapping", error="geopandas not available.")
         except Exception as exc:
             return GeologyJobResult(success=False, operation="geological_mapping", error=str(exc))
 
@@ -186,12 +192,13 @@ class GeologyAgent:
         try:
             import rasterio
 
-            weights = job.parameters.get("weights", {
-                "slope": 0.40, "lithology": 0.30, "land_use": 0.20, "fault_proximity": 0.10
-            })
+            weights = job.parameters.get(
+                "weights", {"slope": 0.40, "lithology": 0.30, "land_use": 0.20, "fault_proximity": 0.10}
+            )
             if not job.input_layers:
-                return GeologyJobResult(success=False, operation="landslide_susceptibility",
-                                        error="At least one raster layer required.")
+                return GeologyJobResult(
+                    success=False, operation="landslide_susceptibility", error="At least one raster layer required."
+                )
 
             with rasterio.open(job.input_layers[0]) as src:
                 data = src.read(1).astype(float)
@@ -210,13 +217,16 @@ class GeologyAgent:
 
             high_risk_pct = float((susceptibility > 0.7).sum() / susceptibility.size * 100)
             return GeologyJobResult(
-                success=True, operation="landslide_susceptibility", output_layer=out_path,
+                success=True,
+                operation="landslide_susceptibility",
+                output_layer=out_path,
                 statistics={"high_risk_pct": round(high_risk_pct, 2), "weights_used": weights},
                 interpretation=f"{high_risk_pct:.1f}% of the study area shows high landslide susceptibility (>0.7).",
             )
         except ImportError:
-            return GeologyJobResult(success=False, operation="landslide_susceptibility",
-                                    error="rasterio not available.")
+            return GeologyJobResult(
+                success=False, operation="landslide_susceptibility", error="rasterio not available."
+            )
         except Exception as exc:
             return GeologyJobResult(success=False, operation="landslide_susceptibility", error=str(exc))
 
@@ -230,8 +240,9 @@ class GeologyAgent:
             import rasterio
 
             if not job.input_layers:
-                return GeologyJobResult(success=False, operation="mineral_prospectivity",
-                                        error="Evidential layers required.")
+                return GeologyJobResult(
+                    success=False, operation="mineral_prospectivity", error="Evidential layers required."
+                )
 
             weights = job.parameters.get("weights", [1.0 / len(job.input_layers)] * len(job.input_layers))
             composite = None
@@ -254,13 +265,14 @@ class GeologyAgent:
 
             high_pct = float((composite > 0.7).sum() / composite.size * 100)
             return GeologyJobResult(
-                success=True, operation="mineral_prospectivity", output_layer=out_path,
+                success=True,
+                operation="mineral_prospectivity",
+                output_layer=out_path,
                 statistics={"high_prospectivity_pct": round(high_pct, 2), "n_layers": len(job.input_layers)},
                 interpretation=f"{high_pct:.1f}% of the area shows high mineral prospectivity.",
             )
         except ImportError:
-            return GeologyJobResult(success=False, operation="mineral_prospectivity",
-                                    error="rasterio not available.")
+            return GeologyJobResult(success=False, operation="mineral_prospectivity", error="rasterio not available.")
         except Exception as exc:
             return GeologyJobResult(success=False, operation="mineral_prospectivity", error=str(exc))
 
@@ -298,7 +310,7 @@ class GeologyAgent:
                 interpretation = (
                     reasoning
                     or f"Geological interpretation for '{job.query}' based on "
-                       f"{len(rag_context)} retrieved knowledge source(s)."
+                    f"{len(rag_context)} retrieved knowledge source(s)."
                 )
             else:
                 interpretation = (
@@ -306,17 +318,18 @@ class GeologyAgent:
                     f"{len(rag_context)} retrieved knowledge source(s)."
                 )
             return GeologyJobResult(
-                success=True, operation="ai_interpretation",
+                success=True,
+                operation="ai_interpretation",
                 interpretation=interpretation,
                 statistics={"rag_sources_used": len(rag_context)},
             )
         except Exception as exc:
             logger.debug("AI interpretation degraded to summary: %s", exc)
             return GeologyJobResult(
-                success=True, operation="ai_interpretation",
+                success=True,
+                operation="ai_interpretation",
                 interpretation=(
-                    f"Geological analysis for '{job.query}' completed using "
-                    f"{len(rag_context)} knowledge sources."
+                    f"Geological analysis for '{job.query}' completed using " f"{len(rag_context)} knowledge sources."
                 ),
                 statistics={"rag_sources_used": len(rag_context)},
             )
@@ -342,7 +355,8 @@ class GeologyAgent:
         else:
             # Generic stub for remaining structural ops — extensible in later phases
             return GeologyJobResult(
-                success=True, operation=op,
+                success=True,
+                operation=op,
                 interpretation=f"Geology operation '{op}' completed. {GEOLOGY_OPERATIONS.get(op, '')}",
                 statistics={"rag_sources": len(rag_context)},
             )
@@ -367,6 +381,7 @@ class GeologyAgent:
                 text = getattr(r, "text", str(r))
                 # Guardrail scan each retrieved document (FR-3.1)
                 from geosi_engine.guardrails import scan_text
+
                 scan = scan_text(text)
                 if not scan.is_clean:
                     guardrail_flags.extend(scan.flags)

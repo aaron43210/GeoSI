@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Research Agent (Optional Agent #12)
 ════════════════════════════════════════════════════════════════════
@@ -15,13 +14,14 @@ PRD §4.2 Optional Agent #12 — Production notes
 * Qdrant collections targeted: Research Papers, GIS Documentation,
   Remote Sensing Workflows, Geological Knowledge.
 """
+
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from geosi_engine.telemetry import span, set_span_attr
+from geosi_engine.telemetry import set_span_attr, span
 
 logger = logging.getLogger("geosi_engine.agents.research")
 
@@ -29,6 +29,7 @@ logger = logging.getLogger("geosi_engine.agents.research")
 @dataclass
 class ResearchQuery:
     """A research retrieval request."""
+
     query: str
     topics: List[str] = field(default_factory=list)
     max_results: int = 10
@@ -40,6 +41,7 @@ class ResearchQuery:
 @dataclass
 class ResearchResult:
     """Result of a research retrieval operation."""
+
     success: bool
     query: str
     papers: List[Dict[str, Any]] = field(default_factory=list)
@@ -93,10 +95,7 @@ class ResearchAgent:
                 if flags:
                     doc["guardrail_flags"] = flags
                     guardrail_flags.extend(flags)
-                    logger.warning(
-                        "Research: guardrail flags on document from '%s': %s",
-                        collection, flags
-                    )
+                    logger.warning("Research: guardrail flags on document from '%s': %s", collection, flags)
                 papers.append(doc)
 
         set_span_attr("research.total_sources", len(papers))
@@ -131,9 +130,7 @@ class ResearchAgent:
         )
 
     @span("research.graph_search", agent="research")
-    def graph_search(
-        self, query: str, dataset_id: Optional[str] = None, top_k: int = 10
-    ) -> ResearchResult:
+    def graph_search(self, query: str, dataset_id: Optional[str] = None, top_k: int = 10) -> ResearchResult:
         """
         GraphRAG hybrid search (P10): Qdrant vector + Neo4j graph traversal.
 
@@ -231,15 +228,17 @@ class ResearchAgent:
             ctx = self._engine.knowledge.retrieve_context(query, doc_limit=limit)
             results = getattr(ctx, "relevant_docs", []) or []
             for r in results:
-                docs.append({
-                    "id": getattr(r, "id", ""),
-                    "text": getattr(r, "text", str(r)),
-                    "score": getattr(r, "score", 0.0),
-                    "title": getattr(r, "title", ""),
-                    "source": getattr(r, "source", ""),
-                    "collection": collection,
-                    "metadata": getattr(r, "metadata", {}),
-                })
+                docs.append(
+                    {
+                        "id": getattr(r, "id", ""),
+                        "text": getattr(r, "text", str(r)),
+                        "score": getattr(r, "score", 0.0),
+                        "title": getattr(r, "title", ""),
+                        "source": getattr(r, "source", ""),
+                        "collection": collection,
+                        "metadata": getattr(r, "metadata", {}),
+                    }
+                )
         except Exception as exc:
             logger.debug("RAG retrieval from '%s' failed: %s", collection, exc)
         return docs
@@ -248,20 +247,26 @@ class ResearchAgent:
         """Initialise the GraphRAG engine (P10). Graceful fail if Neo4j unavailable."""
         try:
             from geosi_engine.graph_rag import GraphRAGEngine
+
             return GraphRAGEngine(self._engine)
         except Exception as exc:
             logger.debug("GraphRAG init failed (non-fatal): %s", exc)
             # Return a no-op stub
 
             class _NoopGraphRAG:
-                def search(self, **kwargs): return []
-                def cross_reference(self, **kwargs): return []
+                def search(self, **kwargs):
+                    return []
+
+                def cross_reference(self, **kwargs):
+                    return []
+
             return _NoopGraphRAG()
 
     def _scan(self, text: str) -> list[str]:
         """Run guardrail scan on text (FR-3.1). Returns list of flag strings."""
         try:
             from geosi_engine.guardrails import scan_text
+
             result = scan_text(text)
             return result.flags if not result.is_clean else []
         except Exception as exc:

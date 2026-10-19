@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Server — Workspace Layer Routes
 ═══════════════════════════════════════════════════════════════════════
@@ -14,6 +13,7 @@ Manage the file-system workspace for a session's uploaded layers.
 
 All endpoints require Bearer auth.  ``session_id`` defaults to the API key.
 """
+
 from __future__ import annotations
 
 import logging
@@ -21,7 +21,6 @@ import os
 import shutil
 import zipfile
 from pathlib import Path
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
@@ -33,18 +32,22 @@ logger = logging.getLogger("geosi_server.workspace")
 router = APIRouter()
 
 _ALLOWED_EXTS = {
-    ".geojson", ".json",
-    ".tif", ".tiff",
+    ".geojson",
+    ".json",
+    ".tif",
+    ".tiff",
     ".gpkg",
-    ".zip",   # shapefile bundle
+    ".zip",  # shapefile bundle
     ".csv",
-    ".kml", ".kmz",
-    ".fgb",   # FlatGeobuf
+    ".kml",
+    ".kmz",
+    ".fgb",  # FlatGeobuf
 }
 _MAX_UPLOAD_MB = int(os.environ.get("GEOSI_MAX_UPLOAD_MB", "200"))
 
 
 # ── Models ─────────────────────────────────────────────────────────────
+
 
 class WorkspaceFile(BaseModel):
     name: str
@@ -54,7 +57,7 @@ class WorkspaceFile(BaseModel):
 
 class WorkspaceList(BaseModel):
     session_id: str
-    files: List[WorkspaceFile]
+    files: list[WorkspaceFile]
 
 
 class LoadResult(BaseModel):
@@ -65,13 +68,16 @@ class LoadResult(BaseModel):
 
 # ── Helpers ────────────────────────────────────────────────────────────
 
+
 def _workspace(session_id: str) -> Path:
     from geosi_server.qgis_runtime import session_workspace
+
     return session_workspace(session_id)
 
 
-def _engine(api_key: str, session_id: Optional[str]):
+def _engine(api_key: str, session_id: str | None):
     from geosi_server.app import get_pool
+
     return get_pool().get_or_create(session_id or api_key)
 
 
@@ -93,6 +99,7 @@ def _unzip_shapefile(zip_path: Path, dest_dir: Path) -> Path:
 
 # ── Endpoints ─────────────────────────────────────────────────────────
 
+
 @router.post(
     "/workspace/layers",
     response_model=WorkspaceFile,
@@ -102,7 +109,7 @@ def _unzip_shapefile(zip_path: Path, dest_dir: Path) -> Path:
 async def upload_layer(
     file: UploadFile = File(..., description="Vector or raster file to upload"),
     api_key: str = Depends(api_key_auth),
-    session_id: Optional[str] = Query(None),
+    session_id: str | None = Query(None),
 ):
     """
     Upload a spatial file into the session workspace.
@@ -144,13 +151,13 @@ async def upload_layer(
         extract_dir.mkdir(exist_ok=True)
         try:
             shp = _unzip_shapefile(dest, extract_dir)
-            dest.unlink()          # remove the .zip
+            dest.unlink()  # remove the .zip
             dest = shp
             safe = shp.name
         except Exception as exc:
             dest.unlink(missing_ok=True)
             shutil.rmtree(extract_dir, ignore_errors=True)
-            raise HTTPException(status_code=422, detail=f"Zip extraction failed: {exc}")
+            raise HTTPException(status_code=422, detail=f"Zip extraction failed: {exc}") from exc
 
     return WorkspaceFile(name=safe, size_bytes=dest.stat().st_size, path=str(dest))
 
@@ -158,7 +165,7 @@ async def upload_layer(
 @router.get("/workspace/layers", response_model=WorkspaceList, tags=["Workspace"])
 async def list_workspace_layers(
     api_key: str = Depends(api_key_auth),
-    session_id: Optional[str] = Query(None),
+    session_id: str | None = Query(None),
 ):
     """List files currently in the session workspace."""
     sid = session_id or api_key
@@ -174,7 +181,7 @@ async def list_workspace_layers(
 async def download_layer(
     name: str,
     api_key: str = Depends(api_key_auth),
-    session_id: Optional[str] = Query(None),
+    session_id: str | None = Query(None),
 ):
     """Download a file from the session workspace."""
     sid = session_id or api_key
@@ -194,7 +201,7 @@ async def download_layer(
 async def delete_workspace_layer(
     name: str,
     api_key: str = Depends(api_key_auth),
-    session_id: Optional[str] = Query(None),
+    session_id: str | None = Query(None),
 ):
     """Delete a file from the session workspace."""
     sid = session_id or api_key
@@ -215,7 +222,7 @@ async def delete_workspace_layer(
 async def load_workspace_layer(
     name: str,
     api_key: str = Depends(api_key_auth),
-    session_id: Optional[str] = Query(None),
+    session_id: str | None = Query(None),
 ):
     """
     Load a workspace file into the session's engine state so the agent
@@ -238,6 +245,7 @@ async def load_workspace_layer(
 
     try:
         from geosi_engine.models import Layer
+
         layer = Layer(
             name=layer_name,
             filepath=str(dest),
@@ -249,6 +257,7 @@ async def load_workspace_layer(
         if layer.layer_type == "vector":
             try:
                 import geopandas as gpd
+
                 gdf = gpd.read_file(str(dest))
                 layer.feature_count = len(gdf)
                 geom_types = gdf.geom_type.dropna().unique().tolist()
@@ -265,4 +274,4 @@ async def load_workspace_layer(
         )
     except Exception as exc:
         logger.error("Failed to load workspace layer %s: %s", name, exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc

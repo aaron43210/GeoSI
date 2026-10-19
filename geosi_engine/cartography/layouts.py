@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI — Print Layout Generator
 ════════════════════════════════════════════════════════════════════
@@ -11,6 +10,7 @@ Usage:
     layout = build_print_layout(project, title="Flood Risk Zones")
     export_layout(layout, "flood_map.pdf")
 """
+
 from __future__ import annotations
 
 import logging
@@ -20,11 +20,11 @@ from typing import Any, Optional
 logger = logging.getLogger("geosi_engine.cartography.layouts")
 
 PAGE_SIZES = {
-    "a4":  (297, 210),   # landscape (w, h) in mm
-    "a3":  (420, 297),
-    "a2":  (594, 420),
+    "a4": (297, 210),  # landscape (w, h) in mm
+    "a3": (420, 297),
+    "a2": (594, 420),
     "letter": (279, 216),
-    "legal":  (356, 216),
+    "legal": (356, 216),
 }
 
 
@@ -37,7 +37,7 @@ def build_print_layout(
     include_scale_bar: bool = True,
     include_north_arrow: bool = True,
     include_title: bool = True,
-    extent: Any = None,   # QgsRectangle; None = project extent
+    extent: Any = None,  # QgsRectangle; None = project extent
 ) -> Optional[Any]:
     """
     Build a print layout and return the QgsPrintLayout object.
@@ -55,9 +55,14 @@ def build_print_layout(
     """
     try:
         from qgis.core import (
-            QgsProject, QgsPrintLayout, QgsLayoutSize, QgsUnitTypes,
-            QgsLayoutItemMap, QgsLayoutItemLegend, QgsLayoutItemScaleBar,
             QgsLayoutItemLabel,
+            QgsLayoutItemLegend,
+            QgsLayoutItemMap,
+            QgsLayoutItemScaleBar,
+            QgsLayoutSize,
+            QgsPrintLayout,
+            QgsProject,
+            QgsUnitTypes,
         )
         from qgis.PyQt.QtCore import QRectF
         from qgis.PyQt.QtGui import QFont
@@ -80,12 +85,10 @@ def build_print_layout(
     layout.setName(title)
 
     page = layout.pageCollection().pages()[0]
-    page.setPageSize(
-        QgsLayoutSize(w_mm, h_mm, QgsUnitTypes.LayoutMillimeters)
-    )
+    page.setPageSize(QgsLayoutSize(w_mm, h_mm, QgsUnitTypes.LayoutMillimeters))
 
     # ── Map frame ──────────────────────────────────────────────────────
-    margin = 10          # mm
+    margin = 10  # mm
     legend_w = 45 if include_legend else 0
     map_w = w_mm - 2 * margin - legend_w
     map_h = h_mm - 2 * margin - (15 if include_title else 0) - (12 if include_scale_bar else 0)
@@ -119,8 +122,7 @@ def build_print_layout(
         legend.setLinkedMap(map_item)
         legend.setTitle("Legend")
         legend.attemptSetSceneRect(
-            QRectF(margin + map_w + 5, margin + (15 if include_title else 0),
-                   legend_w - 5, map_h)
+            QRectF(margin + map_w + 5, margin + (15 if include_title else 0), legend_w - 5, map_h)
         )
         layout.addLayoutItem(legend)
 
@@ -132,18 +134,18 @@ def build_print_layout(
         scale.setNumberOfSegments(4)
         scale.setUnitsPerSegment(1000)
         scale.applyDefaultSize()
-        scale.attemptSetSceneRect(
-            QRectF(margin, h_mm - margin - 10, 60, 8)
-        )
+        scale.attemptSetSceneRect(QRectF(margin, h_mm - margin - 10, 60, 8))
         layout.addLayoutItem(scale)
 
     # ── North arrow ────────────────────────────────────────────────────
     if include_north_arrow:
         try:
             from qgis.core import QgsLayoutItemPicture
+
             arrow = QgsLayoutItemPicture(layout)
             # Use QGIS built-in north arrow SVG
             from qgis.core import QgsApplication
+
             # pkgDataPath() resolves the install dir on Windows, macOS and Linux
             svg = os.path.join(QgsApplication.pkgDataPath(), "svg", "arrows", "NorthArrow_04.svg")
             arrow.setPicturePath(svg)
@@ -152,8 +154,7 @@ def build_print_layout(
         except Exception as exc:
             logger.debug("North arrow skipped: %s", exc)
 
-    logger.info("Print layout %r built (%s %s %.0fx%.0fmm)",
-                title, orientation, page_size, w_mm, h_mm)
+    logger.info("Print layout %r built (%s %s %.0fx%.0fmm)", title, orientation, page_size, w_mm, h_mm)
     return layout
 
 

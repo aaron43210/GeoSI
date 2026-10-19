@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI RAG — Retriever
 ═══════════════════════════════════════════════════════════════════
@@ -9,10 +8,10 @@ Orchestrates search across Qdrant collections with support for:
     - Hybrid search (Reciprocal Rank Fusion of semantic + keyword)
 """
 
-import re
 import logging
+import re
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("geosi_rag.retriever")
 
@@ -28,6 +27,7 @@ class SearchResult:
         source: Source file path
         metadata: Additional metadata
     """
+
     text: str
     score: float = 0.0
     source: str = ""
@@ -168,15 +168,14 @@ class Retriever:
                 matches = sum(1 for kw in keywords if kw in text)
                 if matches > 0:
                     score = matches / len(keywords)
-                    scored.append(SearchResult(
-                        text=point.payload.get("text", ""),
-                        score=score,
-                        source=point.payload.get("source", ""),
-                        metadata={
-                            k: v for k, v in point.payload.items()
-                            if k not in ("text", "source")
-                        },
-                    ))
+                    scored.append(
+                        SearchResult(
+                            text=point.payload.get("text", ""),
+                            score=score,
+                            source=point.payload.get("source", ""),
+                            metadata={k: v for k, v in point.payload.items() if k not in ("text", "source")},
+                        )
+                    )
 
             # Sort by score descending, take top results
             scored.sort(key=lambda r: r.score, reverse=True)
@@ -216,11 +215,15 @@ class Retriever:
         keyword_limit = int(limit * 2)
 
         semantic_results = self.semantic_search(
-            query, collection, limit=semantic_limit,
+            query,
+            collection,
+            limit=semantic_limit,
             score_threshold=score_threshold,
         )
         keyword_results = self.keyword_search(
-            query, collection, limit=keyword_limit,
+            query,
+            collection,
+            limit=keyword_limit,
         )
 
         # If only one strategy returned results, use that
@@ -259,8 +262,7 @@ class Retriever:
             fused.append(result)
 
         logger.debug(
-            f"Hybrid search: {len(semantic_results)} semantic + "
-            f"{len(keyword_results)} keyword → {len(fused)} fused"
+            f"Hybrid search: {len(semantic_results)} semantic + " f"{len(keyword_results)} keyword → {len(fused)} fused"
         )
         return fused
 
@@ -272,18 +274,100 @@ class Retriever:
         Removes common stop words and short tokens.
         """
         stop_words = {
-            "a", "an", "the", "is", "are", "was", "were", "be", "been",
-            "being", "have", "has", "had", "do", "does", "did", "will",
-            "would", "could", "should", "may", "might", "can", "shall",
-            "to", "of", "in", "for", "on", "with", "at", "by", "from",
-            "as", "into", "through", "during", "before", "after", "above",
-            "below", "between", "and", "but", "or", "not", "no", "nor",
-            "so", "yet", "both", "either", "neither", "each", "every",
-            "all", "any", "few", "more", "most", "other", "some", "such",
-            "than", "too", "very", "just", "about", "how", "what", "which",
-            "who", "whom", "this", "that", "these", "those", "i", "me",
-            "my", "we", "our", "you", "your", "it", "its", "they", "them",
-            "their", "he", "she", "him", "her", "his",
+            "a",
+            "an",
+            "the",
+            "is",
+            "are",
+            "was",
+            "were",
+            "be",
+            "been",
+            "being",
+            "have",
+            "has",
+            "had",
+            "do",
+            "does",
+            "did",
+            "will",
+            "would",
+            "could",
+            "should",
+            "may",
+            "might",
+            "can",
+            "shall",
+            "to",
+            "of",
+            "in",
+            "for",
+            "on",
+            "with",
+            "at",
+            "by",
+            "from",
+            "as",
+            "into",
+            "through",
+            "during",
+            "before",
+            "after",
+            "above",
+            "below",
+            "between",
+            "and",
+            "but",
+            "or",
+            "not",
+            "no",
+            "nor",
+            "so",
+            "yet",
+            "both",
+            "either",
+            "neither",
+            "each",
+            "every",
+            "all",
+            "any",
+            "few",
+            "more",
+            "most",
+            "other",
+            "some",
+            "such",
+            "than",
+            "too",
+            "very",
+            "just",
+            "about",
+            "how",
+            "what",
+            "which",
+            "who",
+            "whom",
+            "this",
+            "that",
+            "these",
+            "those",
+            "i",
+            "me",
+            "my",
+            "we",
+            "our",
+            "you",
+            "your",
+            "it",
+            "its",
+            "they",
+            "them",
+            "their",
+            "he",
+            "she",
+            "him",
+            "her",
+            "his",
         }
 
         # Tokenize and filter

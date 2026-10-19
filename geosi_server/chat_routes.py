@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Chat & HITL Routes
 ════════════════════════════════════════════════════════════════════
@@ -23,11 +22,12 @@ Key design:
     survive between the original ``/chat`` call and the later ``/approval``
     call (the PausedRun lives in the engine's AgentLoop, which the pool holds).
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -40,80 +40,86 @@ router = APIRouter()
 
 # ── Request / Response models ─────────────────────────────────────────
 
+
 class ChatRequest(BaseModel):
     """Natural-language query sent to the Supervisor Agent."""
+
     query: str = Field(..., min_length=1, max_length=4096)
-    session_id: Optional[str] = Field(None)
-    available_layers: List[str] = Field(default_factory=list)
+    session_id: str | None = Field(None)
+    available_layers: list[str] = Field(default_factory=list)
     surface: str = Field("rest")
-    context: Dict[str, Any] = Field(default_factory=dict)
+    context: dict[str, Any] = Field(default_factory=dict)
 
 
 class ChatResponse(BaseModel):
     """Supervisor Agent response."""
+
     success: bool
     query: str
     session_id: str
-    answer: Optional[str] = None
-    plan: Optional[Dict[str, Any]] = None
-    results: Optional[List[str]] = None
-    report: Optional[str] = None
-    warnings: List[str] = Field(default_factory=list)
-    plan_source: Optional[str] = None
-    error: Optional[str] = None
+    answer: str | None = None
+    plan: dict[str, Any] | None = None
+    results: list[str] | None = None
+    report: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+    plan_source: str | None = None
+    error: str | None = None
     latency_ms: float = 0.0
-    approval_pending: Optional[str] = None  # action_id when HITL is needed
+    approval_pending: str | None = None  # action_id when HITL is needed
 
 
 class ExecuteRequest(BaseModel):
     """Direct plan execution — for clients that pre-build an ExecutionPlan."""
-    plan: Dict[str, Any] = Field(...)
-    session_id: Optional[str] = Field(None)
+
+    plan: dict[str, Any] = Field(...)
+    session_id: str | None = Field(None)
     surface: str = Field("rest")
 
 
 class ExecuteResponse(BaseModel):
     success: bool
     session_id: str
-    results: Optional[List[str]] = None
-    error: Optional[str] = None
+    results: list[str] | None = None
+    error: str | None = None
     latency_ms: float = 0.0
-    approval_pending: Optional[str] = None
+    approval_pending: str | None = None
 
 
 class ApprovalRequest(BaseModel):
-    reason: Optional[str] = Field(None)
+    reason: str | None = Field(None)
 
 
 class ApprovalResponse(BaseModel):
     """Response from an approval/reject call — carries the resumed result."""
+
     action_id: str
     approved: bool
     resolved: bool
     # Resumed execution fields (mirrors ChatResponse fields)
     success: bool = False
-    answer: Optional[str] = None
-    plan: Optional[Dict[str, Any]] = None
-    results: Optional[List[str]] = None
-    report: Optional[str] = None
-    warnings: List[str] = Field(default_factory=list)
-    error: Optional[str] = None
+    answer: str | None = None
+    plan: dict[str, Any] | None = None
+    results: list[str] | None = None
+    report: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+    error: str | None = None
     latency_ms: float = 0.0
 
 
 class ApprovalStatus(BaseModel):
     action_id: str
-    status: str     # "pending" | "approved" | "rejected"
+    status: str  # "pending" | "approved" | "rejected"
     resolved: bool
 
 
 # ── Helpers ───────────────────────────────────────────────────────────
 
+
 def _supervisor_response_to_chat(resp, query: str, session_id: str) -> ChatResponse:
     """Convert a SupervisorResponse into a ChatResponse."""
     summary = resp.execution_summary or {}
     steps = summary.get("steps") if isinstance(summary, dict) else None
-    results: Optional[List[str]] = None
+    results: list[str] | None = None
     if steps:
         results = []
         for s in steps:
@@ -154,12 +160,9 @@ def _supervisor_response_to_approval(resp, action_id: str, approved: bool) -> Ap
     """Convert a SupervisorResponse into an ApprovalResponse."""
     summary = resp.execution_summary or {}
     steps = summary.get("steps") if isinstance(summary, dict) else None
-    results: Optional[List[str]] = None
+    results: list[str] | None = None
     if steps:
-        results = [
-            f"{s.get('tool_name', '?')}: {'ok' if s.get('success') else s.get('error', '?')}"
-            for s in steps
-        ]
+        results = [f"{s.get('tool_name', '?')}: {'ok' if s.get('success') else s.get('error', '?')}" for s in steps]
     exec_result = getattr(resp, "execution_result", None)
     return ApprovalResponse(
         action_id=action_id,
@@ -178,6 +181,7 @@ def _supervisor_response_to_approval(resp, action_id: str, approved: bool) -> Ap
 
 # ── Endpoints ─────────────────────────────────────────────────────────
 
+
 @router.post("/chat", response_model=ChatResponse, tags=["Chat"])
 async def chat(req: ChatRequest, api_key: str = Depends(api_key_auth)):
     """
@@ -193,8 +197,8 @@ async def chat(req: ChatRequest, api_key: str = Depends(api_key_auth)):
     Returns ``approval_pending`` when a mutating step needs confirmation.
     Call ``POST /approval/{action_id}/approve`` to resume.
     """
-    from geosi_server.app import get_supervisor
     from geosi_engine.agents.supervisor import SupervisorRequest
+    from geosi_server.app import get_supervisor
 
     session_id = req.session_id or api_key
     supervisor = get_supervisor()
@@ -219,12 +223,13 @@ async def execute(req: ExecuteRequest, api_key: str = Depends(api_key_auth)):
     Skips the LLM planning step and routes straight to validation +
     permission + execution.
     """
-    from geosi_server.app import get_pool
-    from geosi_engine.agents.validation import ValidationAgent
-    from geosi_engine.agents.permission_safety import PermissionSafetyAgent
-    from geosi_engine.agents.gis_agent import GISAgent
-    from geosi_engine.models import ExecutionPlan, ToolStep
     import time
+
+    from geosi_engine.agents.gis_agent import GISAgent
+    from geosi_engine.agents.permission_safety import PermissionSafetyAgent
+    from geosi_engine.agents.validation import ValidationAgent
+    from geosi_engine.models import ExecutionPlan, ToolStep
+    from geosi_server.app import get_pool
 
     pool = get_pool()
     session_id = req.session_id or api_key
@@ -254,27 +259,23 @@ async def execute(req: ExecuteRequest, api_key: str = Depends(api_key_auth)):
 
         results = []
         for step in plan.steps:
-            result = await loop.run_in_executor(
-                None, gis.execute_step, step, engine.state
-            )
+            result = await loop.run_in_executor(None, gis.execute_step, step, engine.state)
             results.append(f"{step.tool_name}: {'ok' if result.success else result.error}")
 
         latency_ms = (time.monotonic() - start) * 1000
-        return ExecuteResponse(success=True, session_id=session_id,
-                               results=results, latency_ms=latency_ms)
+        return ExecuteResponse(success=True, session_id=session_id, results=results, latency_ms=latency_ms)
 
     except ValueError as exc:
         latency_ms = (time.monotonic() - start) * 1000
-        return ExecuteResponse(success=False, session_id=session_id,
-                               error=str(exc), latency_ms=latency_ms)
+        return ExecuteResponse(success=False, session_id=session_id, error=str(exc), latency_ms=latency_ms)
     except Exception as exc:
         logger.error("Execute failed for session %s: %s", session_id, exc, exc_info=True)
         latency_ms = (time.monotonic() - start) * 1000
-        return ExecuteResponse(success=False, session_id=session_id,
-                               error=str(exc), latency_ms=latency_ms)
+        return ExecuteResponse(success=False, session_id=session_id, error=str(exc), latency_ms=latency_ms)
 
 
 # ── HITL Approval endpoints ───────────────────────────────────────────
+
 
 @router.post(
     "/approval/{action_id}/approve",
@@ -283,7 +284,7 @@ async def execute(req: ExecuteRequest, api_key: str = Depends(api_key_auth)):
 )
 async def approve_action(
     action_id: str,
-    req: ApprovalRequest = ApprovalRequest(),
+    req: ApprovalRequest = ApprovalRequest(),  # noqa: B008 — read-only default
     api_key: str = Depends(api_key_auth),
 ):
     """
@@ -294,8 +295,8 @@ async def approve_action(
     allowed automatically.  The browser never needs to re-send the original
     query.
     """
-    from geosi_server.app import get_supervisor
     from geosi_engine.agents.permission_safety import PermissionSafetyAgent
+    from geosi_server.app import get_supervisor
 
     pending = PermissionSafetyAgent._APPROVALS.get(action_id)
     if pending is None:
@@ -306,9 +307,7 @@ async def approve_action(
 
     supervisor = get_supervisor()
     loop = asyncio.get_event_loop()
-    resp = await loop.run_in_executor(
-        None, supervisor.resume, action_id, True, pending.session_id
-    )
+    resp = await loop.run_in_executor(None, supervisor.resume, action_id, True, pending.session_id)
     return _supervisor_response_to_approval(resp, action_id, approved=True)
 
 
@@ -319,12 +318,12 @@ async def approve_action(
 )
 async def reject_action(
     action_id: str,
-    req: ApprovalRequest = ApprovalRequest(),
+    req: ApprovalRequest = ApprovalRequest(),  # noqa: B008 — read-only default
     api_key: str = Depends(api_key_auth),
 ):
     """Reject a pending HITL action."""
-    from geosi_server.app import get_supervisor
     from geosi_engine.agents.permission_safety import PermissionSafetyAgent
+    from geosi_server.app import get_supervisor
 
     pending = PermissionSafetyAgent._APPROVALS.get(action_id)
     if pending is None:
@@ -335,9 +334,7 @@ async def reject_action(
 
     supervisor = get_supervisor()
     loop = asyncio.get_event_loop()
-    resp = await loop.run_in_executor(
-        None, supervisor.resume, action_id, False, pending.session_id
-    )
+    resp = await loop.run_in_executor(None, supervisor.resume, action_id, False, pending.session_id)
     return _supervisor_response_to_approval(resp, action_id, approved=False)
 
 

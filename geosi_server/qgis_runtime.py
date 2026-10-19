@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Server — Headless QGIS Runtime
 ══════════════════════════════════════════════════════════════════════
@@ -19,18 +18,19 @@ The module is deliberately import-safe: importing it does not start QGIS.
 Only ``init()`` launches the application; if QGIS is unavailable the
 function returns ``False`` and the server continues without QGIS tools.
 """
+
 from __future__ import annotations
 
 import logging
 import os
 import threading
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger("geosi_server.qgis_runtime")
 
 # Global QgsApplication instance (one per process)
-_qgs_app: Optional[Any] = None
+_qgs_app: Any | None = None
 _init_lock = threading.Lock()
 
 # Cap concurrent QGIS Processing calls to avoid overloading the headless instance
@@ -54,8 +54,8 @@ def init() -> bool:
         if _qgs_app is not None:
             return True
         try:
-            from qgis.core import QgsApplication
             import processing  # noqa: F401 - triggers provider registration
+            from qgis.core import QgsApplication
 
             os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
             qgs = QgsApplication([], False)  # False → no GUI
@@ -63,6 +63,7 @@ def init() -> bool:
 
             # Initialise Processing framework (loads all providers)
             from processing.core.Processing import Processing
+
             Processing.initialize()
 
             _qgs_app = qgs
@@ -128,6 +129,7 @@ def engine_factory(session_id: str) -> Any:
     if is_available():
         try:
             from geosi_plugin.qgis_bridge import install
+
             count = install(registry=engine.registry)
             logger.debug("Session %s: %d QGIS tools installed", session_id, count)
         except Exception as exc:

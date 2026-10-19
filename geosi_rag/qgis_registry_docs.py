@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Offline Live-Registry Documentation Generator (Plan Part C)
 ════════════════════════════════════════════════════════════════════
@@ -28,6 +27,7 @@ Each tool entry carries:
   * a parameter table (name / type / required / description)
   * a copy-pasteable example ``ToolStep`` JSON the planner can emulate
 """
+
 from __future__ import annotations
 
 import argparse
@@ -67,6 +67,7 @@ def _full_help_map() -> Dict[str, str]:
     help_map: Dict[str, str] = {}
     try:
         from qgis.core import QgsApplication
+
         proc = QgsApplication.processingRegistry()
         if proc is None:
             return help_map
@@ -121,9 +122,11 @@ def _render_tool(spec: Any, full_help: Dict[str, str]) -> str:
         lines.append(f"**Display name:** {spec.display_name}  ")
     if getattr(spec, "qgis_algorithm", None):
         lines.append(f"**QGIS algorithm:** `{spec.qgis_algorithm}`  ")
-    lines.append(f"**Category:** `{spec.category}` · "
-                 f"**Requires QGIS:** {bool(getattr(spec, 'requires_qgis', False))} · "
-                 f"**Requires GPU:** {bool(getattr(spec, 'requires_gpu', False))}")
+    lines.append(
+        f"**Category:** `{spec.category}` · "
+        f"**Requires QGIS:** {bool(getattr(spec, 'requires_qgis', False))} · "
+        f"**Requires GPU:** {bool(getattr(spec, 'requires_gpu', False))}"
+    )
     lines.append("")
 
     desc = full_help.get(getattr(spec, "qgis_algorithm", "") or "", "") or spec.description or ""
@@ -176,6 +179,7 @@ def generate(out_dir: str) -> int:
     # QGIS Processing + GDAL — the bulk of the surface.
     try:
         from geosi_plugin.qgis_bridge import auto_discover_qgis_tools
+
         n = auto_discover_qgis_tools(registry)
         logger.info("Discovered %d QGIS/GDAL algorithms", n)
     except Exception as exc:
@@ -202,8 +206,7 @@ def generate(out_dir: str) -> int:
     index_lines = [
         "# GeoSI Tool Registry — Live Documentation",
         "",
-        f"Auto-generated from the live `ToolRegistry`. **{len(specs)} tools** "
-        f"across **{len(by_cat)} categories**.",
+        f"Auto-generated from the live `ToolRegistry`. **{len(specs)} tools** " f"across **{len(by_cat)} categories**.",
         "",
         "Each tool's `tool_name` below is the exact identifier the planner must "
         "emit and the executor resolves. Use the example `ToolStep` JSON as the "
@@ -235,11 +238,8 @@ def generate(out_dir: str) -> int:
 
 
 def main(argv: List[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Generate GeoSI live-registry documentation (QGIS required)."
-    )
-    parser.add_argument("--out", default="data/registry_docs/",
-                        help="Output directory for generated Markdown.")
+    parser = argparse.ArgumentParser(description="Generate GeoSI live-registry documentation (QGIS required).")
+    parser.add_argument("--out", default="data/registry_docs/", help="Output directory for generated Markdown.")
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args(argv)
 

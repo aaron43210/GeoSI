@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Plugin — Chat Dock Widget (v2: Dynamic Tool Aware)
 ═══════════════════════════════════════════════════════════════════
@@ -34,10 +33,10 @@ QGIS Layer Sync
     StateManager so the LLM knows which layers are available.
 """
 
-import os
-import re
 import html
 import logging
+import os
+import re
 import traceback
 
 logger = logging.getLogger("geosi_plugin.prompt_dock")
@@ -66,12 +65,18 @@ class GeoSIDock:
             iface: QgisInterface for accessing the QGIS application
             engine: GeoSI engine instance (already populated with tools)
         """
+        from qgis.PyQt.QtCore import QStringListModel, Qt
         from qgis.PyQt.QtWidgets import (
-            QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
-            QTextEdit, QLineEdit, QPushButton, QLabel,
             QCompleter,
+            QDockWidget,
+            QHBoxLayout,
+            QLabel,
+            QLineEdit,
+            QPushButton,
+            QTextEdit,
+            QVBoxLayout,
+            QWidget,
         )
-        from qgis.PyQt.QtCore import Qt, QStringListModel
 
         # ── Store references ───────────────────────────────────────────
         self.iface = iface
@@ -80,8 +85,7 @@ class GeoSIDock:
             from geosi_engine.agents.supervisor import SupervisorAgent
             from geosi_engine.session_pool import SessionPool
 
-            supervisor = SupervisorAgent(SessionPool(max_size=1, ttl_seconds=float("inf"),
-                                                     factory=lambda sid: engine))
+            supervisor = SupervisorAgent(SessionPool(max_size=1, ttl_seconds=float("inf"), factory=lambda sid: engine))
         self.supervisor = supervisor
         self._task = None
         self._completer_model = QStringListModel()
@@ -91,9 +95,7 @@ class GeoSIDock:
 
         # ── Create the dock widget ─────────────────────────────────────
         self.dock = QDockWidget("GeoSI — Geospatial AI", iface.mainWindow())
-        self.dock.setAllowedAreas(
-            Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea
-        )
+        self.dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
 
         # ── Central widget with vertical layout ────────────────────────
         central = QWidget()
@@ -101,9 +103,7 @@ class GeoSIDock:
 
         # ── Header with tool count ─────────────────────────────────────
         tool_count = self.engine.registry.tool_count()
-        header = QLabel(
-            f"<b>GeoSI v2</b> — {tool_count} tools dynamically loaded"
-        )
+        header = QLabel(f"<b>GeoSI v2</b> — {tool_count} tools dynamically loaded")
         header.setStyleSheet("color: #4CAF50; padding: 4px;")
         layout.addWidget(header)
 
@@ -151,31 +151,41 @@ class GeoSIDock:
             b.clicked.connect(handler)
             return b
 
-        ctx_layout.addWidget(_ctx_btn(
-            "📎 @layer", "Insert @layername reference into your query",
-            self._on_insert_layer_ref,
-        ))
-        ctx_layout.addWidget(_ctx_btn(
-            "🗺 Current View", "Append current map canvas extent to query",
-            self._on_append_extent,
-        ))
-        ctx_layout.addWidget(_ctx_btn(
-            "✂ Selected", "Append selected-features context to query",
-            self._on_append_selected,
-        ))
-        ctx_layout.addWidget(_ctx_btn(
-            "↩ Undo", "Undo last GeoSI operation (restore checkpoint)",
-            self._on_undo,
-        ))
+        ctx_layout.addWidget(
+            _ctx_btn(
+                "📎 @layer",
+                "Insert @layername reference into your query",
+                self._on_insert_layer_ref,
+            )
+        )
+        ctx_layout.addWidget(
+            _ctx_btn(
+                "🗺 Current View",
+                "Append current map canvas extent to query",
+                self._on_append_extent,
+            )
+        )
+        ctx_layout.addWidget(
+            _ctx_btn(
+                "✂ Selected",
+                "Append selected-features context to query",
+                self._on_append_selected,
+            )
+        )
+        ctx_layout.addWidget(
+            _ctx_btn(
+                "↩ Undo",
+                "Undo last GeoSI operation (restore checkpoint)",
+                self._on_undo,
+            )
+        )
         ctx_layout.addStretch()
         layout.addLayout(ctx_layout)
 
         # ── Input area ─────────────────────────────────────────────────
         input_layout = QHBoxLayout()
         self.input_box = QLineEdit()
-        self.input_box.setPlaceholderText(
-            "Ask GeoSI anything… type @ to reference a layer by name"
-        )
+        self.input_box.setPlaceholderText("Ask GeoSI anything… type @ to reference a layer by name")
         self.input_box.setStyleSheet(
             "background-color: #2d2d2d; color: #fff; "
             "border: 1px solid #555; border-radius: 4px; "
@@ -206,8 +216,7 @@ class GeoSIDock:
         # Clear button
         clear_btn = QPushButton("Clear")
         clear_btn.setStyleSheet(
-            "background-color: #555; color: white; "
-            "border: none; border-radius: 4px; padding: 8px 12px;"
+            "background-color: #555; color: white; " "border: none; border-radius: 4px; padding: 8px 12px;"
         )
         clear_btn.clicked.connect(self._on_clear)
         input_layout.addWidget(clear_btn)
@@ -216,8 +225,7 @@ class GeoSIDock:
         self.stop_btn = QPushButton("Stop")
         self.stop_btn.setEnabled(False)
         self.stop_btn.setStyleSheet(
-            "background-color: #b33; color: white; "
-            "border: none; border-radius: 4px; padding: 8px 12px;"
+            "background-color: #b33; color: white; " "border: none; border-radius: 4px; padding: 8px 12px;"
         )
         self.stop_btn.clicked.connect(self._on_stop)
         input_layout.addWidget(self.stop_btn)
@@ -295,9 +303,7 @@ class GeoSIDock:
         from qgis.core import QgsApplication, QgsTask
 
         label = "resuming approved step" if resume else query[:50]
-        task = QgsTask.fromFunction(
-            f"GeoSI: {label}", self._task_body, query, resume, on_finished=self._on_task_done
-        )
+        task = QgsTask.fromFunction(f"GeoSI: {label}", self._task_body, query, resume, on_finished=self._on_task_done)
         self._task = task
         task.progressChanged.connect(self._on_progress)
         self._set_busy(True)
@@ -318,8 +324,7 @@ class GeoSIDock:
             if resume is not None:
                 response = self.supervisor.resume(resume[0], resume[1], session_id=SESSION_ID)
             else:
-                response = self.supervisor.handle(
-                    SupervisorRequest(query=query, session_id=SESSION_ID, surface="qgis"))
+                response = self.supervisor.handle(SupervisorRequest(query=query, session_id=SESSION_ID, surface="qgis"))
             if response.execution_result is None:
                 return None, response.error or "No result"
             return response.execution_result, None
@@ -382,8 +387,7 @@ class GeoSIDock:
                 )
             if result.reasoning:
                 self._append_system(
-                    f"<details><summary>📋 Reasoning</summary>"
-                    f"<pre>{html.escape(result.reasoning)}</pre></details>"
+                    f"<details><summary>📋 Reasoning</summary>" f"<pre>{html.escape(result.reasoning)}</pre></details>"
                 )
             # Auto-load output layers into QGIS (main thread)
             self._load_result_layers(result)
@@ -391,8 +395,7 @@ class GeoSIDock:
             self._append_error(result.answer or result.error or "Unknown error")
             if result.reasoning:
                 self._append_system(
-                    f"<details><summary>📋 What was tried</summary>"
-                    f"<pre>{result.reasoning}</pre></details>"
+                    f"<details><summary>📋 What was tried</summary>" f"<pre>{result.reasoning}</pre></details>"
                 )
 
     def _ask_approval(self, result):
@@ -404,11 +407,14 @@ class GeoSIDock:
         action_id = result.approval_pending
         pending = PermissionSafetyAgent._APPROVALS.get(action_id)
         data = pending.step_data if pending else {}
-        details = (f"Tool: {data.get('tool_name', '?')}\n"
-                   f"Risk: {data.get('risk_level', '?')}\n"
-                   f"Parameters: {data.get('parameters', {})}")
-        self._append_system(f"⏸ Approval needed for <b>{data.get('tool_name', 'a step')}</b> "
-                            f"(risk: {data.get('risk_level', '?')})")
+        details = (
+            f"Tool: {data.get('tool_name', '?')}\n"
+            f"Risk: {data.get('risk_level', '?')}\n"
+            f"Parameters: {data.get('parameters', {})}"
+        )
+        self._append_system(
+            f"⏸ Approval needed for <b>{data.get('tool_name', 'a step')}</b> " f"(risk: {data.get('risk_level', '?')})"
+        )
         box = QMessageBox(self.dock)
         box.setWindowTitle("GeoSI — approve this step?")
         box.setText("This step changes data outside the current analysis. Run it?")
@@ -430,7 +436,7 @@ class GeoSIDock:
             self.input_box.setCompleter(None)
             return
         # The word after @ (may be partial)
-        partial = fragment[at_pos + 1:]
+        partial = fragment[at_pos + 1 :]
         layers = self.engine.state.list_layers()
         matches = [f"@{n}" for n in layers if n.lower().startswith(partial.lower())]
         if not matches:
@@ -469,6 +475,7 @@ class GeoSIDock:
         """Append the current map canvas extent to the query."""
         try:
             from qgis.utils import iface as _iface
+
             canvas = _iface.mapCanvas() if _iface else None
             if canvas is None:
                 canvas = self.iface.mapCanvas()
@@ -488,6 +495,7 @@ class GeoSIDock:
             layer = None
             try:
                 from qgis.utils import iface as _iface
+
                 layer = (_iface or self.iface).activeLayer()
             except Exception:
                 logger.debug("suppressed exception", exc_info=True)
@@ -525,10 +533,21 @@ class GeoSIDock:
 
     # ── Drag-and-drop ──────────────────────────────────────────────────
 
-    _GIS_EXTS = frozenset({
-        ".gpkg", ".shp", ".geojson", ".json", ".tif", ".tiff",
-        ".fgb", ".kml", ".kmz", ".csv", ".zip",
-    })
+    _GIS_EXTS = frozenset(
+        {
+            ".gpkg",
+            ".shp",
+            ".geojson",
+            ".json",
+            ".tif",
+            ".tiff",
+            ".fgb",
+            ".kml",
+            ".kmz",
+            ".csv",
+            ".zip",
+        }
+    )
 
     def _drag_enter(self, event):
         if event.mimeData().hasUrls():
@@ -550,7 +569,8 @@ class GeoSIDock:
     def _load_dropped_file(self, path: str):
         """Load a dropped GIS file into QGIS and the engine state."""
         try:
-            from qgis.core import QgsProject, QgsVectorLayer, QgsRasterLayer
+            from qgis.core import QgsProject, QgsRasterLayer, QgsVectorLayer
+
             name = os.path.splitext(os.path.basename(path))[0]
             ext = os.path.splitext(path)[1].lower()
             if ext in (".tif", ".tiff"):
@@ -574,9 +594,7 @@ class GeoSIDock:
         self.chat_display.clear()
         self.engine.conversation.clear()
         tool_count = self.engine.registry.tool_count()
-        self.chat_display.setHtml(
-            f"<p style='color: #4CAF50;'>Chat cleared. {tool_count} tools ready.</p>"
-        )
+        self.chat_display.setHtml(f"<p style='color: #4CAF50;'>Chat cleared. {tool_count} tools ready.</p>")
 
     # ── Layer sync ─────────────────────────────────────────────────────
 
@@ -591,10 +609,11 @@ class GeoSIDock:
         """
         try:
             from qgis.core import QgsProject
+
             from geosi_engine.models import Layer
 
             project = QgsProject.instance()
-            for layer_id, qgs_layer in project.mapLayers().items():
+            for qgs_layer in project.mapLayers().values():
                 name = qgs_layer.name()
                 if name not in self.engine.state.list_layers():
                     # Determine layer type
@@ -614,6 +633,7 @@ class GeoSIDock:
                         try:
                             wkb = qgs_layer.wkbType()
                             from qgis.core import QgsWkbTypes
+
                             geom_type = QgsWkbTypes.displayString(wkb)
                         except Exception:
                             logger.debug("suppressed exception", exc_info=True)
@@ -627,6 +647,7 @@ class GeoSIDock:
                     if layer_type == "vector":
                         try:
                             from .qgis_bridge import field_metadata
+
                             fields = [f.name() for f in qgs_layer.fields()]
                             field_types, field_values = field_metadata(qgs_layer)
                         except Exception:
@@ -654,7 +675,7 @@ class GeoSIDock:
     def _load_result_layers(self, result):
         """Load output layers from execution results into QGIS."""
         try:
-            from qgis.core import QgsProject, QgsVectorLayer, QgsRasterLayer
+            from qgis.core import QgsProject, QgsRasterLayer, QgsVectorLayer
 
             for name, output in (result.results or {}).items():
                 if output is None:
@@ -677,9 +698,7 @@ class GeoSIDock:
 
                     if qgs_layer.isValid():
                         QgsProject.instance().addMapLayer(qgs_layer)
-                        self._append_system(
-                            f"📍 Loaded result layer: <b>{layer_name}</b>"
-                        )
+                        self._append_system(f"📍 Loaded result layer: <b>{layer_name}</b>")
                     else:
                         logger.warning(f"Invalid layer: {filepath}")
         except Exception as e:
@@ -723,12 +742,8 @@ class GeoSIDock:
         """Search tools by keyword."""
         results = self.engine.registry.search_tools(query)
         if results:
-            items = "<br>".join(
-                f"  • <b>{s.name}</b>: {s.description[:80]}" for s in results[:15]
-            )
-            self._append_system(
-                f"<b>🔍 {len(results)} tools matching '{query}':</b><br>{items}"
-            )
+            items = "<br>".join(f"  • <b>{s.name}</b>: {s.description[:80]}" for s in results[:15])
+            self._append_system(f"<b>🔍 {len(results)} tools matching '{query}':</b><br>{items}")
         else:
             self._append_system(f"No tools found matching '{query}'.")
 
@@ -736,9 +751,8 @@ class GeoSIDock:
 
     def _append_user(self, text: str):
         import html
-        self.chat_display.append(
-            f"<p style='color: #64B5F6; margin-bottom: 4px;'><b>You:</b> {html.escape(text)}</p>"
-        )
+
+        self.chat_display.append(f"<p style='color: #64B5F6; margin-bottom: 4px;'><b>You:</b> {html.escape(text)}</p>")
 
     def _append_assistant(self, text: str):
         rendered = self._markdown_to_html(text)
@@ -751,6 +765,7 @@ class GeoSIDock:
     def _markdown_to_html(text: str) -> str:
         """Format markdown headers, bold, and code blocks into HTML for QTextEdit."""
         import html
+
         if not text:
             return ""
 
@@ -795,15 +810,14 @@ class GeoSIDock:
         return formatted
 
     def _append_system(self, text: str):
-        self.chat_display.append(
-            f"<p style='color: #9E9E9E; font-size: 12px;'>{text}</p>"
-        )
+        self.chat_display.append(f"<p style='color: #9E9E9E; font-size: 12px;'>{text}</p>")
 
     @staticmethod
     def _ollama_online(agent) -> bool:
         """Return True if the local Ollama endpoint is reachable right now."""
         try:
             from urllib.request import urlopen
+
             url = getattr(agent, "_ollama_endpoint", "http://localhost:11434") + "/api/tags"
             with urlopen(url, timeout=1.0) as resp:  # nosec B310
                 return resp.status == 200
@@ -811,6 +825,4 @@ class GeoSIDock:
             return False
 
     def _append_error(self, text: str):
-        self.chat_display.append(
-            f"<p style='color: #EF5350;'><b>❌ Error:</b> {text}</p>"
-        )
+        self.chat_display.append(f"<p style='color: #EF5350;'><b>❌ Error:</b> {text}</p>")

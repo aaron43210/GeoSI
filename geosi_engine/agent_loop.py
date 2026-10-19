@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Agent Loop — the supervised pipeline for one request
 ═══════════════════════════════════════════════════════════
@@ -46,9 +45,7 @@ _VERBS = (
     "merge|join|create|make|convert|simplify|smooth|fix|generate|filter|keep|sum|export|save|"
     "centroid|union|difference|densify|explode|rasterize|polygonize|aggregate"
 )
-_SPLIT_RE = re.compile(
-    rf",?\s+(?:and then|then|after that|and|,)\s+(?=(?:{_VERBS})\b)", re.IGNORECASE
-)
+_SPLIT_RE = re.compile(rf",?\s+(?:and then|then|after that|and|,)\s+(?=(?:{_VERBS})\b)", re.IGNORECASE)
 # References to the previous step's output inside a later sub-task
 _REF_RE = re.compile(
     r"\b(the (?:result|output|outputs|new layer|previous layer|buffer(?:ed)?(?: layer| zones?| areas?| polygons?)?)"
@@ -80,6 +77,7 @@ class LoopReport:
 @dataclass
 class PausedRun:
     """Where a run stopped for approval, so it can continue exactly there."""
+
     query: str
     request: Any
     plan: ExecutionPlan
@@ -131,6 +129,7 @@ class AgentLoop:
         if self._checkpoints is None:
             try:
                 from geosi_engine.checkpoints import CheckpointManager
+
                 self._checkpoints = CheckpointManager()
             except Exception:
                 self._checkpoints = None
@@ -175,8 +174,13 @@ class AgentLoop:
             msg = "✋ The step was rejected, so it was not run and nothing was changed."
             return ExecutionResult(success=False, answer=msg, error="rejected by user", denied=True)
 
-        result = self._run_single(paused.query, request=paused.request, resume_plan=paused.plan,
-                                  start_attempt=paused.attempt_no, report=paused.report)
+        result = self._run_single(
+            paused.query,
+            request=paused.request,
+            resume_plan=paused.plan,
+            start_attempt=paused.attempt_no,
+            report=paused.report,
+        )
         if paused.pieces and result.approval_pending is None:
             if not result.success:
                 return self._chain_failed(paused.pieces, paused.piece_index, paused.reasoning, result)
@@ -184,15 +188,29 @@ class AgentLoop:
             paused.done.append(paused.pieces[paused.piece_index])
             paused.reasoning.append(f"── Sub-task {paused.piece_index + 1}: {paused.query}\n{result.reasoning}")
             prev = self._register_intermediate(out) if isinstance(out, Layer) else None
-            return self._run_chain(paused.query, paused.pieces, start=paused.piece_index + 1, prev=prev,
-                                   done=paused.done, reasoning=paused.reasoning, last=result)
+            return self._run_chain(
+                paused.query,
+                paused.pieces,
+                start=paused.piece_index + 1,
+                prev=prev,
+                done=paused.done,
+                reasoning=paused.reasoning,
+                last=result,
+            )
         return result
 
     # ── multi-step requests ───────────────────────────────────────────
 
-    def _run_chain(self, query: str, pieces: List[str], start: int = 0, prev: Optional[Layer] = None,
-                   done: Optional[List[str]] = None, reasoning: Optional[List[str]] = None,
-                   last: Optional[ExecutionResult] = None) -> ExecutionResult:
+    def _run_chain(
+        self,
+        query: str,
+        pieces: List[str],
+        start: int = 0,
+        prev: Optional[Layer] = None,
+        done: Optional[List[str]] = None,
+        reasoning: Optional[List[str]] = None,
+        last: Optional[ExecutionResult] = None,
+    ) -> ExecutionResult:
         """Run sub-tasks in order, each verified, feeding outputs forward."""
         done = done if done is not None else []
         reasoning = reasoning if reasoning is not None else []
@@ -253,8 +271,14 @@ class AgentLoop:
 
     # ── one task: plan → check → execute → verify → re-plan ───────────
 
-    def _run_single(self, query: str, request: Any = None, resume_plan: Optional[ExecutionPlan] = None,
-                    start_attempt: int = 1, report: Optional[LoopReport] = None) -> ExecutionResult:
+    def _run_single(
+        self,
+        query: str,
+        request: Any = None,
+        resume_plan: Optional[ExecutionPlan] = None,
+        start_attempt: int = 1,
+        report: Optional[LoopReport] = None,
+    ) -> ExecutionResult:
         team = self.team
         state = self.engine.state
         request = request if request is not None else self.engine.agent.parse(query, state)
@@ -294,7 +318,8 @@ class AgentLoop:
                 result = self.engine.executor.run(plan, step_runner=team.gis.execute_step)
                 if result.approval_pending:
                     self.paused[result.approval_pending] = PausedRun(
-                        query=query, request=request, plan=plan, attempt_no=attempt_no, report=report)
+                        query=query, request=request, plan=plan, attempt_no=attempt_no, report=report
+                    )
                     return result
                 if result.denied:
                     return result  # policy refusals are final, never re-planned around
@@ -303,8 +328,7 @@ class AgentLoop:
                 if verdict.passed:
                     result.warnings.extend(f.message for f in verdict.warnings())
             else:
-                result = ExecutionResult(success=False, answer=problem, error=problem,
-                                         plan_source=plan.plan_source)
+                result = ExecutionResult(success=False, answer=problem, error=problem, plan_source=plan.plan_source)
 
             report.attempts.append(Attempt(plan, result, problem))
             if problem is None:
@@ -337,8 +361,7 @@ class AgentLoop:
             answer = team.reporter.answer(query, final.plan, result)
             if answer:
                 result.answer = answer
-        result.report = team.reporter.render_summary(final.plan, result,
-                                                     getattr(self.engine, "_session_id", ""))
+        result.report = team.reporter.render_summary(final.plan, result, getattr(self.engine, "_session_id", ""))
         return result
 
     # ── Conversational / code-gen fallback ───────────────────────────────
@@ -371,9 +394,7 @@ class AgentLoop:
         "Load a layer to run spatial operations, or just ask me anything!"
     )
 
-    def _conversational_answer(
-        self, query: str, plan: "ExecutionPlan"
-    ) -> Optional["ExecutionResult"]:
+    def _conversational_answer(self, query: str, plan: ExecutionPlan) -> Optional[ExecutionResult]:
         """
         Return a conversational ExecutionResult for non-spatial queries so the
         engine never blocks on "no layers loaded."
@@ -393,14 +414,12 @@ class AgentLoop:
         # 1. Greetings
         if self._GREET_RE.match(q):
             layers = self.engine.state.list_layers()
-            footer = (
-                f"\n\n📂 Loaded layers: {', '.join(layers)}"
-                if layers else "\n\n📂 No layers loaded yet."
-            )
+            footer = f"\n\n📂 Loaded layers: {', '.join(layers)}" if layers else "\n\n📂 No layers loaded yet."
             return ExecutionResult(success=True, answer=self._GREETING_REPLY + footer)
 
         needs_layers = getattr(self.engine.agent, "_query_needs_layers", lambda *_: True)(
-            q, self.engine.state.list_layers())
+            q, self.engine.state.list_layers()
+        )
         is_code = bool(self._CODE_RE.search(q))
         is_knowledge = bool(self._KNOWLEDGE_RE.search(q))
 
@@ -443,8 +462,8 @@ class AgentLoop:
         which provider answered (e.g. "ollama:llama3:latest").
         Returns ("", "") on failure.
         """
-        import urllib.request
         import json
+        import urllib.request
 
         agent = getattr(self.engine, "agent", None)
         if agent is None:
@@ -473,12 +492,14 @@ class AgentLoop:
         endpoint = getattr(agent, "_ollama_endpoint", "http://localhost:11434").rstrip("/")
         model = getattr(agent, "_ollama_model", "llama3")
         try:
-            payload = json.dumps({
-                "model": model,
-                "prompt": prompt,
-                "stream": False,
-                "options": {"temperature": 0.2},
-            }).encode("utf-8")
+            payload = json.dumps(
+                {
+                    "model": model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"temperature": 0.2},
+                }
+            ).encode("utf-8")
             req = urllib.request.Request(
                 f"{endpoint}/api/generate",
                 data=payload,
@@ -498,86 +519,98 @@ class AgentLoop:
 
     # Offline code templates prioritized when user asks for code
     _OFFLINE_CODE_SNIPPETS: list = [
-        (re.compile(r"\b(?:rasterio|raster.*ndvi|ndvi.*raster|band\s*4|band\s*8)\b", re.I),
-         "```python\nimport numpy as np\nimport rasterio\n\n"
-         "# Open Red (e.g. Band 4) and NIR (e.g. Band 8) GeoTIFFs\n"
-         "with rasterio.open('red_band4.tif') as red_src, rasterio.open('nir_band8.tif') as nir_src:\n"
-         "    red = red_src.read(1).astype('float32')\n"
-         "    nir = nir_src.read(1).astype('float32')\n"
-         "    meta = nir_src.meta.copy()\n\n"
-         "# Calculate NDVI: (NIR - Red) / (NIR + Red)\n"
-         "# Avoid zero-division warnings\n"
-         "denom = nir + red\n"
-         "ndvi = np.where(denom == 0, 0, (nir - red) / denom)\n"
-         "ndvi = np.clip(ndvi, -1.0, 1.0)\n\n"
-         "# Write NDVI result raster\n"
-         "meta.update(dtype=rasterio.float32, count=1, nodata=0.0)\n"
-         "with rasterio.open('ndvi_output.tif', 'w', **meta) as dst:\n"
-         "    dst.write(ndvi.astype('float32'), 1)\n\n"
-         "print('NDVI calculation complete: ndvi_output.tif')\n```"),
-        (re.compile(r"\b(?:geopandas|dataframe|gdf)\b", re.I),
-         "```python\nimport geopandas as gpd\nimport pandas as pd\nfrom shapely.geometry import Point\n\n"
-         "# Sample data with 5 points and attribute fields\n"
-         "data = {\n"
-         "    'id': [1, 2, 3, 4, 5],\n"
-         "    'site_name': ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo'],\n"
-         "    'elevation_m': [120.5, 230.1, 85.0, 310.4, 150.2],\n"
-         "    'status': ['Active', 'Active', 'Inactive', 'Active', 'Pending'],\n"
-         "    'longitude': [-122.4194, -122.4089, -122.4285, -122.4350, -122.4010],\n"
-         "    'latitude':  [ 37.7749,   37.7833,   37.7650,   37.7900,   37.7700],\n"
-         "}\n\n"
-         "df = pd.DataFrame(data)\n"
-         "geometry = [Point(xy) for xy in zip(df['longitude'], df['latitude'])]\n"
-         "gdf = gpd.GeoDataFrame(df, geometry=geometry, crs='EPSG:4326')\n\n"
-         "print('Created GeoDataFrame:')\n"
-         "print(gdf.head())\n\n"
-         "# Optional: Export to GeoPackage or GeoJSON\n"
-         "# gdf.to_file('sample_points.gpkg', layer='sample_points', driver='GPKG')\n```"),
-        (re.compile(r"\b(?:pyqgis|memory\s+layer|scratch\s+layer)\b", re.I),
-         "```python\nfrom qgis.core import QgsVectorLayer, QgsField, QgsFeature, QgsGeometry, "
-         "QgsPointXY, QgsProject\nfrom qgis.PyQt.QtCore import QVariant\n\n"
-         "# Create memory layer with Point geometry in WGS84\n"
-         "layer = QgsVectorLayer('Point?crs=EPSG:4326', 'sample_points', 'memory')\n"
-         "prov = layer.dataProvider()\n\n"
-         "# Add attribute fields\n"
-         "prov.addAttributes([\n"
-         "    QgsField('id', QVariant.Int),\n"
-         "    QgsField('name', QVariant.String),\n"
-         "    QgsField('value', QVariant.Double)\n"
-         "])\n"
-         "layer.updateFields()\n\n"
-         "# Add a sample feature\n"
-         "feat = QgsFeature()\n"
-         "feat.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(-122.4194, 37.7749)))\n"
-         "feat.setAttributes([1, 'Site Alpha', 42.5])\n"
-         "prov.addFeatures([feat])\n"
-         "layer.updateExtents()\n\n"
-         "# Add to current QGIS project\n"
-         "QgsProject.instance().addMapLayer(layer)\n"
-         "print('Memory layer added to canvas.')\n```"),
+        (
+            re.compile(r"\b(?:rasterio|raster.*ndvi|ndvi.*raster|band\s*4|band\s*8)\b", re.I),
+            "```python\nimport numpy as np\nimport rasterio\n\n"
+            "# Open Red (e.g. Band 4) and NIR (e.g. Band 8) GeoTIFFs\n"
+            "with rasterio.open('red_band4.tif') as red_src, rasterio.open('nir_band8.tif') as nir_src:\n"
+            "    red = red_src.read(1).astype('float32')\n"
+            "    nir = nir_src.read(1).astype('float32')\n"
+            "    meta = nir_src.meta.copy()\n\n"
+            "# Calculate NDVI: (NIR - Red) / (NIR + Red)\n"
+            "# Avoid zero-division warnings\n"
+            "denom = nir + red\n"
+            "ndvi = np.where(denom == 0, 0, (nir - red) / denom)\n"
+            "ndvi = np.clip(ndvi, -1.0, 1.0)\n\n"
+            "# Write NDVI result raster\n"
+            "meta.update(dtype=rasterio.float32, count=1, nodata=0.0)\n"
+            "with rasterio.open('ndvi_output.tif', 'w', **meta) as dst:\n"
+            "    dst.write(ndvi.astype('float32'), 1)\n\n"
+            "print('NDVI calculation complete: ndvi_output.tif')\n```",
+        ),
+        (
+            re.compile(r"\b(?:geopandas|dataframe|gdf)\b", re.I),
+            "```python\nimport geopandas as gpd\nimport pandas as pd\nfrom shapely.geometry import Point\n\n"
+            "# Sample data with 5 points and attribute fields\n"
+            "data = {\n"
+            "    'id': [1, 2, 3, 4, 5],\n"
+            "    'site_name': ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo'],\n"
+            "    'elevation_m': [120.5, 230.1, 85.0, 310.4, 150.2],\n"
+            "    'status': ['Active', 'Active', 'Inactive', 'Active', 'Pending'],\n"
+            "    'longitude': [-122.4194, -122.4089, -122.4285, -122.4350, -122.4010],\n"
+            "    'latitude':  [ 37.7749,   37.7833,   37.7650,   37.7900,   37.7700],\n"
+            "}\n\n"
+            "df = pd.DataFrame(data)\n"
+            "geometry = [Point(xy) for xy in zip(df['longitude'], df['latitude'])]\n"
+            "gdf = gpd.GeoDataFrame(df, geometry=geometry, crs='EPSG:4326')\n\n"
+            "print('Created GeoDataFrame:')\n"
+            "print(gdf.head())\n\n"
+            "# Optional: Export to GeoPackage or GeoJSON\n"
+            "# gdf.to_file('sample_points.gpkg', layer='sample_points', driver='GPKG')\n```",
+        ),
+        (
+            re.compile(r"\b(?:pyqgis|memory\s+layer|scratch\s+layer)\b", re.I),
+            "```python\nfrom qgis.core import QgsVectorLayer, QgsField, QgsFeature, QgsGeometry, "
+            "QgsPointXY, QgsProject\nfrom qgis.PyQt.QtCore import QVariant\n\n"
+            "# Create memory layer with Point geometry in WGS84\n"
+            "layer = QgsVectorLayer('Point?crs=EPSG:4326', 'sample_points', 'memory')\n"
+            "prov = layer.dataProvider()\n\n"
+            "# Add attribute fields\n"
+            "prov.addAttributes([\n"
+            "    QgsField('id', QVariant.Int),\n"
+            "    QgsField('name', QVariant.String),\n"
+            "    QgsField('value', QVariant.Double)\n"
+            "])\n"
+            "layer.updateFields()\n\n"
+            "# Add a sample feature\n"
+            "feat = QgsFeature()\n"
+            "feat.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(-122.4194, 37.7749)))\n"
+            "feat.setAttributes([1, 'Site Alpha', 42.5])\n"
+            "prov.addFeatures([feat])\n"
+            "layer.updateExtents()\n\n"
+            "# Add to current QGIS project\n"
+            "QgsProject.instance().addMapLayer(layer)\n"
+            "print('Memory layer added to canvas.')\n```",
+        ),
     ]
 
     # Common offline answers for frequently-asked GIS questions
     _OFFLINE_FACTS: list = [
-        (re.compile(r"\bNDVI\b", re.I),
-         "**NDVI (Normalized Difference Vegetation Index)**\n\n"
-         "Formula: `(NIR − Red) / (NIR + Red)`\n\n"
-         "Values range from −1 to +1. Values above 0.3 typically indicate healthy "
-         "vegetation. Use NIR and Red bands from Sentinel-2 (B8, B4) or Landsat (B5, B4)."),
-        (re.compile(r"\bCRS\b|\bcoordinate reference system\b", re.I),
-         "**CRS (Coordinate Reference System)**\n\n"
-         "Defines how spatial data relates to Earth's surface. Common CRS:\n"
-         "• **EPSG:4326** — WGS84 geographic (lon/lat, degrees)\n"
-         "• **EPSG:3857** — Web Mercator (meters, used by web maps)\n"
-         "• **EPSG:32633** — UTM Zone 33N (good for central Europe, meters)\n\n"
-         "Always reproject layers to the same CRS before running spatial operations."),
-        (re.compile(r"\bshapefile\b|\bGeoPackage\b|\bGeoJSON\b", re.I),
-         "**Common GIS formats:**\n\n"
-         "• **Shapefile (.shp)** — legacy multi-file format, 2 GB limit, max 10-char field names\n"
-         "• **GeoPackage (.gpkg)** — modern SQLite-based, single file, no size limit ✓\n"
-         "• **GeoJSON (.geojson)** — JSON-based, human-readable, WGS84 by convention\n"
-         "• **FlatGeobuf (.fgb)** — binary, streamable, very fast for large datasets\n\n"
-         "Prefer GeoPackage for production workflows; GeoJSON for web sharing."),
+        (
+            re.compile(r"\bNDVI\b", re.I),
+            "**NDVI (Normalized Difference Vegetation Index)**\n\n"
+            "Formula: `(NIR − Red) / (NIR + Red)`\n\n"
+            "Values range from −1 to +1. Values above 0.3 typically indicate healthy "
+            "vegetation. Use NIR and Red bands from Sentinel-2 (B8, B4) or Landsat (B5, B4).",
+        ),
+        (
+            re.compile(r"\bCRS\b|\bcoordinate reference system\b", re.I),
+            "**CRS (Coordinate Reference System)**\n\n"
+            "Defines how spatial data relates to Earth's surface. Common CRS:\n"
+            "• **EPSG:4326** — WGS84 geographic (lon/lat, degrees)\n"
+            "• **EPSG:3857** — Web Mercator (meters, used by web maps)\n"
+            "• **EPSG:32633** — UTM Zone 33N (good for central Europe, meters)\n\n"
+            "Always reproject layers to the same CRS before running spatial operations.",
+        ),
+        (
+            re.compile(r"\bshapefile\b|\bGeoPackage\b|\bGeoJSON\b", re.I),
+            "**Common GIS formats:**\n\n"
+            "• **Shapefile (.shp)** — legacy multi-file format, 2 GB limit, max 10-char field names\n"
+            "• **GeoPackage (.gpkg)** — modern SQLite-based, single file, no size limit ✓\n"
+            "• **GeoJSON (.geojson)** — JSON-based, human-readable, WGS84 by convention\n"
+            "• **FlatGeobuf (.fgb)** — binary, streamable, very fast for large datasets\n\n"
+            "Prefer GeoPackage for production workflows; GeoJSON for web sharing.",
+        ),
     ]
 
     def _offline_answer(self, query: str) -> Optional[str]:
@@ -596,8 +629,7 @@ class AgentLoop:
         layers = self.engine.state.list_layers()
         sid = getattr(self.engine, "_session_id", "")
         if feedback:
-            return self.team.planning.plan(query=query, available_layers=layers, session_id=sid,
-                                           feedback=feedback)
+            return self.team.planning.plan(query=query, available_layers=layers, session_id=sid, feedback=feedback)
         return self.team.planning.plan(query=query, available_layers=layers, session_id=sid)
 
     def _check_plan(self, plan: ExecutionPlan) -> Optional[str]:

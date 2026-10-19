@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Tests for Sprint 1-5 modules:
   Sprint 1 — geosi_data (basemaps, osm, geocoding)
@@ -8,22 +7,23 @@ Tests for Sprint 1-5 modules:
   Sprint 5 — geosi_engine.security (ASTGuard)
   Tool     — geosi_engine.tools.data_connectors
 """
+
 from __future__ import annotations
 
-import ast
 import sys
 import types
 import unittest
 from unittest.mock import MagicMock, patch
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Sprint 5 — ASTGuard (no QGIS needed)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestASTGuard(unittest.TestCase):
     def setUp(self):
         from geosi_engine.security import ASTGuard
+
         self.guard = ASTGuard
 
     def test_safe_code_passes(self):
@@ -86,6 +86,7 @@ class TestASTGuard(unittest.TestCase):
 # Sprint 2 — CheckpointManager (mocked QGIS)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestCheckpointManager(unittest.TestCase):
     def setUp(self):
         # Provide minimal QGIS stubs
@@ -101,11 +102,13 @@ class TestCheckpointManager(unittest.TestCase):
         sys.modules["qgis.core"] = qgis_core
 
         from geosi_engine.checkpoints import CheckpointManager
+
         # CheckpointManager(max_checkpoints) — no snapshot_dir param
         self.mgr = CheckpointManager(max_checkpoints=10)
 
     def test_create_snapshot_empty_project(self):
         from qgis.core import QgsProject
+
         QgsProject.instance.return_value.mapLayers.return_value = {}
         cp = self.mgr.create_snapshot("test query")
         self.assertIsNotNone(cp.checkpoint_id)
@@ -120,8 +123,10 @@ class TestCheckpointManager(unittest.TestCase):
 
     def test_eviction_keeps_max_checkpoints(self):
         from qgis.core import QgsProject
+
         QgsProject.instance.return_value.mapLayers.return_value = {}
         from geosi_engine.checkpoints import CheckpointManager
+
         mgr = CheckpointManager(max_checkpoints=3)
         for i in range(5):
             mgr.create_snapshot(f"query {i}")
@@ -132,23 +137,28 @@ class TestCheckpointManager(unittest.TestCase):
 # Sprint 1 — basemaps (QGIS-free paths)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestBasemaps(unittest.TestCase):
     def test_resolve_provider_exact(self):
         from geosi_data.basemaps import resolve_provider
+
         self.assertEqual(resolve_provider("osm"), "osm")
 
     def test_resolve_provider_fuzzy(self):
         from geosi_data.basemaps import resolve_provider
+
         self.assertEqual(resolve_provider("satellite"), "esri_satellite")
 
     def test_resolve_provider_fallback(self):
         from geosi_data.basemaps import resolve_provider
+
         # resolve_provider defaults to "osm" for unrecognized names
         result = resolve_provider("totally_unknown_provider_xyz999")
         self.assertEqual(result, "osm")
 
     def test_provider_dict_populated(self):
         from geosi_data.basemaps import PROVIDERS
+
         self.assertGreaterEqual(len(PROVIDERS), 10)
         for key, val in PROVIDERS.items():
             self.assertIn("url", val, f"Provider '{key}' missing 'url'")
@@ -156,6 +166,7 @@ class TestBasemaps(unittest.TestCase):
     def test_add_basemap_no_qgis(self):
         # When QGIS modules are unavailable add_basemap should return None, not raise
         from geosi_data.basemaps import add_basemap
+
         # Patch the qgis.core import inside add_basemap to simulate no QGIS
         with patch.dict("sys.modules", {"qgis": None, "qgis.core": None}):
             try:
@@ -169,6 +180,7 @@ class TestBasemaps(unittest.TestCase):
 # Sprint 1 — geocoding (mocked HTTP)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestGeocoding(unittest.TestCase):
     def _mock_response(self, body: str, status: int = 200):
         resp = MagicMock()
@@ -180,9 +192,11 @@ class TestGeocoding(unittest.TestCase):
 
     def test_geocode_nominatim_success(self):
         import json
+
         payload = json.dumps([{"lon": "-0.1276", "lat": "51.5074", "display_name": "London, UK"}])
         with patch("urllib.request.urlopen", return_value=self._mock_response(payload)):
             from geosi_data.geocoding import geocode
+
             lon, lat, name = geocode("London", provider="nominatim")
         self.assertAlmostEqual(lon, -0.1276)
         self.assertAlmostEqual(lat, 51.5074)
@@ -190,17 +204,19 @@ class TestGeocoding(unittest.TestCase):
 
     def test_geocode_empty_result_raises_value_error(self):
         # geocode() raises ValueError when Nominatim returns empty list
-        with patch("geosi_data.geocoding.urllib.request.urlopen",
-                   return_value=self._mock_response("[]")):
+        with patch("geosi_data.geocoding.urllib.request.urlopen", return_value=self._mock_response("[]")):
             from geosi_data.geocoding import geocode
+
             with self.assertRaises(ValueError):
                 geocode("ZZZnonexistent9999")
 
     def test_reverse_geocode(self):
         import json
+
         payload = json.dumps({"display_name": "Big Ben, Westminster, London"})
         with patch("urllib.request.urlopen", return_value=self._mock_response(payload)):
             from geosi_data.geocoding import reverse_geocode
+
             name = reverse_geocode(51.5007, -0.1246)
         self.assertIn("London", name)
 
@@ -209,19 +225,27 @@ class TestGeocoding(unittest.TestCase):
 # Sprint 1 — OSM fetcher (mocked HTTP)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestOSMFetcher(unittest.TestCase):
     def test_tag_presets_populated(self):
         from geosi_data.osm import TAG_PRESETS
+
         self.assertGreaterEqual(len(TAG_PRESETS), 10)
         self.assertIn("hospitals", TAG_PRESETS)
         self.assertIn("schools", TAG_PRESETS)
 
     def test_overpass_to_geojson_nodes(self):
         from geosi_data.osm import _overpass_to_geojson
+
         data = {
             "elements": [
-                {"type": "node", "id": 1, "lat": 51.5, "lon": -0.12,
-                 "tags": {"name": "Test Hospital", "amenity": "hospital"}},
+                {
+                    "type": "node",
+                    "id": 1,
+                    "lat": 51.5,
+                    "lon": -0.12,
+                    "tags": {"name": "Test Hospital", "amenity": "hospital"},
+                },
             ]
         }
         fc = _overpass_to_geojson(data)
@@ -233,6 +257,7 @@ class TestOSMFetcher(unittest.TestCase):
 
     def test_overpass_query_contains_tags(self):
         from geosi_data.osm import _overpass_query
+
         # tags is List[Dict[str, str]] — wrap in a list
         tags = [{"amenity": "hospital"}]
         bbox = (51.4, -0.2, 51.6, 0.0)
@@ -244,6 +269,7 @@ class TestOSMFetcher(unittest.TestCase):
     def test_unknown_category_returns_none_without_bbox(self):
         # Unknown category without location/bbox → returns None (logs error)
         from geosi_data.osm import fetch_osm_features
+
         result = fetch_osm_features(category="nonexistent_category_xyz999_unique")
         # Either None (no bbox) or a layer if Overpass reachable; never raises
         self.assertIsNone(result)
@@ -253,24 +279,39 @@ class TestOSMFetcher(unittest.TestCase):
 # Sprint 3 — cartography styling (mocked QGIS)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _stub_qgis_renderer_modules():
     """Install minimal QGIS stubs needed by styling.py."""
     for mod_name in [
-        "qgis", "qgis.core",
-        "PyQt5", "PyQt5.QtGui", "PyQt5.QtCore",
-        "qgis.PyQt", "qgis.PyQt.QtGui", "qgis.PyQt.QtCore",
+        "qgis",
+        "qgis.core",
+        "PyQt5",
+        "PyQt5.QtGui",
+        "PyQt5.QtCore",
+        "qgis.PyQt",
+        "qgis.PyQt.QtGui",
+        "qgis.PyQt.QtCore",
     ]:
         sys.modules.setdefault(mod_name, types.ModuleType(mod_name))
 
     core = sys.modules["qgis.core"]
     for cls_name in [
-        "QgsGraduatedSymbolRenderer", "QgsCategorizedSymbolRenderer",
-        "QgsRendererCategory", "QgsSymbol", "QgsColorRampShader",
-        "QgsSingleBandPseudoColorRenderer", "QgsRasterShader",
-        "QgsPalLayerSettings", "QgsTextFormat", "QgsVectorLayerSimpleLabeling",
-        "QgsClassificationQuantile", "QgsClassificationJenks",
-        "QgsClassificationEqualInterval", "QgsClassificationStandardDeviation",
-        "QgsStyle", "QgsGradientColorRamp",
+        "QgsGraduatedSymbolRenderer",
+        "QgsCategorizedSymbolRenderer",
+        "QgsRendererCategory",
+        "QgsSymbol",
+        "QgsColorRampShader",
+        "QgsSingleBandPseudoColorRenderer",
+        "QgsRasterShader",
+        "QgsPalLayerSettings",
+        "QgsTextFormat",
+        "QgsVectorLayerSimpleLabeling",
+        "QgsClassificationQuantile",
+        "QgsClassificationJenks",
+        "QgsClassificationEqualInterval",
+        "QgsClassificationStandardDeviation",
+        "QgsStyle",
+        "QgsGradientColorRamp",
     ]:
         if not hasattr(core, cls_name):
             setattr(core, cls_name, MagicMock())
@@ -282,44 +323,50 @@ class TestCartographyStyling(unittest.TestCase):
 
     def test_ramps_dict_populated(self):
         from geosi_engine.cartography.styling import RAMPS
+
         self.assertGreaterEqual(len(RAMPS), 5)
         self.assertIn("viridis", RAMPS)
         self.assertIn("magma", RAMPS)
 
-    def test_apply_graduated_calls_renderer(self):
+    # Without a real QGIS the styling helpers must degrade gracefully:
+    # return False, never raise, never touch the layer. Real rendering is
+    # covered by tests/qgis_integration.py inside QGIS.
+    def test_apply_graduated_degrades_without_qgis(self):
         from geosi_engine.cartography import styling
+
         layer = MagicMock()
         layer.fields.return_value.indexOf.return_value = 0
-        # Should not raise even with full mocks
-        try:
-            styling.apply_graduated_symbology(layer, "population")
-        except Exception:
-            pass  # QGIS internals mocked; we just verify no import error
+        self.assertFalse(styling.apply_graduated_symbology(layer, "population"))
+        layer.setRenderer.assert_not_called()
 
-    def test_apply_categorized_calls_renderer(self):
+    def test_apply_categorized_degrades_without_qgis(self):
         from geosi_engine.cartography import styling
+
         layer = MagicMock()
         layer.uniqueValues.return_value = ["A", "B", "C"]
-        try:
-            styling.apply_categorized_symbology(layer, "category")
-        except Exception:
-            pass
+        self.assertFalse(styling.apply_categorized_symbology(layer, "category"))
+        layer.setRenderer.assert_not_called()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Data connector tools — PortableTool spec contract
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestDataConnectorSpecs(unittest.TestCase):
     """Verify each tool has a valid spec() and is discoverable."""
 
     def _tool_classes(self):
         from geosi_engine.tools.data_connectors import (
-            AddBasemapTool, FetchOSMTool, GeocodeTool, ZoomToPlaceTool,
-            ApplyStyleTool, ExportMapTool,
+            AddBasemapTool,
+            ApplyStyleTool,
+            ExportMapTool,
+            FetchOSMTool,
+            GeocodeTool,
+            ZoomToPlaceTool,
         )
-        return [AddBasemapTool, FetchOSMTool, GeocodeTool, ZoomToPlaceTool,
-                ApplyStyleTool, ExportMapTool]
+
+        return [AddBasemapTool, FetchOSMTool, GeocodeTool, ZoomToPlaceTool, ApplyStyleTool, ExportMapTool]
 
     def test_all_have_spec(self):
         for cls in self._tool_classes():
@@ -334,6 +381,7 @@ class TestDataConnectorSpecs(unittest.TestCase):
 
     def test_tools_discoverable_by_registry(self):
         from geosi_engine.registry import ToolRegistry
+
         reg = ToolRegistry()
         count = reg.discover_portable_tools()
         # data_connectors adds 6 tools; combined with existing portables it must be > 0
@@ -344,25 +392,31 @@ class TestDataConnectorSpecs(unittest.TestCase):
         self.assertIsNotNone(reg.get_tool("geocode_address"))
 
     def test_fetch_osm_returns_error_on_bad_category(self):
-        tool = __import__(
-            "geosi_engine.tools.data_connectors", fromlist=["FetchOSMTool"]
-        ).FetchOSMTool()
+        tool = __import__("geosi_engine.tools.data_connectors", fromlist=["FetchOSMTool"]).FetchOSMTool()
         result = tool.execute(category="totally_unknown_category_xyz99")
         self.assertFalse(result.success)
         self.assertIsNotNone(result.error)
 
     def test_geocode_tool_mocked_success(self):
         import json
+
         payload = json.dumps([{"lon": "2.3522", "lat": "48.8566", "display_name": "Paris, France"}])
 
         class _FakeResp:
             status = 200
-            def read(self): return payload.encode()
-            def __enter__(self): return self
-            def __exit__(self, *a): return False
+
+            def read(self):
+                return payload.encode()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
 
         with patch("urllib.request.urlopen", return_value=_FakeResp()):
             from geosi_engine.tools.data_connectors import GeocodeTool
+
             result = GeocodeTool().execute(address="Paris")
         self.assertTrue(result.success)
         self.assertAlmostEqual(result.output["lon"], 2.3522)
@@ -377,9 +431,11 @@ if __name__ == "__main__":
 # Upgraded ASTGuard — comprehensive blocked list from TerraLab analysis
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestASTGuardExpanded(unittest.TestCase):
     def setUp(self):
         from geosi_engine.security import ASTGuard
+
         self.guard = ASTGuard
 
     def test_blocks_threading(self):
@@ -430,9 +486,11 @@ class TestASTGuardExpanded(unittest.TestCase):
 # New data connector tools — Overture + WFS specs
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestNewDataConnectorSpecs(unittest.TestCase):
     def test_fetch_overture_spec(self):
         from geosi_engine.tools.data_connectors import FetchOvertureTool
+
         spec = FetchOvertureTool().spec()
         self.assertEqual(spec.name, "fetch_overture")
         self.assertEqual(spec.category, "data")
@@ -441,6 +499,7 @@ class TestNewDataConnectorSpecs(unittest.TestCase):
 
     def test_fetch_wfs_spec(self):
         from geosi_engine.tools.data_connectors import FetchWFSTool
+
         spec = FetchWFSTool().spec()
         self.assertEqual(spec.name, "fetch_wfs")
         required = [p.name for p in spec.parameters if p.required]
@@ -449,22 +508,22 @@ class TestNewDataConnectorSpecs(unittest.TestCase):
 
     def test_fetch_overture_no_bbox_no_location_fails(self):
         from geosi_engine.tools.data_connectors import FetchOvertureTool
+
         result = FetchOvertureTool().execute(theme="buildings")
         self.assertFalse(result.success)
         self.assertIn("bbox", result.error.lower() or result.error)
 
     def test_fetch_overture_with_bbox_succeeds(self):
-        import json
         # Mock geocoding not needed — bbox provided directly
         from geosi_engine.tools.data_connectors import FetchOvertureTool
-        result = FetchOvertureTool().execute(
-            theme="buildings", bbox="-0.15,51.48,0.0,51.55"
-        )
+
+        result = FetchOvertureTool().execute(theme="buildings", bbox="-0.15,51.48,0.0,51.55")
         self.assertTrue(result.success)
         self.assertIn("buildings", result.message)
 
     def test_all_tools_in_registry(self):
         from geosi_engine.registry import ToolRegistry
+
         reg = ToolRegistry()
         reg.discover_portable_tools()
         for name in ("fetch_overture", "fetch_wfs"):

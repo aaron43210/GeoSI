@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Graph Writer (Phase P9, FR-8.4)
 ════════════════════════════════════════════════════════════════════
@@ -16,6 +15,7 @@ Design:
 
 PRD references: FR-8.4, §9 (PostGIS remains system of record)
 """
+
 from __future__ import annotations
 
 import logging
@@ -26,21 +26,26 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 from geosi_data.graph_schema import (
-    NodeLabel, RelType,
-    build_agent_props, build_dataset_props,
-    build_execution_props, build_tool_props, build_workflow_props,
+    NodeLabel,
+    RelType,
+    build_agent_props,
+    build_dataset_props,
+    build_execution_props,
+    build_tool_props,
+    build_workflow_props,
 )
 
 logger = logging.getLogger("geosi_engine.graph_writer")
 
-_QUEUE_CAPACITY = 1000       # Max pending write events — O(1) bounded memory
-_FLUSH_INTERVAL_S = 2.0      # Writer thread sleep between flushes
+_QUEUE_CAPACITY = 1000  # Max pending write events — O(1) bounded memory
+_FLUSH_INTERVAL_S = 2.0  # Writer thread sleep between flushes
 
 
 @dataclass
 class GraphEvent:
     """A single graph write event."""
-    event_type: str   # "execution" | "dataset_relation" | "workflow"
+
+    event_type: str  # "execution" | "dataset_relation" | "workflow"
     payload: Dict[str, Any]
 
 
@@ -111,41 +116,66 @@ class GraphWriter:
         steps = getattr(plan, "steps", [])
         query = getattr(getattr(plan, "request", None), "query", "") or ""
 
-        self._enqueue(GraphEvent("execution", {
-            "audit_id": audit_id,
-            "plan_id": plan_id,
-            "agent_name": agent_name,
-            "status": status,
-            "session_id": session_id,
-            "duration_ms": duration_ms,
-            "query": query,
-            "step_count": len(steps),
-            "steps": [getattr(s, "tool_name", "") for s in steps],
-            "input_layers": input_layers or [],
-            "output_layer": output_layer,
-        }))
+        self._enqueue(
+            GraphEvent(
+                "execution",
+                {
+                    "audit_id": audit_id,
+                    "plan_id": plan_id,
+                    "agent_name": agent_name,
+                    "status": status,
+                    "session_id": session_id,
+                    "duration_ms": duration_ms,
+                    "query": query,
+                    "step_count": len(steps),
+                    "steps": [getattr(s, "tool_name", "") for s in steps],
+                    "input_layers": input_layers or [],
+                    "output_layer": output_layer,
+                },
+            )
+        )
 
     def record_dataset_relation(
-        self, source_name: str, source_path: str,
-        derived_name: str, derived_path: str,
+        self,
+        source_name: str,
+        source_path: str,
+        derived_name: str,
+        derived_path: str,
     ) -> None:
         """Record (derived_dataset)-[:DERIVED_FROM]->(source_dataset)."""
-        self._enqueue(GraphEvent("dataset_relation", {
-            "source_name": source_name, "source_path": source_path,
-            "derived_name": derived_name, "derived_path": derived_path,
-        }))
+        self._enqueue(
+            GraphEvent(
+                "dataset_relation",
+                {
+                    "source_name": source_name,
+                    "source_path": source_path,
+                    "derived_name": derived_name,
+                    "derived_path": derived_path,
+                },
+            )
+        )
 
     def record_dataset_similarity(
-        self, name_a: str, path_a: str,
-        name_b: str, path_b: str,
+        self,
+        name_a: str,
+        path_a: str,
+        name_b: str,
+        path_b: str,
         similarity: float,
     ) -> None:
         """Record (dataset_a)-[:RELATED_TO {similarity}]->(dataset_b) for GraphRAG."""
-        self._enqueue(GraphEvent("dataset_similarity", {
-            "name_a": name_a, "path_a": path_a,
-            "name_b": name_b, "path_b": path_b,
-            "similarity": similarity,
-        }))
+        self._enqueue(
+            GraphEvent(
+                "dataset_similarity",
+                {
+                    "name_a": name_a,
+                    "path_a": path_a,
+                    "name_b": name_b,
+                    "path_b": path_b,
+                    "similarity": similarity,
+                },
+            )
+        )
 
     def stop(self) -> None:
         """Gracefully stop the writer thread."""
@@ -157,9 +187,7 @@ class GraphWriter:
 
     def _start(self) -> None:
         self._running = True
-        self._thread = threading.Thread(
-            target=self._writer_loop, daemon=True, name="graph-writer"
-        )
+        self._thread = threading.Thread(target=self._writer_loop, daemon=True, name="graph-writer")
         self._thread.start()
         logger.debug("Graph writer thread started.")
 
@@ -169,6 +197,7 @@ class GraphWriter:
         Batches multiple events per transaction for efficiency.
         """
         from geosi_data.neo4j_client import get_neo4j_client
+
         while self._running:
             time.sleep(_FLUSH_INTERVAL_S)
             batch: list[GraphEvent] = []
@@ -203,33 +232,54 @@ class GraphWriter:
         # Agent node
         client.upsert_node(NodeLabel.AGENT, "name", build_agent_props(p["agent_name"]))
         # Workflow node
-        client.upsert_node(NodeLabel.WORKFLOW, "plan_id", build_workflow_props(
-            p["plan_id"], p.get("query", ""), p.get("step_count", 0), p.get("session_id", "")
-        ))
+        client.upsert_node(
+            NodeLabel.WORKFLOW,
+            "plan_id",
+            build_workflow_props(p["plan_id"], p.get("query", ""), p.get("step_count", 0), p.get("session_id", "")),
+        )
         # Execution node
-        client.upsert_node(NodeLabel.EXECUTION, "audit_id", build_execution_props(
-            p["audit_id"], p["plan_id"], p.get("session_id", ""),
-            p.get("status", ""), p.get("duration_ms", 0.0),
-        ))
+        client.upsert_node(
+            NodeLabel.EXECUTION,
+            "audit_id",
+            build_execution_props(
+                p["audit_id"],
+                p["plan_id"],
+                p.get("session_id", ""),
+                p.get("status", ""),
+                p.get("duration_ms", 0.0),
+            ),
+        )
         # Tool nodes + Workflow-[:CONTAINS]->Tool
         for tool_name in p.get("steps", []):
             if tool_name:
                 client.upsert_node(NodeLabel.TOOL, "tool_id", build_tool_props(tool_name))
                 client.upsert_relationship(
-                    NodeLabel.WORKFLOW, "plan_id", p["plan_id"],
-                    NodeLabel.TOOL, "tool_id", tool_name,
+                    NodeLabel.WORKFLOW,
+                    "plan_id",
+                    p["plan_id"],
+                    NodeLabel.TOOL,
+                    "tool_id",
+                    tool_name,
                     RelType.CONTAINS,
                 )
         # Execution -> Agent
         client.upsert_relationship(
-            NodeLabel.EXECUTION, "audit_id", p["audit_id"],
-            NodeLabel.AGENT, "name", p["agent_name"],
+            NodeLabel.EXECUTION,
+            "audit_id",
+            p["audit_id"],
+            NodeLabel.AGENT,
+            "name",
+            p["agent_name"],
             RelType.RAN_BY,
         )
         # Execution -> Workflow
         client.upsert_relationship(
-            NodeLabel.EXECUTION, "audit_id", p["audit_id"],
-            NodeLabel.WORKFLOW, "plan_id", p["plan_id"],
+            NodeLabel.EXECUTION,
+            "audit_id",
+            p["audit_id"],
+            NodeLabel.WORKFLOW,
+            "plan_id",
+            p["plan_id"],
             RelType.FOLLOWS,
         )
         # Input datasets
@@ -238,8 +288,12 @@ class GraphWriter:
                 ds_props = build_dataset_props(name=layer_path.split("/")[-1], path=layer_path)
                 client.upsert_node(NodeLabel.DATASET, "dataset_id", ds_props)
                 client.upsert_relationship(
-                    NodeLabel.EXECUTION, "audit_id", p["audit_id"],
-                    NodeLabel.DATASET, "dataset_id", ds_props["dataset_id"],
+                    NodeLabel.EXECUTION,
+                    "audit_id",
+                    p["audit_id"],
+                    NodeLabel.DATASET,
+                    "dataset_id",
+                    ds_props["dataset_id"],
                     RelType.USED,
                 )
 
@@ -249,8 +303,12 @@ class GraphWriter:
         client.upsert_node(NodeLabel.DATASET, "dataset_id", src)
         client.upsert_node(NodeLabel.DATASET, "dataset_id", drv)
         client.upsert_relationship(
-            NodeLabel.DATASET, "dataset_id", drv["dataset_id"],
-            NodeLabel.DATASET, "dataset_id", src["dataset_id"],
+            NodeLabel.DATASET,
+            "dataset_id",
+            drv["dataset_id"],
+            NodeLabel.DATASET,
+            "dataset_id",
+            src["dataset_id"],
             RelType.DERIVED_FROM,
         )
 
@@ -260,8 +318,12 @@ class GraphWriter:
         client.upsert_node(NodeLabel.DATASET, "dataset_id", ds_a)
         client.upsert_node(NodeLabel.DATASET, "dataset_id", ds_b)
         client.upsert_relationship(
-            NodeLabel.DATASET, "dataset_id", ds_a["dataset_id"],
-            NodeLabel.DATASET, "dataset_id", ds_b["dataset_id"],
+            NodeLabel.DATASET,
+            "dataset_id",
+            ds_a["dataset_id"],
+            NodeLabel.DATASET,
+            "dataset_id",
+            ds_b["dataset_id"],
             RelType.RELATED_TO,
             rel_props={"similarity": p.get("similarity", 0.0)},
         )

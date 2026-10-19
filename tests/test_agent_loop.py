@@ -1,25 +1,47 @@
 """Unit tests for the plan → execute → verify → re-plan loop (no QGIS, no LLM)."""
 
+import os
+import tempfile
+
 from geosi_engine.agent_loop import AgentLoop
 from geosi_engine.models import (
-    AnalysisRequest, ExecutionPlan, ExecutionResult, ExecutionStatus, Layer, StepLog, ToolStep,
+    AnalysisRequest,
+    ExecutionPlan,
+    ExecutionResult,
+    ExecutionStatus,
+    Layer,
+    StepLog,
+    ToolStep,
 )
 from geosi_engine.state import StateManager
 
 
 def _layer(name, geom, n=3, kind="vector"):
-    return Layer(name=name, geometry_type=geom, feature_count=n, layer_type=kind, filepath=f"/tmp/{name}")
+    return Layer(
+        name=name,
+        geometry_type=geom,
+        feature_count=n,
+        layer_type=kind,
+        filepath=os.path.join(tempfile.gettempdir(), name),
+    )
 
 
 def _plan(tool="native_buffer"):
-    return ExecutionPlan(request=AnalysisRequest(query="q"), steps=[
-        ToolStep(step_id="step_1", tool_name=tool, parameters={"INPUT": "hospitals"}, output_name="out"),
-    ])
+    return ExecutionPlan(
+        request=AnalysisRequest(query="q"),
+        steps=[
+            ToolStep(step_id="step_1", tool_name=tool, parameters={"INPUT": "hospitals"}, output_name="out"),
+        ],
+    )
 
 
 def _result(output=None, ok=True, error=None):
-    log = StepLog(step_id="step_1", tool_name="native_buffer",
-                  status=ExecutionStatus.SUCCESS if ok else ExecutionStatus.FAILED, error_message=error)
+    log = StepLog(
+        step_id="step_1",
+        tool_name="native_buffer",
+        status=ExecutionStatus.SUCCESS if ok else ExecutionStatus.FAILED,
+        error_message=error,
+    )
     return ExecutionResult(success=ok, answer="✅ done" if ok else "❌", results={"out": output}, logs=[log])
 
 
@@ -150,8 +172,10 @@ def test_each_layer_feature_count_is_checked():
 
 
 def test_multi_step_request_is_chained():
-    eng = FakeEngine([_plan(), _plan()], [_result(_layer("buffer_result", "Polygon", 3)),
-                                          _result(_layer("dissolve_result", "Polygon", 1))])
+    eng = FakeEngine(
+        [_plan(), _plan()],
+        [_result(_layer("buffer_result", "Polygon", 3)), _result(_layer("dissolve_result", "Polygon", 1))],
+    )
     res = AgentLoop(eng).run("buffer hospitals by 200 m and dissolve the result")
     assert res.success
     assert "2 steps" in res.answer
@@ -183,6 +207,7 @@ def test_each_check_allows_different_geometry():
 
 # ── Conversational / layer-free tests ────────────────────────────────────────
 
+
 def test_greeting_answered_without_layers():
     """'hi' must succeed even with no layers loaded."""
     eng = FakeEngine([], [])  # no layers, no plans, no results
@@ -196,6 +221,7 @@ def test_gis_question_not_blocked_without_layers():
     """Educational GIS questions must not be rejected when no layers are loaded."""
     from geosi_engine.agent_loop import AgentLoop
     from geosi_engine.state import StateManager
+
     eng = FakeEngine([], [])
     eng.state = StateManager()
     res = AgentLoop(eng).run("What is NDVI?")
@@ -208,6 +234,7 @@ def test_code_gen_not_blocked_without_layers():
     """Code-gen queries must not be rejected when no layers are loaded."""
     from geosi_engine.agent_loop import AgentLoop
     from geosi_engine.state import StateManager
+
     eng = FakeEngine([], [])
     eng.state = StateManager()
     res = AgentLoop(eng).run("Generate GeoPandas code to buffer points by 500 m")
@@ -219,6 +246,7 @@ def test_validation_check_request_skips_greeting():
     """check_request must not report missing layers for a greeting."""
     from geosi_engine.agents.validation import ValidationAgent
     from geosi_engine.state import StateManager
+
     eng = FakeEngine([], [])
     eng.state = StateManager()
     va = ValidationAgent(eng)
@@ -229,6 +257,7 @@ def test_validation_check_request_skips_knowledge_query():
     """check_request must not report missing layers for a knowledge question."""
     from geosi_engine.agents.validation import ValidationAgent
     from geosi_engine.state import StateManager
+
     eng = FakeEngine([], [])
     eng.state = StateManager()
     va = ValidationAgent(eng)
@@ -242,6 +271,7 @@ _BENCH_LAYERS = ["hospitals", "flood_zones", "parcels", "roads", "dem", "image"]
 
 def test_spatial_tasks_on_loaded_layers_need_layers():
     from geosi_engine.agent import GeoSIAgent
+
     for q in [
         "buffer hospitals by 500 meters",
         "create centroids of flood_zones",
@@ -258,6 +288,7 @@ def test_spatial_tasks_on_loaded_layers_need_layers():
 
 def test_conversational_queries_stay_layer_free_with_layers_loaded():
     from geosi_engine.agent import GeoSIAgent
+
     for q in [
         "hi",
         "What is NDVI?",
@@ -272,4 +303,5 @@ def test_conversational_queries_stay_layer_free_with_layers_loaded():
 
 def test_spatial_task_without_layers_still_needs_layers():
     from geosi_engine.agent import GeoSIAgent
+
     assert GeoSIAgent._query_needs_layers(GeoSIAgent, "buffer hospitals by 500 m", [])

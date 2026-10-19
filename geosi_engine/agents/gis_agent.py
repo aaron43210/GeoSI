@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — GIS Agent
 ════════════════════════════════════════════════════════════════════
@@ -12,6 +11,7 @@ The ONLY addition (PRD FR-2, G5 fix):
   check_permission()`` before ANY tool with ``risk_level != "read_only"``
   reaches ``processing.run()``.
 """
+
 from __future__ import annotations
 
 import logging
@@ -100,9 +100,7 @@ class GISAgent:
 
         if step.risk_level != "read_only":
             # Get permission decision FIRST, then write audit log
-            decision = self._permission.check_permission(
-                step.tool_name, step.risk_level
-            )
+            decision = self._permission.check_permission(step.tool_name, step.risk_level)
             audit_id = self._permission.audit_log_before_execution(
                 step,
                 session_id=getattr(self._engine, "_session_id", "unknown"),
@@ -118,8 +116,7 @@ class GISAgent:
                 if audit_id:
                     self._permission.update_audit_log(audit_id, "denied")
                 raise PermissionDeniedError(
-                    f"Tool '{step.tool_name}' is denied by policy "
-                    f"(risk_level='{step.risk_level}')."
+                    f"Tool '{step.tool_name}' is denied by policy " f"(risk_level='{step.risk_level}')."
                 )
 
             session_id = getattr(self._engine, "_session_id", "unknown")
@@ -143,16 +140,13 @@ class GISAgent:
                     if not approved:
                         if audit_id:
                             self._permission.update_audit_log(audit_id, "rejected")
-                        raise PermissionDeniedError(
-                            f"Tool '{step.tool_name}' was rejected by the user."
-                        )
+                        raise PermissionDeniedError(f"Tool '{step.tool_name}' was rejected by the user.")
                 else:
                     # Async: raise so the caller can surface the approval flow
                     raise ApprovalPendingError(
                         action_id=approval_result.action_id,
                         message=(
-                            f"Tool '{step.tool_name}' requires approval. "
-                            f"action_id={approval_result.action_id}"
+                            f"Tool '{step.tool_name}' requires approval. " f"action_id={approval_result.action_id}"
                         ),
                     )
         else:
@@ -167,9 +161,7 @@ class GISAgent:
             result = self._run_step(step, state)
             status = "success" if result.success else "failed"
             if audit_id:
-                self._permission.update_audit_log(
-                    audit_id, status, error=result.error
-                )
+                self._permission.update_audit_log(audit_id, status, error=result.error)
             return result
         except (PermissionDeniedError, ApprovalPendingError):
             raise
@@ -195,10 +187,7 @@ class GISAgent:
 
             return auto_discover_qgis_tools(self._engine.registry)
         except ImportError:
-            logger.debug(
-                "QGIS bridge not available (running outside QGIS). "
-                "Portable tools only."
-            )
+            logger.debug("QGIS bridge not available (running outside QGIS). " "Portable tools only.")
             return 0
         except Exception as exc:
             logger.warning("Tool discovery failed: %s", exc)
@@ -217,6 +206,7 @@ class GISAgent:
         # prompt on the async surface (defense-in-depth re-check only).
         try:
             from geosi_engine.tools.domain_tools import dispatch_domain_tool, is_domain_tool
+
             if is_domain_tool(step.tool_name):
                 return dispatch_domain_tool(self._engine, step, self._permission)
         except ImportError:

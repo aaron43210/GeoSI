@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Phase P1 Gap Tests
 Tests for the 5 PRD-alignment gaps:
@@ -8,17 +7,18 @@ Tests for the 5 PRD-alignment gaps:
   4. GET /health → per-agent status
   5. OTel telemetry module → no-op fallback
 """
+
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock, patch
 
-
 # ── 1. /health per-agent status ───────────────────────────────────────────
+
 
 def test_health_returns_circuit_breaker_states():
     """GET /health must include llm_providers circuit-breaker state."""
     from fastapi.testclient import TestClient
+
     from geosi_server.app import app
 
     client = TestClient(app)
@@ -35,12 +35,14 @@ def test_health_returns_circuit_breaker_states():
 
 # ── 2. OTel telemetry no-op mode ──────────────────────────────────────────
 
+
 def test_telemetry_noop_when_endpoint_not_set(monkeypatch):
     """Telemetry module must degrade gracefully when GEOSI_OTEL_ENDPOINT is absent."""
     monkeypatch.delenv("GEOSI_OTEL_ENDPOINT", raising=False)
 
     # Force re-initialisation
     import geosi_engine.telemetry as tel
+
     tel._tracer = None
     tel._NOOP = False
 
@@ -62,15 +64,18 @@ def test_telemetry_noop_when_endpoint_not_set(monkeypatch):
 def test_telemetry_set_span_attr_noop(monkeypatch):
     """set_span_attr must not raise when in no-op mode."""
     import geosi_engine.telemetry as tel
+
     tel._NOOP = True
     tel.set_span_attr("key", "value")  # should not raise
 
 
 # ── 3. POST /chat routing through SupervisorAgent ────────────────────────
 
+
 def test_chat_routes_through_supervisor():
     """POST /chat must instantiate SupervisorAgent and call handle()."""
     from fastapi.testclient import TestClient
+
     from geosi_server.app import app
 
     with patch(
@@ -106,6 +111,7 @@ def test_chat_routes_through_supervisor():
 def test_chat_requires_auth():
     """POST /chat must return 401 without Authorization header."""
     from fastapi.testclient import TestClient
+
     from geosi_server.app import app
 
     client = TestClient(app)
@@ -115,9 +121,11 @@ def test_chat_requires_auth():
 
 # ── 4. POST /execute direct plan ─────────────────────────────────────────
 
+
 def test_execute_validates_plan():
     """POST /execute must validate the plan before running."""
     from fastapi.testclient import TestClient
+
     from geosi_server.app import app
 
     # Send an invalid plan (empty steps) — should return a response (not crash)
@@ -136,9 +144,11 @@ def test_execute_validates_plan():
 
 # ── 5. POST /admin/policy (FR-2.3) ───────────────────────────────────────
 
+
 def test_admin_policy_requires_admin_key():
     """POST /admin/policy must return 403 for non-admin keys."""
     from fastapi.testclient import TestClient
+
     from geosi_server.app import app
 
     client = TestClient(app)
@@ -153,6 +163,7 @@ def test_admin_policy_requires_admin_key():
 def test_admin_policy_accepts_admin_key_no_db(mock_admin_key):
     """POST /admin/policy with admin key returns 503 when PostGIS is unavailable."""
     from fastapi.testclient import TestClient
+
     from geosi_server.app import app
 
     client = TestClient(app)
@@ -167,9 +178,11 @@ def test_admin_policy_accepts_admin_key_no_db(mock_admin_key):
 
 # ── 6. HITL approval endpoints ────────────────────────────────────────────
 
+
 def test_approve_nonexistent_action_returns_404():
     """POST /approval/nonexistent/approve must return 404."""
     from fastapi.testclient import TestClient
+
     from geosi_server.app import app
 
     client = TestClient(app)

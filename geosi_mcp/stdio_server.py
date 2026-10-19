@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI MCP — stdio transport entry point for Claude Desktop.
 
@@ -26,6 +25,7 @@ any shared or production deployment.
 Streamable HTTP: set GEOSI_MCP_TRANSPORT=streamable-http to run on
 0.0.0.0:${GEOSI_MCP_PORT:-8001} instead of stdio.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -34,7 +34,7 @@ import json
 import logging
 import os
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger("geosi_mcp.stdio_server")
 
@@ -45,19 +45,18 @@ _HAS_FASTMCP = importlib.util.find_spec("fastmcp") is not None
 
 # ── Tool definitions reused from server.py ───────────────────────────────
 
-def _get_tools() -> List[Dict[str, Any]]:
+
+def _get_tools() -> list[dict[str, Any]]:
     """Return the MCP tool list in fastmcp-compatible format."""
     from geosi_mcp.server import _TOOLS
+
     return [
         {
             "name": t.name,
             "description": t.description,
             "inputSchema": {
                 "type": "object",
-                "properties": {
-                    p.name: {"type": p.type, "description": p.description}
-                    for p in t.parameters
-                },
+                "properties": {p.name: {"type": p.type, "description": p.description} for p in t.parameters},
                 "required": [p.name for p in t.parameters if p.required],
             },
         }
@@ -65,15 +64,17 @@ def _get_tools() -> List[Dict[str, Any]]:
     ]
 
 
-async def _dispatch(tool_name: str, params: Dict[str, Any]) -> Any:
+async def _dispatch(tool_name: str, params: dict[str, Any]) -> Any:
     """Route a tool call to the matching async handler in server.py."""
     from geosi_mcp.server import _dispatch_tool
+
     # Use the bearer token as a short session ID (dev: empty)
     token = os.environ.get("GEOSI_MCP_TOKEN", "")[:16] or "stdio-session"
     return await _dispatch_tool(tool_name, params, session_id=token)
 
 
 # ── fastmcp path ─────────────────────────────────────────────────────────
+
 
 def _run_fastmcp() -> None:
     """Launch via fastmcp's native transport."""
@@ -117,90 +118,62 @@ def _register_fastmcp_tool(mcp: Any, tool_def: Any) -> None:
 
 # ── Minimal hand-rolled stdio path (no fastmcp dependency) ───────────────
 
+
+def _rpc(req_id: Any, **body: Any) -> str:
+    return json.dumps({"jsonrpc": "2.0", "id": req_id, **body})
+
+
+async def handle_message(line: str) -> str | None:
+    """Handle one JSON-RPC 2.0 MCP message; None for notifications."""
+    try:
+        req = json.loads(line)
+    except json.JSONDecodeError as exc:
+        return _rpc(None, error={"code": -32700, "message": f"Parse error: {exc}"})
+
+    req_id = req.get("id")
+    method = req.get("method", "")
+    if method == "initialize":
+        return _rpc(
+            req_id,
+            result={
+                "protocolVersion": "2024-11-05",
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "geosi-mcp", "version": "2.0.0"},
+            },
+        )
+    if method == "tools/list":
+        return _rpc(req_id, result={"tools": _get_tools()})
+    if method == "tools/call":
+        params = req.get("params", {})
+        try:
+            result = await _dispatch(params.get("name", ""), params.get("arguments", {}))
+            content, is_error = json.dumps(result, default=str), False
+        except Exception as exc:
+            content, is_error = str(exc), True
+        return _rpc(req_id, result={"content": [{"type": "text", "text": content}], "isError": is_error})
+    if method.startswith("notifications/"):
+        return None
+    return _rpc(req_id, error={"code": -32601, "message": f"Method not found: {method!r}"})
+
+
 def _run_stdio_fallback() -> None:
     """
     Minimal JSON-RPC 2.0 stdio loop used when fastmcp is not installed.
     Reads newline-delimited JSON from stdin, writes responses to stdout.
-    Compatible with the MCP stdio protocol Claude Desktop uses.
     """
     logger.info("GeoSI MCP fallback stdio loop (fastmcp not installed)")
 
-    async def _handle_one(line: str) -> Optional[str]:
-        try:
-            req = json.loads(line)
-        except json.JSONDecodeError as exc:
-            return json.dumps({
-                "jsonrpc": "2.0", "id": None,
-                "error": {"code": -32700, "message": f"Parse error: {exc}"},
-            })
-
-        req_id = req.get("id")
-        method = req.get("method", "")
-
-        # MCP initialization handshake
-        if method == "initialize":
-            return json.dumps({
-                "jsonrpc": "2.0", "id": req_id,
-                "result": {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "geosi-mcp", "version": "2.0.0"},
-                },
-            })
-
-        if method == "tools/list":
-            return json.dumps({
-                "jsonrpc": "2.0", "id": req_id,
-                "result": {"tools": _get_tools()},
-            })
-
-        if method == "tools/call":
-            tool_name = req.get("params", {}).get("name", "")
-            arguments = req.get("params", {}).get("arguments", {})
-            try:
-                result = await _dispatch(tool_name, arguments)
-                return json.dumps({
-                    "jsonrpc": "2.0", "id": req_id,
-                    "result": {
-                        "content": [{"type": "text", "text": json.dumps(result, default=str)}],
-                        "isError": False,
-                    },
-                })
-            except Exception as exc:
-                return json.dumps({
-                    "jsonrpc": "2.0", "id": req_id,
-                    "result": {
-                        "content": [{"type": "text", "text": str(exc)}],
-                        "isError": True,
-                    },
-                })
-
-        # notifications (initialized, cancelled) — no response needed
-        if method.startswith("notifications/"):
-            return None
-
-        return json.dumps({
-            "jsonrpc": "2.0", "id": req_id,
-            "error": {"code": -32601, "message": f"Method not found: {method!r}"},
-        })
-
     async def _loop() -> None:
-        loop = asyncio.get_event_loop()
-        reader = asyncio.StreamReader()
-        protocol = asyncio.StreamReaderProtocol(reader)
-        await loop.connect_read_pipe(lambda: protocol, sys.stdin)
-
+        loop = asyncio.get_running_loop()
         while True:
-            try:
-                line_bytes = await reader.readline()
-            except Exception:
+            # A thread read works on every OS; connect_read_pipe(stdin) does not on Windows
+            raw = await loop.run_in_executor(None, sys.stdin.readline)
+            if not raw:
                 break
-            if not line_bytes:
-                break
-            line = line_bytes.decode("utf-8").strip()
+            line = raw.strip()
             if not line:
                 continue
-            response = await _handle_one(line)
+            response = await handle_message(line)
             if response is not None:
                 sys.stdout.write(response + "\n")
                 sys.stdout.flush()
@@ -218,6 +191,7 @@ if __name__ == "__main__":
         sys.path.insert(0, _repo_root)
 
     from geosi_mcp.auth import verify_mcp_token
+
     # In production, a missing token causes verify_mcp_token to return False.
     # For stdio, we do a one-time startup check and warn; individual tool calls
     # still gate through _dispatch → server.py auth if needed.

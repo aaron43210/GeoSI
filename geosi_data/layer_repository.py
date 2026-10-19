@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Data Layer — Layer Repository
 ═══════════════════════════════════════════════════════════════════
@@ -9,8 +8,8 @@ is managed by PostGISManager in separate tables.
 """
 
 import logging
-from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("geosi_data.layer_repository")
 
@@ -48,11 +47,7 @@ class LayerRepository:
         try:
             with self.db.get_session() as session:
                 # Check if layer already exists
-                existing = (
-                    session.query(SpatialLayerRecord)
-                    .filter_by(name=layer.name)
-                    .first()
-                )
+                existing = session.query(SpatialLayerRecord).filter_by(name=layer.name).first()
 
                 if existing:
                     # Update existing record
@@ -119,11 +114,7 @@ class LayerRepository:
 
         try:
             with self.db.get_session() as session:
-                record = (
-                    session.query(SpatialLayerRecord)
-                    .filter_by(name=name)
-                    .first()
-                )
+                record = session.query(SpatialLayerRecord).filter_by(name=name).first()
                 if record:
                     return self._to_dict(record)
                 return None
@@ -140,11 +131,7 @@ class LayerRepository:
 
         try:
             with self.db.get_session() as session:
-                records = (
-                    session.query(SpatialLayerRecord)
-                    .order_by(SpatialLayerRecord.created_at.desc())
-                    .all()
-                )
+                records = session.query(SpatialLayerRecord).order_by(SpatialLayerRecord.created_at.desc()).all()
                 return [self._to_dict(r) for r in records]
         except Exception as e:
             logger.error(f"Failed to list layers: {e}")
@@ -159,11 +146,7 @@ class LayerRepository:
 
         try:
             with self.db.get_session() as session:
-                record = (
-                    session.query(SpatialLayerRecord)
-                    .filter_by(name=name)
-                    .first()
-                )
+                record = session.query(SpatialLayerRecord).filter_by(name=name).first()
                 if record:
                     session.delete(record)
                     logger.info(f"Deleted layer metadata: {name}")

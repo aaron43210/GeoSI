@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Engine — State Manager
 
@@ -11,16 +10,16 @@ See FILE_CONNECTIONS.md:
     - USED BY: executor.py, geosi_plugin/, geosi_server/
 """
 
-from typing import Dict, List, Optional, Any
-from datetime import datetime
-from copy import copy
 import logging
+from copy import copy
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 from geosi_engine.models import (
-    Layer,
-    ToolResult,
-    StepLog,
     ExecutionStatus,
+    Layer,
+    StepLog,
+    ToolResult,
 )
 
 logger = logging.getLogger("geosi_engine.state")

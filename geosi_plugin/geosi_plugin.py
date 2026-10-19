@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Plugin — QGIS Plugin Entry Point (v2: Dynamic Discovery)
 ═══════════════════════════════════════════════════════════════════
@@ -59,6 +58,7 @@ class GeoSIPlugin:
         QGIS startup.
         """
         from qgis.PyQt.QtGui import QIcon
+
         try:
             from qgis.PyQt.QtGui import QAction  # Qt6
         except ImportError:
@@ -92,6 +92,7 @@ class GeoSIPlugin:
             return True
         try:
             from geosi_engine import GeoSI
+
             from .qgis_bridge import install
 
             # Step 1: Create the engine (portable tools only at this point)
@@ -102,6 +103,7 @@ class GeoSIPlugin:
             self.tool_count = install(registry=engine.registry)
             try:
                 from .settings import apply
+
                 apply(engine)
             except Exception as e:  # noqa: BLE001 — defaults still work
                 logger.warning("Could not apply GeoSI settings: %s", e)
@@ -112,7 +114,8 @@ class GeoSIPlugin:
             from geosi_engine.session_pool import SessionPool
 
             self.supervisor = SupervisorAgent(
-                SessionPool(max_size=1, ttl_seconds=float("inf"), factory=lambda sid: engine))
+                SessionPool(max_size=1, ttl_seconds=float("inf"), factory=lambda sid: engine)
+            )
         except Exception as e:  # noqa: BLE001 — surface any startup failure
             logger.error("GeoSI engine failed to start:\n%s", traceback.format_exc())
             self._show_error(f"GeoSI engine failed to start: {e}")
@@ -128,6 +131,7 @@ class GeoSIPlugin:
     def _show_error(self, message):
         try:
             from qgis.core import Qgis
+
             self.iface.messageBar().pushMessage("GeoSI", message, level=Qgis.Critical, duration=10)
         except Exception:  # noqa: BLE001
             logger.error(message)
@@ -144,6 +148,7 @@ class GeoSIPlugin:
                 self.action.setChecked(False)
                 return
             from qgis.PyQt.QtCore import Qt
+
             from .prompt_dock import GeoSIDock
 
             self.dock = GeoSIDock(self.iface, self.engine, supervisor=self.supervisor)

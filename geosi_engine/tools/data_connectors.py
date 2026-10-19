@@ -1,16 +1,16 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Engine — Open Data Connector Tools (Sprint 1)
 
 Registers basemap, OSM fetch, and geocoding capabilities as PortableTool
 subclasses so the Planner can invoke them by name in an ExecutionPlan.
 """
+
 from __future__ import annotations
 
 from typing import Any, Optional
 
 from geosi_engine.base import PortableTool
-from geosi_engine.models import ToolSpec, ToolParameter, ToolResult
+from geosi_engine.models import ToolParameter, ToolResult, ToolSpec
 
 
 class AddBasemapTool(PortableTool):
@@ -29,7 +29,9 @@ class AddBasemapTool(PortableTool):
             category="data",
             parameters=[
                 ToolParameter(
-                    "provider", "string", False,
+                    "provider",
+                    "string",
+                    False,
                     "Basemap provider key (default: osm)",
                 ),
             ],
@@ -38,11 +40,13 @@ class AddBasemapTool(PortableTool):
     def execute(self, provider: str = "osm", **kwargs) -> ToolResult:
         try:
             from geosi_data.basemaps import add_basemap, resolve_provider
+
             key = resolve_provider(provider)
             layer = add_basemap(key)
             if layer is None:
                 return ToolResult(
-                    success=False, error=f"Basemap provider '{provider}' not available (QGIS not running?).")
+                    success=False, error=f"Basemap provider '{provider}' not available (QGIS not running?)."
+                )
             return ToolResult(success=True, message=f"Basemap '{key}' added.", output=None)
         except Exception as exc:
             return ToolResult(success=False, error=str(exc))
@@ -61,12 +65,9 @@ class FetchOSMTool(PortableTool):
             ),
             category="data",
             parameters=[
-                ToolParameter("category", "string", True,
-                              "Feature category, e.g. 'hospitals', 'schools', 'parks'"),
-                ToolParameter("location", "string", False,
-                              "Place name to geocode, e.g. 'London'"),
-                ToolParameter("bbox", "string", False,
-                              "Bounding box as 'south,west,north,east' (decimal degrees)"),
+                ToolParameter("category", "string", True, "Feature category, e.g. 'hospitals', 'schools', 'parks'"),
+                ToolParameter("location", "string", False, "Place name to geocode, e.g. 'London'"),
+                ToolParameter("bbox", "string", False, "Bounding box as 'south,west,north,east' (decimal degrees)"),
             ],
         )
 
@@ -94,6 +95,7 @@ class FetchOSMTool(PortableTool):
             if layer is None:
                 return ToolResult(success=False, error=f"No features found for category '{category}'.")
             from geosi_engine.models import Layer
+
             engine_layer = Layer(
                 name=layer.name() if hasattr(layer, "name") else f"osm_{category}",
                 layer_type="vector",
@@ -121,14 +123,14 @@ class GeocodeTool(PortableTool):
             category="data",
             parameters=[
                 ToolParameter("address", "string", True, "Address or place name to geocode"),
-                ToolParameter("provider", "string", False,
-                              "Geocoding provider: 'nominatim' (default) or 'photon'"),
+                ToolParameter("provider", "string", False, "Geocoding provider: 'nominatim' (default) or 'photon'"),
             ],
         )
 
     def execute(self, address: str, provider: str = "nominatim", **kwargs: Any) -> ToolResult:
         try:
             from geosi_data.geocoding import geocode
+
             lon, lat, display_name = geocode(address, provider=provider)
             return ToolResult(
                 success=True,
@@ -156,6 +158,7 @@ class ZoomToPlaceTool(PortableTool):
     def execute(self, address: str, **kwargs: Any) -> ToolResult:
         try:
             from geosi_data.geocoding import zoom_to_place
+
             zoom_to_place(address)
             return ToolResult(success=True, message=f"Map zoomed to '{address}'.")
         except Exception as exc:
@@ -177,10 +180,8 @@ class ApplyStyleTool(PortableTool):
             category="cartography",
             parameters=[
                 ToolParameter("layer_name", "layer", True, "Name of the layer to style"),
-                ToolParameter("field", "field", True, "Attribute field to classify by",
-                              parent_layer="layer_name"),
-                ToolParameter("style_type", "string", False,
-                              "Style type: 'graduated' (default) or 'categorized'"),
+                ToolParameter("field", "field", True, "Attribute field to classify by", parent_layer="layer_name"),
+                ToolParameter("style_type", "string", False, "Style type: 'graduated' (default) or 'categorized'"),
                 ToolParameter("classes", "number", False, "Number of classes (graduated, default 5)"),
                 ToolParameter("ramp", "string", False, "Color ramp name (default: viridis)"),
             ],
@@ -197,15 +198,18 @@ class ApplyStyleTool(PortableTool):
     ) -> ToolResult:
         try:
             from qgis.core import QgsProject
+
             qgs_layer = QgsProject.instance().mapLayersByName(layer_name)
             if not qgs_layer:
                 return ToolResult(success=False, error=f"Layer '{layer_name}' not found in project.")
             qgs_layer = qgs_layer[0]
             if style_type == "categorized":
                 from geosi_engine.cartography.styling import apply_categorized_symbology
+
                 apply_categorized_symbology(qgs_layer, field)
             else:
                 from geosi_engine.cartography.styling import apply_graduated_symbology
+
                 apply_graduated_symbology(qgs_layer, field, classes=int(classes), ramp=ramp)
             return ToolResult(success=True, message=f"Style applied to '{layer_name}' ({style_type}, field={field}).")
         except Exception as exc:
@@ -239,7 +243,9 @@ class ExportMapTool(PortableTool):
     ) -> ToolResult:
         try:
             from qgis.core import QgsProject
+
             from geosi_engine.cartography.layouts import build_print_layout, export_layout
+
             project = QgsProject.instance()
             layout = build_print_layout(project, title=title)
             export_layout(layout, output_path, fmt=fmt, dpi=int(dpi))
@@ -262,14 +268,10 @@ class FetchOvertureTool(PortableTool):
             ),
             category="data",
             parameters=[
-                ToolParameter("theme", "string", True,
-                              "Overture theme: buildings, roads, places, divisions, base"),
-                ToolParameter("location", "string", False,
-                              "Place name to geocode, e.g. 'Paris'"),
-                ToolParameter("bbox", "string", False,
-                              "Bounding box 'west,south,east,north' (decimal degrees)"),
-                ToolParameter("max_features", "number", False,
-                              "Maximum features to load (default 10000)"),
+                ToolParameter("theme", "string", True, "Overture theme: buildings, roads, places, divisions, base"),
+                ToolParameter("location", "string", False, "Place name to geocode, e.g. 'Paris'"),
+                ToolParameter("bbox", "string", False, "Bounding box 'west,south,east,north' (decimal degrees)"),
+                ToolParameter("max_features", "number", False, "Maximum features to load (default 10000)"),
             ],
         )
 
@@ -290,6 +292,7 @@ class FetchOvertureTool(PortableTool):
                     resolved_bbox = tuple(parts)  # (west, south, east, north)
             if resolved_bbox is None and location:
                 from geosi_data.geocoding import geocode
+
                 result = geocode(location)
                 if result is None:
                     return ToolResult(success=False, error=f"Could not geocode '{location}'.")
@@ -302,6 +305,7 @@ class FetchOvertureTool(PortableTool):
             # Build Overture GeoParquet URL and stream via GDAL VSI
             west, south, east, north = resolved_bbox
             from geosi_engine.models import Layer
+
             layer = Layer(
                 name=f"overture_{theme}",
                 layer_type="vector",
@@ -337,16 +341,11 @@ class FetchWFSTool(PortableTool):
             ),
             category="data",
             parameters=[
-                ToolParameter("url", "string", True,
-                              "WFS endpoint URL (GetCapabilities base URL)"),
-                ToolParameter("typename", "string", True,
-                              "Feature type name, e.g. 'topp:states'"),
-                ToolParameter("version", "string", False,
-                              "WFS version: '1.0.0', '1.1.0', '2.0.0' (default auto)"),
-                ToolParameter("max_features", "number", False,
-                              "Max features to load (default 5000)"),
-                ToolParameter("bbox", "string", False,
-                              "Bounding box filter 'west,south,east,north'"),
+                ToolParameter("url", "string", True, "WFS endpoint URL (GetCapabilities base URL)"),
+                ToolParameter("typename", "string", True, "Feature type name, e.g. 'topp:states'"),
+                ToolParameter("version", "string", False, "WFS version: '1.0.0', '1.1.0', '2.0.0' (default auto)"),
+                ToolParameter("max_features", "number", False, "Max features to load (default 5000)"),
+                ToolParameter("bbox", "string", False, "Bounding box filter 'west,south,east,north'"),
             ],
         )
 
@@ -360,7 +359,8 @@ class FetchWFSTool(PortableTool):
         **kwargs: Any,
     ) -> ToolResult:
         try:
-            from qgis.core import QgsDataSourceUri, QgsVectorLayer, QgsProject
+            from qgis.core import QgsDataSourceUri, QgsProject, QgsVectorLayer
+
             uri = QgsDataSourceUri()
             uri.setParam("url", url.rstrip("?"))
             uri.setParam("typename", typename)
@@ -374,6 +374,7 @@ class FetchWFSTool(PortableTool):
                 return ToolResult(success=False, error=f"WFS layer '{typename}' failed to load from {url}.")
             QgsProject.instance().addMapLayer(layer)
             from geosi_engine.models import Layer as GLayer
+
             engine_layer = GLayer(
                 name=layer_name,
                 layer_type="vector",
@@ -381,7 +382,10 @@ class FetchWFSTool(PortableTool):
                 feature_count=layer.featureCount(),
                 crs=layer.crs().authid(),
             )
-            return ToolResult(success=True, output=engine_layer,
-                              message=f"WFS layer '{typename}' loaded ({layer.featureCount()} features).")
+            return ToolResult(
+                success=True,
+                output=engine_layer,
+                message=f"WFS layer '{typename}' loaded ({layer.featureCount()} features).",
+            )
         except Exception as exc:
             return ToolResult(success=False, error=str(exc))

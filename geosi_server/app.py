@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 Server — FastAPI Application
 ═══════════════════════════════════════════════════════════════════
@@ -15,19 +14,19 @@ MCP manifest:
     http://localhost:8000/mcp/manifest
 """
 
-import os
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Depends
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 logger = logging.getLogger("geosi_server")
 
 # ── Session Pool ────────────────────────────────────────────────────────
 _pool = None
-_supervisor = None          # process-wide SupervisorAgent (created once)
+_supervisor = None  # process-wide SupervisorAgent (created once)
 _startup_time: float = 0.0
 _qgis_available: bool = False
 
@@ -38,6 +37,7 @@ def get_pool():
     if _pool is None:
         from geosi_engine.session_pool import SessionPool
         from geosi_server.qgis_runtime import engine_factory, is_available
+
         factory = engine_factory if is_available() else None
         _pool = SessionPool(factory=factory)
         logger.info("GeoSI SessionPool initialised (QGIS=%s)", is_available())
@@ -55,6 +55,7 @@ def get_supervisor():
     global _supervisor
     if _supervisor is None:
         from geosi_engine.agents.supervisor import SupervisorAgent
+
         _supervisor = SupervisorAgent(get_pool())
         logger.info("Process-wide SupervisorAgent created")
     return _supervisor
@@ -70,6 +71,7 @@ async def lifespan(app: FastAPI):
     # 1. Headless QGIS (non-fatal if not installed)
     try:
         from geosi_server.qgis_runtime import init as qgis_init
+
         _qgis_available = qgis_init()
     except Exception as exc:
         logger.warning("QGIS runtime init skipped: %s", exc)
@@ -82,6 +84,7 @@ async def lifespan(app: FastAPI):
     # 3. Neo4j schema — non-blocking
     try:
         from geosi_data.neo4j_client import get_neo4j_client
+
         neo4j = get_neo4j_client()
         if neo4j.available:
             logger.info("Neo4j connected — schema ensured.")
@@ -93,6 +96,7 @@ async def lifespan(app: FastAPI):
     # 4. Background graph writer — non-blocking
     try:
         from geosi_engine.graph_writer import GraphWriter
+
         GraphWriter.get_instance()
         logger.info("Graph writer started.")
     except Exception as exc:
@@ -104,6 +108,7 @@ async def lifespan(app: FastAPI):
     # ── Shutdown ────────────────────────────────────────────────────────
     try:
         from geosi_engine.graph_writer import GraphWriter
+
         GraphWriter.get_instance().stop()
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
@@ -114,6 +119,7 @@ async def lifespan(app: FastAPI):
             logger.warning("Session pool cleanup failed: %s", exc)
     try:
         from geosi_server.qgis_runtime import shutdown as qgis_shutdown
+
         qgis_shutdown()
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
@@ -144,8 +150,7 @@ if not cors_origins:
             "Set it to a comma-separated list of allowed origin URLs."
         )
     logger.warning("GEOSI_ALLOWED_ORIGINS not set — defaulting to localhost for dev.")
-    cors_origins = ["http://localhost:3000", "http://127.0.0.1:3000",
-                    "http://localhost:8000", "http://127.0.0.1:8000"]
+    cors_origins = ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:8000", "http://127.0.0.1:8000"]
 
 app.add_middleware(
     CORSMiddleware,
@@ -158,11 +163,10 @@ app.add_middleware(
 # ── Rate-limiting (simple in-process token-bucket; swap out for Redis in prod)
 try:
     from slowapi import Limiter, _rate_limit_exceeded_handler
-    from slowapi.util import get_remote_address
     from slowapi.errors import RateLimitExceeded
+    from slowapi.util import get_remote_address
 
-    _limiter = Limiter(key_func=get_remote_address,
-                       default_limits=[os.environ.get("GEOSI_RATE_LIMIT", "60/minute")])
+    _limiter = Limiter(key_func=get_remote_address, default_limits=[os.environ.get("GEOSI_RATE_LIMIT", "60/minute")])
     app.state.limiter = _limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     logger.info("Rate limiting enabled (%s).", os.environ.get("GEOSI_RATE_LIMIT", "60/minute"))
@@ -173,6 +177,7 @@ except ImportError:
 if os.environ.get("GEOSI_JSON_LOGS", "").lower() in {"1", "true", "yes"}:
     try:
         import json_log_formatter
+
         handler = logging.StreamHandler()
         handler.setFormatter(json_log_formatter.JSONFormatter())
         logging.root.addHandler(handler)
@@ -181,15 +186,18 @@ if os.environ.get("GEOSI_JSON_LOGS", "").lower() in {"1", "true", "yes"}:
         logger.debug("json_log_formatter not installed — plain logging.")
 
 # ── Register route modules ─────────────────────────────────────────────
-from geosi_server.rag_routes import router as rag_router  # noqa: E402 — registered after app is created
-from geosi_server.workflow_routes import router as workflow_router  # noqa: E402 — registered after app is created
-from geosi_server.data_routes import router as data_router  # noqa: E402 — registered after app is created
-from geosi_server.viz_routes import router as viz_router  # noqa: E402 — registered after app is created
-from geosi_server.chat_routes import router as chat_router  # noqa: E402 — registered after app is created
 from geosi_server.admin_routes import router as admin_router  # noqa: E402 — registered after app is created
+from geosi_server.chat_routes import router as chat_router  # noqa: E402 — registered after app is created
+from geosi_server.data_routes import router as data_router  # noqa: E402 — registered after app is created
+from geosi_server.rag_routes import router as rag_router  # noqa: E402 — registered after app is created
+from geosi_server.viz_routes import router as viz_router  # noqa: E402 — registered after app is created
+from geosi_server.workflow_routes import router as workflow_router  # noqa: E402 — registered after app is created
+
 try:
     import multipart  # noqa: F401 — python-multipart; required for file upload
+
     from geosi_server.workspace_routes import router as workspace_router
+
     _workspace_router_available = True
 except ImportError:
     workspace_router = None  # type: ignore[assignment]
@@ -201,15 +209,16 @@ app.include_router(rag_router, prefix="/rag", tags=["RAG"])
 app.include_router(workflow_router, prefix="/workflow", tags=["Workflows"])
 app.include_router(data_router, prefix="/layers", tags=["Data"])
 app.include_router(viz_router, prefix="/viz", tags=["Visualization"])
-app.include_router(chat_router, tags=["Chat", "HITL"])          # /chat, /execute, /approval/*
+app.include_router(chat_router, tags=["Chat", "HITL"])  # /chat, /execute, /approval/*
 app.include_router(admin_router, prefix="/admin", tags=["Admin"])
 if _workspace_router_available:
-    app.include_router(workspace_router, tags=["Workspace"])    # /workspace/layers
-app.include_router(mcp_router, prefix="/mcp", tags=["MCP"])     # MCP tools
+    app.include_router(workspace_router, tags=["Workspace"])  # /workspace/layers
+app.include_router(mcp_router, prefix="/mcp", tags=["MCP"])  # MCP tools
 
 # ── Static web UI ──────────────────────────────────────────────────────
 try:
     from fastapi.staticfiles import StaticFiles
+
     _static_dir = os.path.join(os.path.dirname(__file__), "static")
     if os.path.isdir(_static_dir):
         app.mount("/ui", StaticFiles(directory=_static_dir, html=True), name="ui")
@@ -234,6 +243,7 @@ async def health():
     # PostGIS
     try:
         from geosi_data.database import Database
+
         services["postgis"] = "ok" if Database().available else "unavailable"
     except Exception as exc:
         services["postgis"] = f"error: {exc}"
@@ -244,6 +254,7 @@ async def health():
     # Neo4j
     try:
         from geosi_data.neo4j_client import get_neo4j_client
+
         services["neo4j"] = get_neo4j_client().circuit_state()
     except Exception as exc:
         services["neo4j"] = f"error: {exc}"
@@ -251,6 +262,7 @@ async def health():
     # Graph writer
     try:
         from geosi_engine.graph_writer import GraphWriter
+
         services["graph_writer"] = "running" if GraphWriter.get_instance()._running else "stopped"
     except Exception:
         services["graph_writer"] = "unavailable"
@@ -258,6 +270,7 @@ async def health():
     # QGIS headless
     try:
         from geosi_server.qgis_runtime import is_available
+
         services["qgis"] = "ok" if is_available() else "unavailable"
     except Exception:
         services["qgis"] = "unknown"
@@ -281,6 +294,7 @@ async def ready():
     supervisor = get_supervisor()
     if pool is None or supervisor is None:
         from fastapi import Response
+
         return Response(content="not ready", status_code=503)
     uptime = time.monotonic() - _startup_time if _startup_time else 0.0
     return {"ready": True, "uptime_s": round(uptime, 1)}
@@ -299,8 +313,9 @@ async def metrics(api_key: str = Depends(api_key_auth)):
     uptime = time.monotonic() - _startup_time if _startup_time else 0.0
 
     try:
-        from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
         from fastapi.responses import Response
+        from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
         return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
     except ImportError:
         logger.debug("suppressed exception", exc_info=True)

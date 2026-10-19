@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Production Pipeline Tests (Plan Verification, NO MOCKS)
 ════════════════════════════════════════════════════════════════════
@@ -21,19 +20,20 @@ Covers plan Parts A / B / D1 / D2 / D3:
 
 Runnable with pytest OR directly: ``PYTHONPATH=. python3 tests/test_production_pipeline.py``
 """
+
 from __future__ import annotations
 
 import dataclasses
 
 from geosi_engine import GeoSI
-from geosi_engine.models import ExecutionPlan, ToolStep
-from geosi_engine.tools.domain_tools import DOMAIN_TOOL_NAMES
 from geosi_engine.agents.planning import PlanningAgent
 from geosi_engine.agents.supervisor import (
     SupervisorAgent,
     SupervisorRequest,
     SupervisorResponse,
 )
+from geosi_engine.models import ExecutionPlan, ToolStep
+from geosi_engine.tools.domain_tools import DOMAIN_TOOL_NAMES
 
 
 class _RealPool:
@@ -56,6 +56,7 @@ def _engine() -> GeoSI:
 
 # ── Part D1: domain tools registered + resolvable ──────────────────────
 
+
 def test_domain_tools_registered_and_resolvable():
     eng = _engine()
     for name in DOMAIN_TOOL_NAMES:
@@ -67,6 +68,7 @@ def test_domain_tools_registered_and_resolvable():
 
 
 # ── Part A: the planner grounds its prompt in the real registry ────────
+
 
 def test_prompt_lists_real_tool_names():
     eng = _engine()
@@ -93,6 +95,7 @@ def test_planning_agent_annotates_risk_from_registry():
 
 # ── Part B: knowledge context reaches the planner prompt ───────────────
 
+
 def test_knowledge_context_reaches_prompt():
     eng = _engine()
 
@@ -109,11 +112,11 @@ def test_knowledge_context_reaches_prompt():
 
 # ── Part D3: dataclasses.asdict round-trips the plan ───────────────────
 
+
 def test_plan_asdict_roundtrips():
     plan = ExecutionPlan(
         plan_id="p1",
-        steps=[ToolStep(step_id="s1", tool_name="native_buffer",
-                        parameters={"DISTANCE": 500}, risk_level="mutating")],
+        steps=[ToolStep(step_id="s1", tool_name="native_buffer", parameters={"DISTANCE": 500}, risk_level="mutating")],
         reasoning="buffer",
         plan_source="function_calling",
     )
@@ -129,6 +132,7 @@ def test_supervisor_response_has_approval_pending():
 
 # ── Part D2: generate_code is review-only, never executed ──────────────
 
+
 def test_generate_code_review_only():
     eng = _engine()
     tool = eng.registry.get_tool("generate_code")
@@ -141,21 +145,30 @@ def test_generate_code_review_only():
 
 # ── Part D3: full pipeline — mutating step halts with approval_pending ──
 
+
 def _patch_planner(monkeypatch_or_none, plan: ExecutionPlan):
     """Replace PlanningAgent.plan to return a fixed real plan (INPUT injection)."""
+
     def _plan(self, query, available_layers=None, session_id="", feedback=None):
         return plan
+
     PlanningAgent.plan = _plan  # type: ignore[assignment]
 
 
 def test_pipeline_halts_on_mutating_step():
     plan = ExecutionPlan(
         plan_id="p-ml",
-        steps=[ToolStep(step_id="s1", tool_name="machine_learning",
-                        parameters={"job_type": "classification",
-                                    "algorithm": "random_forest"},
-                        description="classify land cover", risk_level="mutating")],
-        reasoning="ml", plan_source="function_calling",
+        steps=[
+            ToolStep(
+                step_id="s1",
+                tool_name="machine_learning",
+                parameters={"job_type": "classification", "algorithm": "random_forest"},
+                description="classify land cover",
+                risk_level="mutating",
+            )
+        ],
+        reasoning="ml",
+        plan_source="function_calling",
     )
     _orig = PlanningAgent.plan
     try:
@@ -175,10 +188,17 @@ def test_pipeline_halts_on_mutating_step():
 def test_pipeline_runs_readonly_codegen_without_approval():
     plan = ExecutionPlan(
         plan_id="p-cg",
-        steps=[ToolStep(step_id="s1", tool_name="generate_code",
-                        parameters={"target_language": "geopandas"},
-                        description="dissolve polygons", risk_level="read_only")],
-        reasoning="cg", plan_source="function_calling",
+        steps=[
+            ToolStep(
+                step_id="s1",
+                tool_name="generate_code",
+                parameters={"target_language": "geopandas"},
+                description="dissolve polygons",
+                risk_level="read_only",
+            )
+        ],
+        reasoning="cg",
+        plan_source="function_calling",
     )
     _orig = PlanningAgent.plan
     try:
@@ -197,9 +217,9 @@ def test_pipeline_runs_readonly_codegen_without_approval():
 
 if __name__ == "__main__":
     import logging
+
     logging.disable(logging.CRITICAL)
-    tests = [v for k, v in sorted(globals().items())
-             if k.startswith("test_") and callable(v)]
+    tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     passed = failed = 0
     for t in tests:
         try:

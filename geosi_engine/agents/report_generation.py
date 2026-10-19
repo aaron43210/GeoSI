@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Report Generation Agent (Core Agent #11)
 ════════════════════════════════════════════════════════════════════
@@ -15,6 +14,7 @@ PRD §4.1 Agent #11 — Production requirements
   layers).
 * OTel span per report generation.
 """
+
 from __future__ import annotations
 
 import json
@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from geosi_engine.telemetry import span, set_span_attr
+from geosi_engine.telemetry import set_span_attr, span
 
 logger = logging.getLogger("geosi_engine.agents.report_generation")
 
@@ -33,10 +33,11 @@ logger = logging.getLogger("geosi_engine.agents.report_generation")
 @dataclass
 class ReportRequest:
     """Request to generate a GeoSI report."""
-    report_type: str            # "execution_summary" | "methodology" | "workflow_graph" | "full_pdf" | "statistics"
+
+    report_type: str  # "execution_summary" | "methodology" | "workflow_graph" | "full_pdf" | "statistics"
     execution_result: Optional[Any] = None
-    plan: Optional[Any] = None           # ExecutionPlan
-    audit_log_id: Optional[str] = None   # Links report to geosi_audit_log (PRD §4.1 requirement)
+    plan: Optional[Any] = None  # ExecutionPlan
+    audit_log_id: Optional[str] = None  # Links report to geosi_audit_log (PRD §4.1 requirement)
     session_id: str = ""
     output_path: Optional[str] = None
     parameters: Dict[str, Any] = field(default_factory=dict)
@@ -45,11 +46,12 @@ class ReportRequest:
 @dataclass
 class ReportResult:
     """Result of report generation."""
+
     success: bool
     report_type: str
     output_path: Optional[str] = None
     audit_log_id: Optional[str] = None  # traceable back to audit log
-    content: Optional[str] = None       # inline text for execution_summary / statistics
+    content: Optional[str] = None  # inline text for execution_summary / statistics
     statistics: Dict[str, Any] = field(default_factory=dict)
     error: Optional[str] = None
     duration_ms: float = 0.0
@@ -73,10 +75,10 @@ class ReportGenerationAgent:
 
     SUPPORTED_TYPES = {
         "execution_summary": "Markdown summary of execution results",
-        "methodology":       "Step-by-step methodology document",
-        "workflow_graph":    "DOT/Mermaid workflow graph",
-        "statistics":        "Statistical summary of output layers",
-        "full_pdf":          "Complete PDF report (requires WeasyPrint)",
+        "methodology": "Step-by-step methodology document",
+        "workflow_graph": "DOT/Mermaid workflow graph",
+        "statistics": "Statistical summary of output layers",
+        "full_pdf": "Complete PDF report (requires WeasyPrint)",
     }
 
     def __init__(self, engine: Any) -> None:
@@ -100,7 +102,8 @@ class ReportGenerationAgent:
 
         if req.report_type not in self.SUPPORTED_TYPES:
             return ReportResult(
-                success=False, report_type=req.report_type,
+                success=False,
+                report_type=req.report_type,
                 error=f"Unknown report type '{req.report_type}'. Supported: {list(self.SUPPORTED_TYPES.keys())}",
             )
 
@@ -111,13 +114,17 @@ class ReportGenerationAgent:
             set_span_attr("report.output_path", result.output_path or "inline")
             logger.info(
                 "Report generated: type=%s audit_log_id=%s → %s",
-                req.report_type, req.audit_log_id, result.output_path or "inline",
+                req.report_type,
+                req.audit_log_id,
+                result.output_path or "inline",
             )
             return result
         except Exception as exc:
             return ReportResult(
-                success=False, report_type=req.report_type,
-                audit_log_id=req.audit_log_id, error=str(exc),
+                success=False,
+                report_type=req.report_type,
+                audit_log_id=req.audit_log_id,
+                error=str(exc),
                 duration_ms=(time.monotonic() - start) * 1000,
             )
 
@@ -148,10 +155,15 @@ class ReportGenerationAgent:
         steps = getattr(plan, "steps", []) or []
         outputs = getattr(result, "results", None) or {}
         final = outputs.get(steps[-1].output_name) if steps else None
-        if _re.match(r"\s*how many\b", query or "", _re.I) and isinstance(final, Layer) \
-                and geom_family(final.geometry_type) in ("point", "line", "polygon"):
-            return (f"{final.feature_count} — the result layer '{final.name}' has "
-                    f"{final.feature_count} matching feature(s).")
+        if (
+            _re.match(r"\s*how many\b", query or "", _re.I)
+            and isinstance(final, Layer)
+            and geom_family(final.geometry_type) in ("point", "line", "polygon")
+        ):
+            return (
+                f"{final.feature_count} — the result layer '{final.name}' has "
+                f"{final.feature_count} matching feature(s)."
+            )
 
         inspector = get_inspector()
         evidence = []
@@ -170,13 +182,11 @@ class ReportGenerationAgent:
             return None
         return agent.answer_from_evidence(query, "\n".join(evidence))
 
-    def render_summary(self, plan: Any, result: Any, session_id: str = "",
-                       audit_log_id: Optional[str] = None) -> str:
+    def render_summary(self, plan: Any, result: Any, session_id: str = "", audit_log_id: Optional[str] = None) -> str:
         """The Markdown execution summary, without writing a file."""
         return "\n".join(self._summary_lines(plan, result, session_id, audit_log_id))
 
-    def _summary_lines(self, plan: Any, result: Any, session_id: str,
-                       audit_log_id: Optional[str]) -> List[str]:
+    def _summary_lines(self, plan: Any, result: Any, session_id: str, audit_log_id: Optional[str]) -> List[str]:
         now = datetime.now(timezone.utc).isoformat()
         lines = [
             "# GeoSI Execution Summary",
@@ -215,8 +225,10 @@ class ReportGenerationAgent:
                 path = getattr(out, "filepath", "")
                 if path:
                     count = getattr(out, "feature_count", "")
-                    lines.append(f"- **Output `{getattr(out, 'name', name)}`:** `{path}`"
-                                 + (f" ({count} features)" if getattr(out, "layer_type", "") == "vector" else ""))
+                    lines.append(
+                        f"- **Output `{getattr(out, 'name', name)}`:** `{path}`"
+                        + (f" ({count} features)" if getattr(out, "layer_type", "") == "vector" else "")
+                    )
             for w in getattr(result, "warnings", []) or []:
                 lines.append(f"- ⚠ {w}")
             if hasattr(result, "output_layer") and result.output_layer:
@@ -234,8 +246,10 @@ class ReportGenerationAgent:
         out_path = req.output_path or f"geosi_summary_{req.audit_log_id or int(time.time())}.md"
         Path(out_path).write_text(content, encoding="utf-8")
         return ReportResult(
-            success=True, report_type="execution_summary",
-            output_path=out_path, content=content,
+            success=True,
+            report_type="execution_summary",
+            output_path=out_path,
+            content=content,
             statistics={"lines": len(lines)},
         )
 
@@ -245,8 +259,9 @@ class ReportGenerationAgent:
         """
         plan = req.plan
         if not plan:
-            return ReportResult(success=False, report_type="workflow_graph",
-                                error="plan is required for workflow_graph reports.")
+            return ReportResult(
+                success=False, report_type="workflow_graph", error="plan is required for workflow_graph reports."
+            )
 
         steps = getattr(plan, "steps", [])
         fmt = req.parameters.get("format", "mermaid")
@@ -265,22 +280,19 @@ class ReportGenerationAgent:
             content = "\n".join(lines)
         else:
             # DOT format
-            dot_nodes = "\n".join(
-                f'  s{i}[label="{getattr(s, "tool_name", "?")}"];'
-                for i, s in enumerate(steps)
-            )
-            dot_edges = "\n".join(
-                f"  s{i} -> s{i+1};" for i in range(len(steps) - 1)
-            )
+            dot_nodes = "\n".join(f'  s{i}[label="{getattr(s, "tool_name", "?")}"];' for i, s in enumerate(steps))
+            dot_edges = "\n".join(f"  s{i} -> s{i+1};" for i in range(len(steps) - 1))
             content = f"digraph workflow {{\n{dot_nodes}\n{dot_edges}\n}}"
 
-        ext = 'md' if fmt == 'mermaid' else 'dot'
+        ext = "md" if fmt == "mermaid" else "dot"
         out_path = req.output_path or f"geosi_workflow_{req.audit_log_id or int(time.time())}.{ext}"
         Path(out_path).write_text(content, encoding="utf-8")
 
         return ReportResult(
-            success=True, report_type="workflow_graph",
-            output_path=out_path, content=content,
+            success=True,
+            report_type="workflow_graph",
+            output_path=out_path,
+            content=content,
             statistics={"steps": len(steps), "format": fmt},
         )
 
@@ -299,6 +311,7 @@ class ReportGenerationAgent:
                 ext = path.lower().rsplit(".", 1)[-1]
                 if ext in ("shp", "gpkg", "geojson"):
                     import geopandas as gpd
+
                     gdf = gpd.read_file(path)
                     stats[path] = {
                         "feature_count": len(gdf),
@@ -308,6 +321,7 @@ class ReportGenerationAgent:
                     }
                 elif ext in ("tif", "tiff"):
                     import rasterio
+
                     with rasterio.open(path) as src:
                         data = src.read(1)
                         valid = data[data != src.nodata] if src.nodata else data.flatten()
@@ -326,8 +340,11 @@ class ReportGenerationAgent:
         Path(out_path).write_text(content, encoding="utf-8")
 
         return ReportResult(
-            success=True, report_type="statistics",
-            output_path=out_path, content=content, statistics=stats,
+            success=True,
+            report_type="statistics",
+            output_path=out_path,
+            content=content,
+            statistics=stats,
         )
 
     def full_pdf(self, req: ReportRequest) -> ReportResult:
@@ -340,17 +357,19 @@ class ReportGenerationAgent:
         if not md_result.success:
             return md_result
 
-        out_path = (req.output_path or f"geosi_report_{req.audit_log_id or int(time.time())}")
+        out_path = req.output_path or f"geosi_report_{req.audit_log_id or int(time.time())}"
         if not out_path.endswith(".pdf"):
             out_path += ".pdf"
 
         try:
             from weasyprint import HTML
+
             html_content = f"<html><body><pre>{md_result.content}</pre></body></html>"
             HTML(string=html_content).write_pdf(out_path)
             logger.info("PDF report written: %s", out_path)
             return ReportResult(
-                success=True, report_type="full_pdf",
+                success=True,
+                report_type="full_pdf",
                 output_path=out_path,
                 statistics={"pages": 1},
             )
@@ -360,8 +379,10 @@ class ReportGenerationAgent:
             Path(md_out).write_text(md_result.content or "", encoding="utf-8")
             logger.warning("WeasyPrint not available — saved as Markdown: %s", md_out)
             return ReportResult(
-                success=True, report_type="full_pdf",
-                output_path=md_out, content=md_result.content,
+                success=True,
+                report_type="full_pdf",
+                output_path=md_out,
+                content=md_result.content,
                 statistics={"fallback": "markdown", "reason": "weasyprint not installed"},
             )
 
@@ -378,5 +399,6 @@ class ReportGenerationAgent:
             return self.statistics_report(req)
         elif req.report_type in ("full_pdf", "methodology"):
             return self.full_pdf(req)
-        return ReportResult(success=False, report_type=req.report_type,
-                            error=f"Report type '{req.report_type}' not yet implemented.")
+        return ReportResult(
+            success=False, report_type=req.report_type, error=f"Report type '{req.report_type}' not yet implemented."
+        )

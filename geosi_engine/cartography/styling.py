@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI — Automated Symbology & Labeling
 ════════════════════════════════════════════════════════════════════
@@ -7,6 +6,7 @@ Apply professional cartographic styles to QGIS layers from code.
 All functions are QGIS-aware and degrade gracefully if not running
 inside QGIS (they log a warning and return False).
 """
+
 from __future__ import annotations
 
 import logging
@@ -16,11 +16,18 @@ logger = logging.getLogger("geosi_engine.cartography.styling")
 
 # Standard diverging/sequential color ramps available in all QGIS installs
 RAMPS = {
-    "viridis": "Viridis", "magma": "Magma", "plasma": "Plasma",
-    "blues": "Blues", "reds": "Reds", "greens": "Greens",
-    "rdylgn": "RdYlGn", "spectral": "Spectral",
-    "rdbu": "RdBu", "piyg": "PiYG",
-    "ylgnbu": "YlGnBu", "ylorbr": "YlOrBr",
+    "viridis": "Viridis",
+    "magma": "Magma",
+    "plasma": "Plasma",
+    "blues": "Blues",
+    "reds": "Reds",
+    "greens": "Greens",
+    "rdylgn": "RdYlGn",
+    "spectral": "Spectral",
+    "rdbu": "RdBu",
+    "piyg": "PiYG",
+    "ylgnbu": "YlGnBu",
+    "ylorbr": "YlOrBr",
 }
 
 METHODS = {
@@ -58,11 +65,11 @@ def apply_graduated_symbology(
     """
     try:
         from qgis.core import (
-            QgsGraduatedSymbolRenderer,
-            QgsClassificationQuantile,
-            QgsClassificationJenks,
             QgsClassificationEqualInterval,
+            QgsClassificationJenks,
+            QgsClassificationQuantile,
             QgsClassificationStdDev,
+            QgsGraduatedSymbolRenderer,
             QgsStyle,
         )
 
@@ -76,9 +83,9 @@ def apply_graduated_symbology(
         method_key = METHODS.get(method.lower(), "quantile")
         classification_map = {
             "quantile": QgsClassificationQuantile,
-            "jenks":    QgsClassificationJenks,
-            "equal":    QgsClassificationEqualInterval,
-            "stddev":   QgsClassificationStdDev,
+            "jenks": QgsClassificationJenks,
+            "equal": QgsClassificationEqualInterval,
+            "stddev": QgsClassificationStdDev,
         }
         classifier = classification_map.get(method_key, QgsClassificationQuantile)()
 
@@ -91,8 +98,7 @@ def apply_graduated_symbology(
         layer.setOpacity(opacity)
         layer.triggerRepaint()
 
-        logger.info("Graduated symbology applied: %s → %s (%d classes, %s)",
-                    layer.name(), field, classes, ramp)
+        logger.info("Graduated symbology applied: %s → %s (%d classes, %s)", layer.name(), field, classes, ramp)
         return True
 
     except ImportError:
@@ -119,8 +125,8 @@ def apply_categorized_symbology(
         from qgis.core import (
             QgsCategorizedSymbolRenderer,
             QgsRendererCategory,
-            QgsSymbol,
             QgsStyle,
+            QgsSymbol,
         )
 
         # Collect unique values
@@ -152,6 +158,7 @@ def apply_categorized_symbology(
             color = colors[i % len(colors)]
             if isinstance(color, str):
                 from qgis.PyQt.QtGui import QColor
+
                 sym.setColor(QColor(color))
             else:
                 sym.setColor(color)
@@ -162,8 +169,7 @@ def apply_categorized_symbology(
         layer.setOpacity(opacity)
         layer.triggerRepaint()
 
-        logger.info("Categorized symbology: %s → %s (%d categories)",
-                    layer.name(), field, len(values))
+        logger.info("Categorized symbology: %s → %s (%d categories)", layer.name(), field, len(values))
         return True
 
     except ImportError:
@@ -189,11 +195,11 @@ def apply_labeling(
     try:
         from qgis.core import (
             QgsPalLayerSettings,
-            QgsTextFormat,
             QgsTextBufferSettings,
+            QgsTextFormat,
             QgsVectorLayerSimpleLabeling,
         )
-        from qgis.PyQt.QtGui import QFont, QColor
+        from qgis.PyQt.QtGui import QColor, QFont
 
         text_format = QgsTextFormat()
         font = QFont("Arial", font_size)
@@ -242,9 +248,9 @@ def apply_raster_pseudocolor(
     """
     try:
         from qgis.core import (
-            QgsSingleBandPseudoColorRenderer,
-            QgsRasterShader,
             QgsColorRampShader,
+            QgsRasterShader,
+            QgsSingleBandPseudoColorRenderer,
             QgsStyle,
         )
 

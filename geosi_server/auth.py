@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Server Authentication (Phase 1 — G2 fix)
 ════════════════════════════════════════════════════════════════════
@@ -24,13 +23,13 @@ Usage in route files::
     async def delete_layer(name: str, api_key: str = Depends(admin_auth)):
         ...
 """
+
 from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
 
-from fastapi import Header, HTTPException, status, Depends
+from fastapi import Depends, Header, HTTPException, status
 
 logger = logging.getLogger("geosi_server.auth")
 
@@ -52,7 +51,7 @@ def _get_admin_keys() -> frozenset[str]:
     return _load_keys("GEOSI_ADMIN_KEYS")
 
 
-def _extract_bearer_token(authorization: Optional[str]) -> Optional[str]:
+def _extract_bearer_token(authorization: str | None) -> str | None:
     """
     Extract the token from an ``Authorization: Bearer <token>`` header.
 
@@ -67,7 +66,7 @@ def _extract_bearer_token(authorization: Optional[str]) -> Optional[str]:
 
 
 async def api_key_auth(
-    authorization: Optional[str] = Header(default=None),
+    authorization: str | None = Header(default=None),
 ) -> str:
     """
     FastAPI dependency: validate API key from ``Authorization: Bearer <key>`` header.
@@ -95,9 +94,7 @@ async def api_key_auth(
         # No keys configured — warn loudly and deny all in production
         env = os.environ.get("GEOSI_ENV", "development").lower()
         if env == "production":
-            logger.error(
-                "GEOSI_API_KEYS is not set in production mode. All requests denied."
-            )
+            logger.error("GEOSI_API_KEYS is not set in production mode. All requests denied.")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Server configuration error: authentication not configured.",

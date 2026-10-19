@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — GraphRAG Engine (Phase P10, FR-8.4)
 ════════════════════════════════════════════════════════════════════
@@ -18,6 +17,7 @@ Space complexity:
 
 PRD references: §4.2 Research Agent, §4.1 Geology Agent, FR-8.4
 """
+
 from __future__ import annotations
 
 import logging
@@ -32,8 +32,9 @@ _RRF_K = 60  # RRF constant (standard recommendation)
 @dataclass
 class GraphRAGResult:
     """A single merged result from GraphRAG retrieval."""
+
     text: str
-    source: str          # "qdrant" | "neo4j" | "merged"
+    source: str  # "qdrant" | "neo4j" | "merged"
     score: float = 0.0
     metadata: Dict[str, Any] = field(default_factory=dict)
     node_type: Optional[str] = None  # Neo4j label if from graph
@@ -102,7 +103,10 @@ class GraphRAGEngine:
 
         logger.debug(
             "GraphRAG: query='%s' qdrant=%d graph=%d fused=%d",
-            query[:60], len(qdrant_results), len(graph_results), len(fused),
+            query[:60],
+            len(qdrant_results),
+            len(graph_results),
+            len(fused),
         )
         return fused
 
@@ -124,6 +128,7 @@ class GraphRAGEngine:
             return []
 
         from geosi_data.graph_schema import RelType
+
         rel_filter = "|".join(rel_types or [RelType.RELATED_TO, RelType.DERIVED_FROM])
 
         cypher = f"""
@@ -136,13 +141,15 @@ class GraphRAGEngine:
 
         results: list[GraphRAGResult] = []
         for r in records:
-            results.append(GraphRAGResult(
-                text=str(r.get("name", "")),
-                source="neo4j",
-                score=1.0,
-                metadata={"path": r.get("path", ""), "dataset_id": r.get("did", "")},
-                node_type=str(r.get("labels", ["Dataset"])[0]),
-            ))
+            results.append(
+                GraphRAGResult(
+                    text=str(r.get("name", "")),
+                    source="neo4j",
+                    score=1.0,
+                    metadata={"path": r.get("path", ""), "dataset_id": r.get("did", "")},
+                    node_type=str(r.get("labels", ["Dataset"])[0]),
+                )
+            )
         return results
 
     # ------------------------------------------------------------------
@@ -164,19 +171,19 @@ class GraphRAGEngine:
                 ctx = self._engine.knowledge.retrieve_context(query, doc_limit=limit)
                 raw = getattr(ctx, "relevant_docs", []) or []
             for r in raw:
-                results.append(GraphRAGResult(
-                    text=getattr(r, "text", str(r)),
-                    source="qdrant",
-                    score=float(getattr(r, "score", 0.0)),
-                    metadata=getattr(r, "metadata", {}),
-                ))
+                results.append(
+                    GraphRAGResult(
+                        text=getattr(r, "text", str(r)),
+                        source="qdrant",
+                        score=float(getattr(r, "score", 0.0)),
+                        metadata=getattr(r, "metadata", {}),
+                    )
+                )
         except Exception as exc:
             logger.debug("Qdrant search failed: %s", exc)
         return results
 
-    def _graph_search(
-        self, query: str, start_id: Optional[str], hops: int
-    ) -> List[GraphRAGResult]:
+    def _graph_search(self, query: str, start_id: Optional[str], hops: int) -> List[GraphRAGResult]:
         """Neo4j graph traversal for structurally related knowledge."""
         if not self._neo4j or not self._neo4j.available:
             return []
@@ -184,17 +191,17 @@ class GraphRAGEngine:
         try:
             if start_id:
                 # Traverse from known node
-                nodes = self._neo4j.find_related(
-                    "Dataset", "dataset_id", start_id, "RELATED_TO", depth=hops
-                )
+                nodes = self._neo4j.find_related("Dataset", "dataset_id", start_id, "RELATED_TO", depth=hops)
                 for n in nodes:
-                    results.append(GraphRAGResult(
-                        text=n.properties.get("name", str(n.node_id)),
-                        source="neo4j",
-                        score=0.8,
-                        metadata=n.properties,
-                        node_type=n.labels[0] if n.labels else "Unknown",
-                    ))
+                    results.append(
+                        GraphRAGResult(
+                            text=n.properties.get("name", str(n.node_id)),
+                            source="neo4j",
+                            score=0.8,
+                            metadata=n.properties,
+                            node_type=n.labels[0] if n.labels else "Unknown",
+                        )
+                    )
             else:
                 # Full-text keyword search in Neo4j (graceful if FT index not set up)
                 cypher = """
@@ -204,12 +211,14 @@ class GraphRAGEngine:
                 """
                 records = self._neo4j.cypher_query(cypher, {"q": query[:50]})
                 for r in records:
-                    results.append(GraphRAGResult(
-                        text=str(r.get("name", "")),
-                        source="neo4j",
-                        score=0.7,
-                        metadata={"path": r.get("path", ""), "dataset_id": r.get("did", "")},
-                    ))
+                    results.append(
+                        GraphRAGResult(
+                            text=str(r.get("name", "")),
+                            source="neo4j",
+                            score=0.7,
+                            metadata={"path": r.get("path", ""), "dataset_id": r.get("did", "")},
+                        )
+                    )
         except Exception as exc:
             logger.debug("Neo4j graph search failed: %s", exc)
         return results
@@ -266,6 +275,7 @@ class GraphRAGEngine:
     def _get_neo4j(self):
         try:
             from geosi_data.neo4j_client import get_neo4j_client
+
             return get_neo4j_client()
         except Exception:
             return None

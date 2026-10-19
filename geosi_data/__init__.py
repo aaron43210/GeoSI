@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Data Layer — PostGIS Integration
 ═══════════════════════════════════════════════════════════════════
@@ -12,10 +11,10 @@ Provides persistent spatial data storage via PostGIS:
 """
 
 from geosi_data.database import Database
-from geosi_data.postgis_manager import PostGISManager
 from geosi_data.layer_repository import LayerRepository
-from geosi_data.project_repository import ProjectRepository
 from geosi_data.metadata_repository import MetadataRepository
+from geosi_data.postgis_manager import PostGISManager
+from geosi_data.project_repository import ProjectRepository
 
 __all__ = [
     "Database",

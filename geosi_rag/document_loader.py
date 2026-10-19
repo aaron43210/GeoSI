@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI RAG — Document Loader
 ═══════════════════════════════════════════════════════════════════
@@ -14,11 +13,11 @@ Each loaded document is returned as a Document dataclass containing
 the extracted text, source path, format, and metadata.
 """
 
-import os
 import logging
-from pathlib import Path
+import os
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("geosi_rag.document_loader")
 
@@ -44,6 +43,7 @@ class Document:
         format: Document format (markdown, text, html, pdf, rst)
         metadata: Extra metadata (title, author, page count, etc.)
     """
+
     content: str
     source_path: str = ""
     format: str = "text"
@@ -151,9 +151,7 @@ class DocumentLoader:
                     if doc:
                         documents.append(doc)
 
-        logger.info(
-            f"Loaded {len(documents)} documents from '{dir_path}'"
-        )
+        logger.info(f"Loaded {len(documents)} documents from '{dir_path}'")
         return documents
 
     # ── Format-specific loaders ────────────────────────────────────────
@@ -161,7 +159,7 @@ class DocumentLoader:
     @staticmethod
     def _load_text(path: str) -> str:
         """Load plain text or markdown file."""
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        with open(path, encoding="utf-8", errors="ignore") as f:
             return f.read()
 
     @staticmethod
@@ -174,10 +172,10 @@ class DocumentLoader:
                 "beautifulsoup4 not installed — falling back to raw text "
                 "for HTML files. Install with: pip install beautifulsoup4"
             )
-            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            with open(path, encoding="utf-8", errors="ignore") as f:
                 return f.read()
 
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        with open(path, encoding="utf-8", errors="ignore") as f:
             soup = BeautifulSoup(f.read(), "html.parser")
 
         # Remove script and style elements
@@ -196,10 +194,7 @@ class DocumentLoader:
         try:
             import pdfplumber
         except ImportError:
-            logger.warning(
-                "pdfplumber not installed — cannot load PDF files. "
-                "Install with: pip install pdfplumber"
-            )
+            logger.warning("pdfplumber not installed — cannot load PDF files. " "Install with: pip install pdfplumber")
             return ""
 
         text_parts = []
@@ -224,17 +219,19 @@ class DocumentLoader:
         """
         try:
             from docutils.core import publish_parts
-            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+
+            with open(path, encoding="utf-8", errors="ignore") as f:
                 rst_content = f.read()
             parts = publish_parts(rst_content, writer_name="html")
             # Parse the HTML output to get clean text
             try:
                 from bs4 import BeautifulSoup
+
                 soup = BeautifulSoup(parts["html_body"], "html.parser")
                 return soup.get_text(separator="\n", strip=True)
             except ImportError:
                 return rst_content
         except ImportError:
             logger.debug("docutils not installed — loading RST as plain text")
-            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            with open(path, encoding="utf-8", errors="ignore") as f:
                 return f.read()

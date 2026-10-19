@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI RAG — Embedding Service
 ═══════════════════════════════════════════════════════════════════
@@ -9,8 +8,8 @@ Default model: BAAI/bge-large-en-v1.5 (1024-dim, ~1.3GB)
 No OpenAI — fully local embedding pipeline.
 """
 
-import os
 import logging
+import os
 from typing import List, Optional
 
 logger = logging.getLogger("geosi_rag.embedding_service")
@@ -37,10 +36,7 @@ class EmbeddingService:
             model_name: HuggingFace model ID. Defaults to BAAI/bge-large-en-v1.5.
                         Override via EMBEDDING_MODEL env var.
         """
-        self.model_name = (
-            model_name
-            or os.environ.get("EMBEDDING_MODEL", _DEFAULT_MODEL)
-        )
+        self.model_name = model_name or os.environ.get("EMBEDDING_MODEL", _DEFAULT_MODEL)
         self._model = None
         self._vector_size = None
         self.available = False
@@ -60,16 +56,10 @@ class EmbeddingService:
             self._vector_size = len(test_embedding[0])
             self.available = True
 
-            logger.info(
-                f"Embedding model loaded: {self.model_name} "
-                f"(dim={self._vector_size})"
-            )
+            logger.info(f"Embedding model loaded: {self.model_name} " f"(dim={self._vector_size})")
 
         except ImportError:
-            logger.warning(
-                "sentence-transformers not installed. "
-                "Install with: pip install sentence-transformers"
-            )
+            logger.warning("sentence-transformers not installed. " "Install with: pip install sentence-transformers")
             self.available = False
 
         except Exception as e:
@@ -100,10 +90,7 @@ class EmbeddingService:
             RuntimeError: If embedding model is not available.
         """
         if not self.available or self._model is None:
-            raise RuntimeError(
-                "Embedding service not available. "
-                "Install sentence-transformers and try again."
-            )
+            raise RuntimeError("Embedding service not available. " "Install sentence-transformers and try again.")
 
         # BGE models work better with an instruction prefix for queries
         if "bge" in self.model_name.lower():

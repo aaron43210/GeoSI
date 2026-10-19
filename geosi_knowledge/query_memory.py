@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Knowledge — Query Memory
 ═══════════════════════════════════════════════════════════════════
@@ -13,14 +12,14 @@ Storage: JSON file (~/.geosi/query_history.json) for persistence
 across sessions + in-memory for fast lookup.
 """
 
-import os
 import json
-import re
 import logging
+import os
+import re
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("geosi_knowledge.query_memory")
 
@@ -41,6 +40,7 @@ class QueryPattern:
         avg_success_rate: Average success rate for this pattern
         example_queries: Example queries matching this pattern
     """
+
     pattern: str = ""
     frequency: int = 0
     last_seen: str = ""
@@ -48,23 +48,19 @@ class QueryPattern:
     example_queries: List[str] = field(default_factory=list)
 
     def __repr__(self):
-        return (
-            f"QueryPattern({self.pattern}, freq={self.frequency}, "
-            f"success={self.avg_success_rate:.0%})"
-        )
+        return f"QueryPattern({self.pattern}, freq={self.frequency}, " f"success={self.avg_success_rate:.0%})"
 
 
 @dataclass
 class QueryRecord:
     """Internal record of a single query execution."""
+
     query: str
     intent: str = ""
     entities: Dict[str, Any] = field(default_factory=dict)
     status: str = "unknown"  # success, failed, partial
     tool_sequence: List[str] = field(default_factory=list)
-    timestamp: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
 class QueryMemory:
@@ -120,7 +116,7 @@ class QueryMemory:
 
         # Trim if over limit
         if len(self._records) > self._max_records:
-            self._records = self._records[-self._max_records:]
+            self._records = self._records[-self._max_records :]
 
         # Persist to disk
         self._save_history()
@@ -294,7 +290,7 @@ class QueryMemory:
             return
 
         try:
-            with open(self.history_file, "r", encoding="utf-8") as f:
+            with open(self.history_file, encoding="utf-8") as f:
                 data = json.load(f)
 
             self._records = [
@@ -317,10 +313,38 @@ class QueryMemory:
     def _extract_terms(text: str) -> List[str]:
         """Extract meaningful terms from text for pattern matching."""
         stop_words = {
-            "the", "a", "an", "is", "are", "was", "to", "of", "in",
-            "for", "on", "with", "at", "by", "from", "and", "or",
-            "not", "this", "that", "it", "as", "do", "how", "what",
-            "can", "will", "all", "my", "me", "we", "you",
+            "the",
+            "a",
+            "an",
+            "is",
+            "are",
+            "was",
+            "to",
+            "of",
+            "in",
+            "for",
+            "on",
+            "with",
+            "at",
+            "by",
+            "from",
+            "and",
+            "or",
+            "not",
+            "this",
+            "that",
+            "it",
+            "as",
+            "do",
+            "how",
+            "what",
+            "can",
+            "will",
+            "all",
+            "my",
+            "me",
+            "we",
+            "you",
         }
         tokens = re.findall(r"\b[a-zA-Z0-9_]+\b", text.lower())
         return [t for t in tokens if t not in stop_words and len(t) > 2]

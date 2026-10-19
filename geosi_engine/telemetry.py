@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — OpenTelemetry Instrumentation (Phase P1 gap, FR-7.3)
 ════════════════════════════════════════════════════════════════════
@@ -48,13 +47,15 @@ GEOSI_OTEL_ENDPOINT   — OTLP gRPC endpoint, e.g. http://localhost:4317
 GEOSI_SERVICE_NAME    — service name reported to the collector (default: geosi)
 GEOSI_ENV             — injected as ``deployment.environment`` attribute
 """
+
 from __future__ import annotations
 
 import functools
 import logging
 import os
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Any, Callable, Generator, Optional
+from typing import Any, Callable, Optional
 
 logger = logging.getLogger("geosi_engine.telemetry")
 
@@ -89,15 +90,17 @@ def _init_tracer():
 
     try:
         from opentelemetry import trace
+        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+        from opentelemetry.sdk.resources import Resource
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
-        from opentelemetry.sdk.resources import Resource
-        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 
-        resource = Resource.create({
-            "service.name": service_name,
-            "deployment.environment": os.environ.get("GEOSI_ENV", "development"),
-        })
+        resource = Resource.create(
+            {
+                "service.name": service_name,
+                "deployment.environment": os.environ.get("GEOSI_ENV", "development"),
+            }
+        )
         provider = TracerProvider(resource=resource)
         exporter = OTLPSpanExporter(endpoint=endpoint, insecure=True)
         provider.add_span_processor(BatchSpanProcessor(exporter))
@@ -134,6 +137,7 @@ def get_tracer():
 # No-op tracer (fallback when OTel is absent / endpoint not configured)
 # ---------------------------------------------------------------------------
 
+
 class _NoopSpan:
     """Zero-overhead no-op span."""
 
@@ -167,6 +171,7 @@ class _NoopTracer:
 # Public helpers
 # ---------------------------------------------------------------------------
 
+
 def span(name: str, agent: Optional[str] = None):
     """
     Decorator that wraps a function in an OTel span.
@@ -184,6 +189,7 @@ def span(name: str, agent: Optional[str] = None):
     agent:
         Optional agent name attached as ``agent.name`` attribute.
     """
+
     def decorator(fn: Callable) -> Callable:
         @functools.wraps(fn)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -197,11 +203,14 @@ def span(name: str, agent: Optional[str] = None):
                     s.record_exception(exc)
                     try:
                         from opentelemetry.trace import StatusCode
+
                         s.set_status(StatusCode.ERROR, str(exc))
                     except Exception:
                         logger.debug("suppressed exception", exc_info=True)
                     raise
+
         return wrapper
+
     return decorator
 
 
@@ -233,6 +242,7 @@ def start_span(name: str, **attrs: Any) -> Generator[Any, None, None]:
             s.record_exception(exc)
             try:
                 from opentelemetry.trace import StatusCode
+
                 s.set_status(StatusCode.ERROR, str(exc))
             except Exception:
                 logger.debug("suppressed exception", exc_info=True)

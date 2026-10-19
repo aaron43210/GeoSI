@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Validation Agent
 ════════════════════════════════════════════════════════════════════
@@ -13,6 +12,7 @@ Responsibilities (PRD FR-1.2, G4, G12)
 3. Safe expression evaluation: replaces ``gdf.eval(expression)``
    with an AST-based evaluator that rejects arbitrary code (G12 fix).
 """
+
 from __future__ import annotations
 
 import ast
@@ -21,7 +21,7 @@ import re
 from typing import Any, Optional
 
 from geosi_engine.models import ExecutionPlan, ToolStep
-from geosi_engine.validation import ValidationEngine, ValidationReport, ValidationIssue
+from geosi_engine.validation import ValidationEngine, ValidationIssue, ValidationReport
 
 logger = logging.getLogger("geosi_engine.agents.validation")
 
@@ -29,6 +29,7 @@ logger = logging.getLogger("geosi_engine.agents.validation")
 # ---------------------------------------------------------------------------
 # SQL Identifier Allow-List
 # ---------------------------------------------------------------------------
+
 
 class TableAllowList:
     """
@@ -112,6 +113,7 @@ def get_allow_list() -> TableAllowList:
 # Safe Expression Evaluator (G12 fix — replaces gdf.eval())
 # ---------------------------------------------------------------------------
 
+
 class _SafeNodeVisitor(ast.NodeVisitor):
     """
     AST visitor that rejects any node type not on the safe list.
@@ -122,16 +124,37 @@ class _SafeNodeVisitor(ast.NodeVisitor):
     ``GeneratorExp``, etc.) raises ``ValueError``.
     """
 
-    _ALLOWED = frozenset({
-        ast.BinOp, ast.UnaryOp, ast.Name, ast.Constant,
-        ast.Expr, ast.Expression,
-        ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Mod,
-        ast.Pow, ast.FloorDiv,
-        ast.UAdd, ast.USub, ast.Not,
-        ast.Compare, ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE,
-        ast.BoolOp, ast.And, ast.Or,
-        ast.Load,  # Variable access context
-    })
+    _ALLOWED = frozenset(
+        {
+            ast.BinOp,
+            ast.UnaryOp,
+            ast.Name,
+            ast.Constant,
+            ast.Expr,
+            ast.Expression,
+            ast.Add,
+            ast.Sub,
+            ast.Mult,
+            ast.Div,
+            ast.Mod,
+            ast.Pow,
+            ast.FloorDiv,
+            ast.UAdd,
+            ast.USub,
+            ast.Not,
+            ast.Compare,
+            ast.Eq,
+            ast.NotEq,
+            ast.Lt,
+            ast.LtE,
+            ast.Gt,
+            ast.GtE,
+            ast.BoolOp,
+            ast.And,
+            ast.Or,
+            ast.Load,  # Variable access context
+        }
+    )
 
     def generic_visit(self, node: ast.AST) -> None:
         if type(node) not in self._ALLOWED:
@@ -207,13 +230,55 @@ safe_evaluator = SafeExpressionEvaluator()
 # ---------------------------------------------------------------------------
 
 _NAMED_LAYER_RE = re.compile(r"\b(?:the\s+)?([a-z_][a-z0-9_]*)\s+layer\b", re.IGNORECASE)
-_NOT_LAYER_WORDS = frozenset({
-    "the", "a", "an", "this", "that", "new", "result", "output", "input", "each",
-    "every", "same", "previous", "vector", "raster", "point", "line", "polygon",
-    "one", "single", "another", "separate", "combined", "merged", "final", "temporary",
-    "my", "your", "base", "current", "active", "selected", "any", "all", "other", "first",
-    "second", "last", "target", "source", "reference", "mask", "empty", "two", "three",
-})
+_NOT_LAYER_WORDS = frozenset(
+    {
+        "the",
+        "a",
+        "an",
+        "this",
+        "that",
+        "new",
+        "result",
+        "output",
+        "input",
+        "each",
+        "every",
+        "same",
+        "previous",
+        "vector",
+        "raster",
+        "point",
+        "line",
+        "polygon",
+        "one",
+        "single",
+        "another",
+        "separate",
+        "combined",
+        "merged",
+        "final",
+        "temporary",
+        "my",
+        "your",
+        "base",
+        "current",
+        "active",
+        "selected",
+        "any",
+        "all",
+        "other",
+        "first",
+        "second",
+        "last",
+        "target",
+        "source",
+        "reference",
+        "mask",
+        "empty",
+        "two",
+        "three",
+    }
+)
 # Tools that build SQL from their parameters (identifiers must pass the allow-list)
 _SQL_TOOL_RE = re.compile(r"sql|postgis|spatialite|database", re.IGNORECASE)
 
@@ -304,10 +369,13 @@ class ValidationAgent:
         registry = getattr(self._engine, "registry", None)
         tool = registry.get_tool(step.tool_name) if registry is not None else None
         if registry is not None and tool is None:
-            report.add(ValidationIssue(
-                "error", "unknown_tool",
-                f"Step {step.step_id}: tool '{step.tool_name}' not found in registry.",
-            ))
+            report.add(
+                ValidationIssue(
+                    "error",
+                    "unknown_tool",
+                    f"Step {step.step_id}: tool '{step.tool_name}' not found in registry.",
+                )
+            )
             return
         spec = tool.spec() if tool is not None else None
         is_qgis = bool(getattr(spec, "qgis_algorithm", None))
@@ -317,8 +385,7 @@ class ValidationAgent:
         layer_names = list(step.input_layers)
         for key, value in step.parameters.items():
             if getattr(specs.get(key), "param_type", "") == "layer":
-                layer_names.extend(v for v in (value if isinstance(value, list) else [value])
-                                   if isinstance(v, str))
+                layer_names.extend(v for v in (value if isinstance(value, list) else [value]) if isinstance(v, str))
         if state is not None:
             for name in layer_names:
                 if name in produced or name.startswith("step_"):
@@ -327,10 +394,14 @@ class ValidationAgent:
                 if layer is None:
                     if self._looks_like_path(name):
                         continue
-                    report.add(ValidationIssue(
-                        "error", "unknown_layer",
-                        f"Step {step.step_id}: input layer '{name}' is not loaded.", name,
-                    ))
+                    report.add(
+                        ValidationIssue(
+                            "error",
+                            "unknown_layer",
+                            f"Step {step.step_id}: input layer '{name}' is not loaded.",
+                            name,
+                        )
+                    )
                     continue
                 crs_report = self._validator.validate_crs(layer)
                 report.issues.extend(i for i in crs_report.issues if i.severity != "error")
@@ -356,8 +427,11 @@ class ValidationAgent:
             fields = [f for f in (getattr(layer, "fields", None) or []) if f != "fid"]
             if not fields:
                 continue  # unknown (e.g. an earlier step's output)
-            wanted = value if isinstance(value, list) else (
-                [v.strip() for v in value.split(",")] if isinstance(value, str) else [])
+            wanted = (
+                value
+                if isinstance(value, list)
+                else ([v.strip() for v in value.split(",")] if isinstance(value, str) else [])
+            )
             by_lower = {f.lower(): f for f in fields}
             for name in wanted:
                 if not name or name in fields:
@@ -370,12 +444,15 @@ class ValidationAgent:
                     else:
                         step.parameters[key] = str(step.parameters[key]).replace(name, fixed)
                     continue
-                report.add(ValidationIssue(
-                    "error", "unknown_field",
-                    f"Step {step.step_id}: field '{name}' ({key}) does not exist in layer "
-                    f"'{layer_name}'. Its fields are: {', '.join(fields)}.",
-                    layer_name,
-                ))
+                report.add(
+                    ValidationIssue(
+                        "error",
+                        "unknown_field",
+                        f"Step {step.step_id}: field '{name}' ({key}) does not exist in layer "
+                        f"'{layer_name}'. Its fields are: {', '.join(fields)}.",
+                        layer_name,
+                    )
+                )
 
     def _check_sql_identifiers(self, step: ToolStep, report: ValidationReport) -> None:
         """Reject any SQL-injectable identifier in parameters (G4)."""
@@ -387,13 +464,15 @@ class ValidationAgent:
                 try:
                     allow_list.validate_and_quote(value)
                 except ValueError as exc:
-                    report.add(ValidationIssue(
-                        "error", "sql_injection_risk",
-                        f"Step {step.step_id}, param '{key}': {exc}",
-                    ))
+                    report.add(
+                        ValidationIssue(
+                            "error",
+                            "sql_injection_risk",
+                            f"Step {step.step_id}, param '{key}': {exc}",
+                        )
+                    )
 
-    def _check_expressions(self, step: ToolStep, specs: dict, is_qgis: bool,
-                           report: ValidationReport) -> None:
+    def _check_expressions(self, step: ToolStep, specs: dict, is_qgis: bool, report: ValidationReport) -> None:
         """QGIS expressions must parse; other expressions must be AST-safe (G12)."""
         from geosi_engine.base import get_expression_validator
 
@@ -419,7 +498,10 @@ class ValidationAgent:
                 except ValueError as exc:
                     error = str(exc)
             if error:
-                report.add(ValidationIssue(
-                    "error", "invalid_expression",
-                    f"Step {step.step_id}, param '{key}': expression {value!r} is invalid: {error}",
-                ))
+                report.add(
+                    ValidationIssue(
+                        "error",
+                        "invalid_expression",
+                        f"Step {step.step_id}, param '{key}': expression {value!r} is invalid: {error}",
+                    )
+                )

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Server — Workflow Routes
 ═══════════════════════════════════════════════════════════════════
@@ -11,7 +10,6 @@ Endpoints:
 """
 
 import logging
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
@@ -24,6 +22,7 @@ router = APIRouter()
 
 # ── Request/Response models ────────────────────────────────────────────
 
+
 class WorkflowSearchRequest(BaseModel):
     query: str = Field(..., description="Search query")
     limit: int = Field(5, ge=1, le=20)
@@ -33,14 +32,14 @@ class WorkflowItem(BaseModel):
     name: str
     description: str
     user_query: str
-    tool_sequence: List[str]
+    tool_sequence: list[str]
     success: bool = True
-    tags: List[str] = []
+    tags: list[str] = []
 
 
 class WorkflowSearchResponse(BaseModel):
     query: str
-    workflows: List[WorkflowItem]
+    workflows: list[WorkflowItem]
     total: int
 
 
@@ -50,21 +49,22 @@ class WorkflowSuggestRequest(BaseModel):
 
 class WorkflowSuggestResponse(BaseModel):
     query: str
-    suggested_workflows: List[WorkflowItem]
+    suggested_workflows: list[WorkflowItem]
     knowledge_context: str
-    tool_warnings: List[str]
+    tool_warnings: list[str]
 
 
 class HistoryItem(BaseModel):
     id: str
     query: str
     status: str
-    tool_sequence: List[str] = []
+    tool_sequence: list[str] = []
     duration_ms: float = 0.0
-    created_at: Optional[str] = None
+    created_at: str | None = None
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────
+
 
 @router.post("/search", response_model=WorkflowSearchResponse)
 async def workflow_search(req: WorkflowSearchRequest, api_key: str = Depends(api_key_auth)):
@@ -72,13 +72,12 @@ async def workflow_search(req: WorkflowSearchRequest, api_key: str = Depends(api
     Search the workflow knowledge base for similar past workflows.
     """
     from geosi_server.app import get_pool
+
     engine = get_pool().get_or_create(api_key)
 
     workflows = []
     if engine.knowledge:
-        similar = engine.knowledge.workflow_memory.find_similar(
-            req.query, limit=req.limit
-        )
+        similar = engine.knowledge.workflow_memory.find_similar(req.query, limit=req.limit)
         workflows = [
             WorkflowItem(
                 name=wf.name,
@@ -107,6 +106,7 @@ async def workflow_suggest(req: WorkflowSuggestRequest, api_key: str = Depends(a
     that would enhance the planning agent's decision-making.
     """
     from geosi_server.app import get_pool
+
     engine = get_pool().get_or_create(api_key)
 
     suggested = []
@@ -138,10 +138,11 @@ async def workflow_suggest(req: WorkflowSuggestRequest, api_key: str = Depends(a
     )
 
 
-@router.get("/history", response_model=List[HistoryItem])
+@router.get("/history", response_model=list[HistoryItem])
 async def workflow_history(limit: int = 50, api_key: str = Depends(api_key_auth)):
     """Get recent workflow execution history."""
     from geosi_server.app import get_pool
+
     engine = get_pool().get_or_create(api_key)
 
     history = engine.get_workflow_history()
@@ -163,6 +164,7 @@ async def workflow_history(limit: int = 50, api_key: str = Depends(api_key_auth)
 async def workflow_stats(api_key: str = Depends(api_key_auth)):
     """Get tool reliability and usage statistics."""
     from geosi_server.app import get_pool
+
     engine = get_pool().get_or_create(api_key)
 
     stats = {}

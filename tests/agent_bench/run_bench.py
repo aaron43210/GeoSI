@@ -33,9 +33,11 @@ class Ctx:
     def vector(self, geom=None):
         from qgis.core import QgsVectorLayer, QgsWkbTypes
 
-        want = {"point": QgsWkbTypes.GeometryType.PointGeometry,
-                "line": QgsWkbTypes.GeometryType.LineGeometry,
-                "polygon": QgsWkbTypes.GeometryType.PolygonGeometry}.get(geom)
+        want = {
+            "point": QgsWkbTypes.GeometryType.PointGeometry,
+            "line": QgsWkbTypes.GeometryType.LineGeometry,
+            "polygon": QgsWkbTypes.GeometryType.PolygonGeometry,
+        }.get(geom)
         for lyr in reversed(self.layers):  # last produced layer is the answer
             if isinstance(lyr, QgsVectorLayer) and (want is None or lyr.geometryType() == want):
                 return lyr
@@ -44,7 +46,7 @@ class Ctx:
     def raster(self):
         from qgis.core import QgsRasterLayer
 
-        return next((l for l in reversed(self.layers) if isinstance(l, QgsRasterLayer)), None)
+        return next((lyr for lyr in reversed(self.layers) if isinstance(lyr, QgsRasterLayer)), None)
 
 
 class FakeIface:
@@ -60,14 +62,26 @@ class FakeIface:
         class Bar:
             def pushMessage(self, *a, **k):
                 pass
+
         return Bar()
 
-    def addToolBarIcon(self, a): pass
-    def removeToolBarIcon(self, a): pass
-    def addPluginToMenu(self, m, a): pass
-    def removePluginMenu(self, m, a): pass
-    def addDockWidget(self, area, d): self.window.addDockWidget(area, d)
-    def removeDockWidget(self, d): self.window.removeDockWidget(d)
+    def addToolBarIcon(self, a):
+        pass
+
+    def removeToolBarIcon(self, a):
+        pass
+
+    def addPluginToMenu(self, m, a):
+        pass
+
+    def removePluginMenu(self, m, a):
+        pass
+
+    def addDockWidget(self, area, d):
+        self.window.addDockWidget(area, d)
+
+    def removeDockWidget(self, d):
+        self.window.removeDockWidget(d)
 
 
 def _import_plugin(spec: str):
@@ -82,6 +96,7 @@ def _import_plugin(spec: str):
     else:
         sys.path.insert(0, os.path.dirname(os.path.abspath(spec)))
     import geosi_plugin
+
     return geosi_plugin
 
 
@@ -144,6 +159,7 @@ def main() -> int:
     args = ap.parse_args()
     if args.verbose:
         import logging
+
         logging.basicConfig(level=logging.INFO, format="      [%(name)s] %(message)s")
         for noisy in ("urllib3", "httpx", "geosi_engine.registry", "geosi_engine.tools.domain_tools"):
             logging.getLogger(noisy).setLevel(logging.WARNING)
@@ -152,12 +168,15 @@ def main() -> int:
 
     app = QgsApplication([], True)
     app.initQgis()
-    for p in (os.path.join(QgsApplication.pkgDataPath(), "python", "plugins"),
-              os.path.join(QgsApplication.prefixPath(), "python", "plugins"),
-              "/usr/share/qgis/python/plugins"):
+    for p in (
+        os.path.join(QgsApplication.pkgDataPath(), "python", "plugins"),
+        os.path.join(QgsApplication.prefixPath(), "python", "plugins"),
+        "/usr/share/qgis/python/plugins",
+    ):
         if os.path.isdir(p):
             sys.path.append(p)
     from processing.core.Processing import Processing
+
     Processing.initialize()
 
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -182,10 +201,21 @@ def main() -> int:
             except Exception as e:  # checker crash counts as a failure
                 reason = f"checker error: {e}"
         ok = reason is None
-        rows.append({"id": task_id, "category": category, "query": query, "pass": ok,
-                     "reason": reason, "seconds": round(elapsed, 1), "answer": answer[:300]})
-        print(f"{'PASS' if ok else 'FAIL'} {task_id:4} {elapsed:5.1f}s  {query}" + ("" if ok else f"\n      → {reason}"),
-              flush=True)
+        rows.append(
+            {
+                "id": task_id,
+                "category": category,
+                "query": query,
+                "pass": ok,
+                "reason": reason,
+                "seconds": round(elapsed, 1),
+                "answer": answer[:300],
+            }
+        )
+        print(
+            f"{'PASS' if ok else 'FAIL'} {task_id:4} {elapsed:5.1f}s  {query}" + ("" if ok else f"\n      → {reason}"),
+            flush=True,
+        )
 
     by_cat = defaultdict(lambda: [0, 0])
     for r in rows:

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Database Connection Manager
 ═══════════════════════════════════════════════════════════════════
@@ -19,8 +18,8 @@ Design:
     - All schema changes managed by Alembic migrations (not create_all).
 """
 
-import os
 import logging
+import os
 from contextlib import contextmanager
 from typing import Optional
 
@@ -109,9 +108,7 @@ class Database:
             logger.info("PostGIS connected: %s", self._mask_url(self.url))
 
         except Exception as exc:
-            logger.warning(
-                "PostGIS unavailable — persistence disabled. Error: %s", exc
-            )
+            logger.warning("PostGIS unavailable — persistence disabled. Error: %s", exc)
             self.available = False
 
     def init_db(self) -> bool:
@@ -132,8 +129,7 @@ class Database:
         env = os.environ.get("GEOSI_ENV", "development").lower()
         if env == "production":
             logger.error(
-                "init_db() (create_all) must NOT be called in production. "
-                "Run 'alembic upgrade head' instead."
+                "init_db() (create_all) must NOT be called in production. " "Run 'alembic upgrade head' instead."
             )
             return False
 
@@ -194,11 +190,11 @@ class Database:
         """Mask password in connection URL for logging."""
         try:
             from urllib.parse import urlparse, urlunparse
+
             parsed = urlparse(url)
             if parsed.password:
                 masked = parsed._replace(
-                    netloc=f"{parsed.username}:***@{parsed.hostname}"
-                    + (f":{parsed.port}" if parsed.port else "")
+                    netloc=f"{parsed.username}:***@{parsed.hostname}" + (f":{parsed.port}" if parsed.port else "")
                 )
                 return urlunparse(masked)
         except Exception:

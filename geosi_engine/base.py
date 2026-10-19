@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Engine — Tool Base Classes (universal, framework-agnostic)
 ═══════════════════════════════════════════════════════════════════
@@ -22,15 +21,15 @@ Data Structures:
     _BACKENDS: Dict[str, Callable] — O(1) hash-table lookup for backends
 """
 
-from abc import ABC, abstractmethod
-from typing import Callable, Dict, List, Optional
 import logging
 import time
+from abc import ABC, abstractmethod
+from typing import Callable, Dict, List, Optional
 
 from geosi_engine.models import (
-    ToolSpec,
     ToolParameter,
     ToolResult,
+    ToolSpec,
 )
 
 logger = logging.getLogger("geosi_engine.base")
@@ -39,6 +38,7 @@ logger = logging.getLogger("geosi_engine.base")
 # ═══════════════════════════════════════════════════════════════════════════
 # Abstract base contract — every GIS tool must implement these methods
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 class GISTool(ABC):
     """
@@ -109,6 +109,7 @@ class GISTool(ABC):
 # ═══════════════════════════════════════════════════════════════════════════
 # Portable tools — run without any host framework (GeoPandas / Rasterio)
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 class PortableTool(GISTool):
     """Subclass when the tool runs without any host framework."""

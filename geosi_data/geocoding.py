@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI — Geocoding (Nominatim + Photon)
 ══════════════════════════════════════════════════════════════════════
@@ -8,6 +7,7 @@ just stdlib urllib.
 Usage:
     from geosi_data.geocoding import geocode, reverse_geocode, zoom_to_place
 """
+
 from __future__ import annotations
 
 import json
@@ -44,9 +44,13 @@ def geocode(
 def reverse_geocode(lat: float, lon: float) -> Optional[str]:
     """Reverse geocode a point to a human-readable address."""
     try:
-        params = urllib.parse.urlencode({
-            "lat": lat, "lon": lon, "format": "json",
-        })
+        params = urllib.parse.urlencode(
+            {
+                "lat": lat,
+                "lon": lon,
+                "format": "json",
+            }
+        )
         req = urllib.request.Request(
             f"{_NOMINATIM}/reverse?{params}",
             headers={"User-Agent": _UA},
@@ -71,7 +75,7 @@ def zoom_to_place(address: str, project=None) -> Optional[Tuple[float, float]]:
     lon, lat, display = result
     logger.info("Zoomed to %r → %s (%f, %f)", address, display, lon, lat)
     try:
-        from qgis.core import QgsRectangle, QgsProject, QgsCoordinateReferenceSystem, QgsCoordinateTransform
+        from qgis.core import QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsProject, QgsRectangle
         from qgis.utils import iface
 
         canvas = iface.mapCanvas()
@@ -92,10 +96,16 @@ def zoom_to_place(address: str, project=None) -> Optional[Tuple[float, float]]:
 
 # ── Providers ──────────────────────────────────────────────────────────
 
+
 def _nominatim_geocode(address: str) -> Optional[Tuple[float, float, str]]:
-    params = urllib.parse.urlencode({
-        "q": address, "format": "json", "limit": "1", "addressdetails": "0",
-    })
+    params = urllib.parse.urlencode(
+        {
+            "q": address,
+            "format": "json",
+            "limit": "1",
+            "addressdetails": "0",
+        }
+    )
     req = urllib.request.Request(
         f"{_NOMINATIM}/search?{params}",
         headers={"User-Agent": _UA},

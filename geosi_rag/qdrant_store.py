@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI RAG — Qdrant Vector Store
 ═══════════════════════════════════════════════════════════════════
@@ -12,10 +11,10 @@ Default collections:
     - geosi_history: Past execution embeddings
 """
 
+import logging
 import os
 import uuid
-import logging
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
 from geosi_rag.chunker import Chunk
 
@@ -89,10 +88,7 @@ class QdrantStore:
             self.available = True
 
         except ImportError:
-            logger.warning(
-                "qdrant-client not installed. "
-                "Install with: pip install qdrant-client"
-            )
+            logger.warning("qdrant-client not installed. " "Install with: pip install qdrant-client")
             self.available = False
 
         except Exception as e:
@@ -149,9 +145,7 @@ class QdrantStore:
                     distance=distance_map.get(distance, Distance.COSINE),
                 ),
             )
-            logger.info(
-                f"Created collection '{name}' (dim={vector_size}, {distance})"
-            )
+            logger.info(f"Created collection '{name}' (dim={vector_size}, {distance})")
             return True
 
         except Exception as e:
@@ -179,10 +173,7 @@ class QdrantStore:
             return 0
 
         if len(chunks) != len(embeddings):
-            raise ValueError(
-                f"Chunks ({len(chunks)}) and embeddings ({len(embeddings)}) "
-                f"must have the same length"
-            )
+            raise ValueError(f"Chunks ({len(chunks)}) and embeddings ({len(embeddings)}) " f"must have the same length")
 
         from qdrant_client.models import PointStruct
 
@@ -195,25 +186,25 @@ class QdrantStore:
                 "chunk_index": chunk.chunk_index,
                 **chunk.metadata,
             }
-            points.append(PointStruct(
-                id=point_id,
-                vector=embedding,
-                payload=payload,
-            ))
+            points.append(
+                PointStruct(
+                    id=point_id,
+                    vector=embedding,
+                    payload=payload,
+                )
+            )
 
         try:
             # Batch upsert in groups of 100
             batch_size = 100
             for i in range(0, len(points), batch_size):
-                batch = points[i:i + batch_size]
+                batch = points[i : i + batch_size]
                 self._client.upsert(
                     collection_name=collection,
                     points=batch,
                 )
 
-            logger.info(
-                f"Upserted {len(points)} points to collection '{collection}'"
-            )
+            logger.info(f"Upserted {len(points)} points to collection '{collection}'")
             return len(points)
 
         except Exception as e:
@@ -245,16 +236,14 @@ class QdrantStore:
             return []
 
         try:
-            from qdrant_client.models import Filter, FieldCondition, MatchValue
+            from qdrant_client.models import FieldCondition, Filter, MatchValue
 
             # Build filter if provided
             qdrant_filter = None
             if filters:
                 conditions = []
                 for key, value in filters.items():
-                    conditions.append(
-                        FieldCondition(key=key, match=MatchValue(value=value))
-                    )
+                    conditions.append(FieldCondition(key=key, match=MatchValue(value=value)))
                 qdrant_filter = Filter(must=conditions)
 
             results = self._client.search(
@@ -271,10 +260,7 @@ class QdrantStore:
                     "score": hit.score,
                     "source": hit.payload.get("source", ""),
                     "chunk_index": hit.payload.get("chunk_index", 0),
-                    "metadata": {
-                        k: v for k, v in hit.payload.items()
-                        if k not in ("text", "source", "chunk_index")
-                    },
+                    "metadata": {k: v for k, v in hit.payload.items() if k not in ("text", "source", "chunk_index")},
                     "id": str(hit.id),
                 }
                 for hit in results

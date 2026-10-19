@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Remote Sensing Agent (Core Agent #7)
 ════════════════════════════════════════════════════════════════════
@@ -18,13 +17,14 @@ Production requirements:
   Permission & Safety Agent.
 * OTel span per operation.
 """
+
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from geosi_engine.telemetry import span, set_span_attr
+from geosi_engine.telemetry import set_span_attr, span
 
 logger = logging.getLogger("geosi_engine.agents.remote_sensing")
 
@@ -74,9 +74,10 @@ _INDEX_FORMULAS: dict[str, dict[str, Any]] = {
 @dataclass
 class RasterJobRequest:
     """A remote sensing job to execute."""
-    operation: str              # "spectral_index" | "atmospheric_correction" | "change_detection" | "band_composite"
-    sensor: str                 # "Sentinel-2" | "Landsat-8" | "MODIS" | "SAR" | ...
-    input_layers: List[str]     # input raster layer names
+
+    operation: str  # "spectral_index" | "atmospheric_correction" | "change_detection" | "band_composite"
+    sensor: str  # "Sentinel-2" | "Landsat-8" | "MODIS" | "SAR" | ...
+    input_layers: List[str]  # input raster layer names
     parameters: Dict[str, Any] = field(default_factory=dict)
     session_id: str = ""
     risk_level: str = "mutating"  # remote sensing writes are always mutating at minimum
@@ -85,6 +86,7 @@ class RasterJobRequest:
 @dataclass
 class RasterJobResult:
     """Result of a remote sensing operation."""
+
     success: bool
     operation: str
     output_layer: Optional[str] = None
@@ -143,18 +145,12 @@ class RemoteSensingAgent:
             parameters=job.parameters,
             description=f"Remote sensing: {job.operation} on {job.sensor}",
         )
-        decision = self._permission.check_permission(
-            f"rs:{job.operation}", job.risk_level
-        )
-        audit_id = self._permission.audit_log_before_execution(
-            proxy_step, session_id=job.session_id, decision=decision
-        )
+        decision = self._permission.check_permission(f"rs:{job.operation}", job.risk_level)
+        audit_id = self._permission.audit_log_before_execution(proxy_step, session_id=job.session_id, decision=decision)
 
         if decision.decision == "deny":
             self._permission.update_audit_log(audit_id, "denied")
-            raise PermissionDeniedError(
-                f"Remote sensing operation '{job.operation}' is denied by policy."
-            )
+            raise PermissionDeniedError(f"Remote sensing operation '{job.operation}' is denied by policy.")
         if decision.decision == "ask":
             approval = self._permission.request_approval(proxy_step, session_id=job.session_id)
             raise ApprovalPendingError(
@@ -209,8 +205,8 @@ class RemoteSensingAgent:
         logger.info("Computing %s: formula='%s'", idx, formula_info["formula"])
 
         try:
-            import rasterio
             import numpy as np
+            import rasterio
 
             with rasterio.open(layer) as src:
                 data = {}
@@ -240,7 +236,8 @@ class RemoteSensingAgent:
 
         except ImportError:
             return RasterJobResult(
-                success=False, operation="spectral_index",
+                success=False,
+                operation="spectral_index",
                 error="rasterio is not available. Install rasterio to use spectral index computation.",
             )
         except Exception as exc:
@@ -257,8 +254,8 @@ class RemoteSensingAgent:
         """
         logger.info("Change detection: method=%s, t1=%s, t2=%s", method, layer_t1, layer_t2)
         try:
-            import rasterio
             import numpy as np
+            import rasterio
 
             with rasterio.open(layer_t1) as src1, rasterio.open(layer_t2) as src2:
                 band1 = src1.read(1).astype(float)
@@ -283,7 +280,9 @@ class RemoteSensingAgent:
                 dst.write(change.astype("float32"), 1)
 
             return RasterJobResult(
-                success=True, operation="change_detection", output_layer=out_path,
+                success=True,
+                operation="change_detection",
+                output_layer=out_path,
                 statistics={
                     "changed_pixels": changed_pixels,
                     "pct_changed": round(pct_changed, 2),
@@ -304,8 +303,8 @@ class RemoteSensingAgent:
         """
         logger.info("Atmospheric correction: method=%s on %s", method, layer)
         try:
-            import rasterio
             import numpy as np
+            import rasterio
 
             with rasterio.open(layer) as src:
                 profile = src.profile.copy()
@@ -326,7 +325,9 @@ class RemoteSensingAgent:
                     dst.write(b.astype("float32"), i)
 
             return RasterJobResult(
-                success=True, operation="atmospheric_correction", output_layer=out_path,
+                success=True,
+                operation="atmospheric_correction",
+                output_layer=out_path,
                 statistics={"method": method, "bands_corrected": len(corrected_bands)},
             )
         except ImportError:
@@ -354,7 +355,8 @@ class RemoteSensingAgent:
             if len(job.input_layers) < 2:
                 return RasterJobResult(success=False, operation=op, error="Change detection requires 2 input layers.")
             return self.detect_change(
-                job.input_layers[0], job.input_layers[1],
+                job.input_layers[0],
+                job.input_layers[1],
                 method=job.parameters.get("method", "difference"),
                 threshold=job.parameters.get("threshold", 0.1),
             )
@@ -363,9 +365,12 @@ class RemoteSensingAgent:
             return self.atmospheric_correction(layer, method=job.parameters.get("method", "dos1"))
         else:
             return RasterJobResult(
-                success=False, operation=op,
-                error=(f"Unknown RS operation '{job.operation}'. "
-                       "Supported: spectral_index, change_detection, atmospheric_correction"),
+                success=False,
+                operation=op,
+                error=(
+                    f"Unknown RS operation '{job.operation}'. "
+                    "Supported: spectral_index, change_detection, atmospheric_correction"
+                ),
             )
 
     def _run_verification(self, result: RasterJobResult) -> RasterJobResult:
@@ -375,6 +380,7 @@ class RemoteSensingAgent:
         """
         try:
             from geosi_engine.agents.verification import VerificationAgent
+
             verifier = VerificationAgent(self._engine)
             report = verifier.verify_raster(result.output_layer)
             result.validation_passed = report.passed
@@ -390,6 +396,7 @@ class RemoteSensingAgent:
     def _eval_index(idx: str, data: dict) -> Any:
         """Evaluate a spectral index formula given band data arrays."""
         import numpy as np
+
         with np.errstate(divide="ignore", invalid="ignore"):
             if idx == "NDVI":
                 return (data["NIR"] - data["RED"]) / (data["NIR"] + data["RED"])

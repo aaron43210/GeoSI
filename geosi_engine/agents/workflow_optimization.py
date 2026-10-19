@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Workflow Optimization Agent (Optional Agent #13)
 ════════════════════════════════════════════════════════════════════
@@ -11,13 +10,14 @@ PRD §4.2 Optional Agent #13 — Production notes
 * Always ``allow``-tier — never executes or modifies data.
 * Produces an ``OptimizationReport`` for the user to review.
 """
+
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from geosi_engine.telemetry import span, set_span_attr
+from geosi_engine.telemetry import set_span_attr, span
 
 logger = logging.getLogger("geosi_engine.agents.workflow_optimization")
 
@@ -25,7 +25,8 @@ logger = logging.getLogger("geosi_engine.agents.workflow_optimization")
 @dataclass
 class OptimizationSuggestion:
     """A single workflow optimization suggestion."""
-    type: str               # "remove_step" | "reorder" | "replace_tool" | "parallelize" | "cache"
+
+    type: str  # "remove_step" | "reorder" | "replace_tool" | "parallelize" | "cache"
     step_index: Optional[int] = None
     message: str = ""
     estimated_time_saving_s: float = 0.0
@@ -35,6 +36,7 @@ class OptimizationSuggestion:
 @dataclass
 class OptimizationReport:
     """Result of workflow optimization analysis."""
+
     success: bool
     original_step_count: int = 0
     optimized_step_count: int = 0
@@ -133,9 +135,11 @@ class WorkflowOptimizationAgent:
             "shared_tools": sorted(tools_a & tools_b),
             "recommendation": (
                 f"Plan A uses {len(steps_a)} steps, Plan B uses {len(steps_b)} steps. "
-                + ("Plan B is shorter." if len(steps_b) < len(steps_a)
-                   else "Plan A is shorter." if len(steps_a) < len(steps_b)
-                   else "Same length.")
+                + (
+                    "Plan B is shorter."
+                    if len(steps_b) < len(steps_a)
+                    else "Plan A is shorter." if len(steps_a) < len(steps_b) else "Same length."
+                )
             ),
         }
 
@@ -149,17 +153,21 @@ class WorkflowOptimizationAgent:
         for i in range(1, len(steps)):
             prev = steps[i - 1]
             curr = steps[i]
-            if (getattr(prev, "tool_name", "") == getattr(curr, "tool_name", "")
-                    and getattr(prev, "parameters", {}) == getattr(curr, "parameters", {})):
-                suggestions.append(OptimizationSuggestion(
-                    type="remove_step", step_index=i,
-                    message=(
-                        f"Step {i+1} ('{getattr(curr, 'tool_name', '?')}') is identical to Step {i}. "
-                        "Consider removing the duplicate."
-                    ),
-                    estimated_time_saving_s=2.0,
-                    confidence=0.95,
-                ))
+            if getattr(prev, "tool_name", "") == getattr(curr, "tool_name", "") and getattr(
+                prev, "parameters", {}
+            ) == getattr(curr, "parameters", {}):
+                suggestions.append(
+                    OptimizationSuggestion(
+                        type="remove_step",
+                        step_index=i,
+                        message=(
+                            f"Step {i+1} ('{getattr(curr, 'tool_name', '?')}') is identical to Step {i}. "
+                            "Consider removing the duplicate."
+                        ),
+                        estimated_time_saving_s=2.0,
+                        confidence=0.95,
+                    )
+                )
         return suggestions
 
     def _check_step_ordering(self, steps: list) -> list[OptimizationSuggestion]:
@@ -170,15 +178,18 @@ class WorkflowOptimizationAgent:
         reproject_indices = [i for i, t in enumerate(tool_names) if "reproject" in t.lower()]
         for idx in reproject_indices:
             if idx > 0:
-                suggestions.append(OptimizationSuggestion(
-                    type="reorder", step_index=idx,
-                    message=(
-                        f"Reprojection (step {idx+1}) should ideally run before other operations. "
-                        "Move it to the beginning to avoid processing data in mismatched CRS."
-                    ),
-                    estimated_time_saving_s=1.5,
-                    confidence=0.8,
-                ))
+                suggestions.append(
+                    OptimizationSuggestion(
+                        type="reorder",
+                        step_index=idx,
+                        message=(
+                            f"Reprojection (step {idx+1}) should ideally run before other operations. "
+                            "Move it to the beginning to avoid processing data in mismatched CRS."
+                        ),
+                        estimated_time_saving_s=1.5,
+                        confidence=0.8,
+                    )
+                )
 
         # Flag dissolve-after-clip pattern. Match by substring because the real
         # registry names are prefixed (e.g. "native_clip", "native_dissolve"),
@@ -186,31 +197,32 @@ class WorkflowOptimizationAgent:
         ci = next((i for i, t in enumerate(tool_names) if "clip" in t.lower()), -1)
         di = next((i for i, t in enumerate(tool_names) if "dissolve" in t.lower()), -1)
         if ci >= 0 and di >= 0 and di < ci:
-            suggestions.append(OptimizationSuggestion(
-                type="reorder",
-                message="Dissolve before Clip can reduce the dataset size before clipping — more efficient.",
-                estimated_time_saving_s=3.0,
-                confidence=0.7,
-            ))
+            suggestions.append(
+                OptimizationSuggestion(
+                    type="reorder",
+                    message="Dissolve before Clip can reduce the dataset size before clipping — more efficient.",
+                    estimated_time_saving_s=3.0,
+                    confidence=0.7,
+                )
+            )
         return suggestions
 
     def _suggest_batching(self, steps: list) -> list[OptimizationSuggestion]:
         """Suggest batching read-only operations that could run in parallel."""
-        read_only = [
-            (i, s) for i, s in enumerate(steps)
-            if getattr(s, "risk_level", "") == "read_only"
-        ]
+        read_only = [(i, s) for i, s in enumerate(steps) if getattr(s, "risk_level", "") == "read_only"]
         if len(read_only) > 2:
             indices = [i + 1 for i, _ in read_only]
-            return [OptimizationSuggestion(
-                type="parallelize",
-                message=(
-                    f"Steps {indices} are all read-only and could be parallelized "
-                    "if they don't share output dependencies."
-                ),
-                estimated_time_saving_s=len(read_only) * 1.0,
-                confidence=0.6,
-            )]
+            return [
+                OptimizationSuggestion(
+                    type="parallelize",
+                    message=(
+                        f"Steps {indices} are all read-only and could be parallelized "
+                        "if they don't share output dependencies."
+                    ),
+                    estimated_time_saving_s=len(read_only) * 1.0,
+                    confidence=0.6,
+                )
+            ]
         return []
 
     def _load_best_practices(self, plan: Any) -> list[str]:
@@ -246,6 +258,7 @@ class WorkflowOptimizationAgent:
             db = self._get_db()
             if db and db.available:
                 from geosi_data.db_models import EvalRunRecord
+
                 with db.get_session() as sess:
                     records = (
                         sess.query(EvalRunRecord)
@@ -255,12 +268,14 @@ class WorkflowOptimizationAgent:
                         .all()
                     )
                     for r in records:
-                        similar.append({
-                            "id": r.id,
-                            "job_type": getattr(r, "job_type", ""),
-                            "created_at": str(getattr(r, "created_at", "")),
-                            "metrics": getattr(r, "metrics", {}),
-                        })
+                        similar.append(
+                            {
+                                "id": r.id,
+                                "job_type": getattr(r, "job_type", ""),
+                                "created_at": str(getattr(r, "created_at", "")),
+                                "metrics": getattr(r, "metrics", {}),
+                            }
+                        )
         except Exception as exc:
             logger.debug("Could not load similar workflows: %s", exc)
         return similar

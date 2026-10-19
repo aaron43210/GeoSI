@@ -32,8 +32,16 @@ PLUGIN_NAME = "geosi_plugin"
 BUNDLED_PACKAGES = ["geosi_engine", "geosi_knowledge", "geosi_data", "geosi_rag"]
 
 REQUIRED_METADATA = [
-    "name", "qgisMinimumVersion", "description", "about", "version",
-    "author", "email", "repository", "tracker", "icon",
+    "name",
+    "qgisMinimumVersion",
+    "description",
+    "about",
+    "version",
+    "author",
+    "email",
+    "repository",
+    "tracker",
+    "icon",
 ]
 EXCLUDED_DIRS = {"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"}
 EXCLUDED_SUFFIXES = {".pyc", ".pyo", ".so", ".pyd", ".dylib", ".dll", ".cpp", ".o"}

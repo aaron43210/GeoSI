@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Server — Data Routes
 ═══════════════════════════════════════════════════════════════════
@@ -12,13 +11,12 @@ Endpoints:
 """
 
 import logging
-from typing import List, Optional, Dict, Any
+from typing import Any
 
-from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 
-from geosi_server.auth import api_key_auth, admin_auth
-from pydantic import Field
+from geosi_server.auth import admin_auth, api_key_auth
 
 logger = logging.getLogger("geosi_server.data")
 router = APIRouter()
@@ -26,50 +24,53 @@ router = APIRouter()
 
 # ── Request/Response models ────────────────────────────────────────────
 
+
 class LayerInfo(BaseModel):
-    id: Optional[str] = None
+    id: str | None = None
     name: str
     geometry_type: str = "Unknown"
     crs: str = "EPSG:4326"
     feature_count: int = 0
     layer_type: str = "vector"
-    table_name: Optional[str] = None
-    filepath: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
-    created_at: Optional[str] = None
+    table_name: str | None = None
+    filepath: str | None = None
+    metadata: dict[str, Any] | None = None
+    created_at: str | None = None
 
 
 class LayerListResponse(BaseModel):
-    layers: List[LayerInfo]
+    layers: list[LayerInfo]
 
 
 class ProjectInfo(BaseModel):
-    id: Optional[str] = None
+    id: str | None = None
     name: str
     description: str = ""
     crs: str = "EPSG:4326"
-    layer_names: List[str] = []
-    metadata: Optional[Dict[str, Any]] = None
-    created_at: Optional[str] = None
+    layer_names: list[str] = []
+    metadata: dict[str, Any] | None = None
+    created_at: str | None = None
 
 
 class ProjectListResponse(BaseModel):
-    projects: List[ProjectInfo]
+    projects: list[ProjectInfo]
 
 
 class ProjectCreateRequest(BaseModel):
     name: str = Field(..., description="Project name")
     description: str = Field("", description="Project description")
     crs: str = Field("EPSG:4326", description="Project CRS")
-    layer_names: List[str] = Field(default_factory=list, description="Layer names")
+    layer_names: list[str] = Field(default_factory=list, description="Layer names")
 
 
 # ── Layer Endpoints ────────────────────────────────────────────────────
+
 
 @router.get("", response_model=LayerListResponse)
 async def list_layers(api_key: str = Depends(api_key_auth)):
     """List all available spatial layers."""
     from geosi_server.app import get_pool
+
     engine = get_pool().get_or_create(api_key)
 
     if not engine.data:
@@ -84,10 +85,12 @@ async def list_layers(api_key: str = Depends(api_key_auth)):
 # registration order, so if "/{name}" came first a GET /layers/projects would
 # be captured as a layer named "projects" and these endpoints would be dead.
 
+
 @router.get("/projects", response_model=ProjectListResponse)
 async def list_projects(api_key: str = Depends(api_key_auth)):
     """List all GIS projects."""
     from geosi_server.app import get_pool
+
     engine = get_pool().get_or_create(api_key)
 
     if not engine.data:
@@ -100,6 +103,7 @@ async def list_projects(api_key: str = Depends(api_key_auth)):
 async def create_project(req: ProjectCreateRequest, api_key: str = Depends(api_key_auth)):
     """Create a new GIS project."""
     from geosi_server.app import get_pool
+
     engine = get_pool().get_or_create(api_key)
 
     if not engine.data:
@@ -123,6 +127,7 @@ async def create_project(req: ProjectCreateRequest, api_key: str = Depends(api_k
 async def get_layer(name: str, api_key: str = Depends(api_key_auth)):
     """Get metadata for a specific layer."""
     from geosi_server.app import get_pool
+
     engine = get_pool().get_or_create(api_key)
 
     if not engine.data:
@@ -137,6 +142,7 @@ async def get_layer(name: str, api_key: str = Depends(api_key_auth)):
 async def delete_layer(name: str, api_key: str = Depends(admin_auth)):
     """Delete a spatial layer from the database (admin only)."""
     from geosi_server.app import get_pool
+
     engine = get_pool().get_or_create(api_key)
 
     if not engine.data:

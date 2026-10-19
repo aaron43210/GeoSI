@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI RAG — Document Ingestion CLI
 ═══════════════════════════════════════════════════════════════════
@@ -12,9 +11,9 @@ Usage:
 """
 
 import argparse
+import logging
 import sys
 import time
-import logging
 
 
 def main():

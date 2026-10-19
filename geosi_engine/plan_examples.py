@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI plan examples — few-shot library for the LLM planner
 ══════════════════════════════════════════════════════════
@@ -29,48 +28,104 @@ def _step(tool: str, params: Dict, out: str = "step_1_output", sid: str = "step_
 
 
 EXAMPLES: List[Dict] = [
-    {"query": "select schools that are inside districts",
-     "steps": [_step("native_extractbylocation", {"INPUT": "schools", "PREDICATE": [6], "INTERSECT": "districts"})]},
-    {"query": "find wells that intersect the floodplain",
-     "steps": [_step("native_extractbylocation", {"INPUT": "wells", "PREDICATE": [0], "INTERSECT": "floodplain"})]},
-    {"query": "find shops outside all parks",
-     "steps": [_step("native_extractbylocation", {"INPUT": "shops", "PREDICATE": [2], "INTERSECT": "parks"})]},
-    {"query": "find stations within 2 km of rivers",
-     "steps": [_step("native_extractwithindistance", {"INPUT": "stations", "REFERENCE": "rivers", "DISTANCE": 2000})]},
-    {"query": "add an area field to lakes",
-     "steps": [_step("native_fieldcalculator", {"INPUT": "lakes", "FIELD_NAME": "area", "FIELD_TYPE": 0,
-                                                "FORMULA": "$area"})]},
-    {"query": "calculate the length of each river",
-     "steps": [_step("native_fieldcalculator", {"INPUT": "rivers", "FIELD_NAME": "length", "FIELD_TYPE": 0,
-                                                "FORMULA": "$length"})]},
-    {"query": "create a 500 m grid of polygons covering farms",
-     "steps": [_step("native_creategrid", {"TYPE": 2, "EXTENT": "farms", "HSPACING": 500, "VSPACING": 500,
-                                           "CRS": "farms"})]},
-    {"query": "what is the total population of all towns",
-     "steps": [_step("qgis_basicstatisticsforfields", {"INPUT_LAYER": "towns", "FIELD_NAME": "population"})]},
-    {"query": "how many roads are of type primary",
-     "steps": [_step("native_extractbyattribute", {"INPUT": "roads", "FIELD": "type", "OPERATOR": 0,
-                                                   "VALUE": "primary"})]},
-    {"query": "extract buildings where height is greater than 20",
-     "steps": [_step("native_extractbyexpression", {"INPUT": "buildings", "EXPRESSION": "\"height\" > 20"})]},
-    {"query": "dissolve counties by state",
-     "steps": [_step("native_dissolve", {"INPUT": "counties", "FIELD": ["state"]})]},
-    {"query": "which park has the most trees",
-     "steps": [_step("native_countpointsinpolygon", {"POLYGONS": "parks", "POINTS": "trees", "FIELD": "NUMPOINTS"})]},
-    {"query": "count the trees in each park",
-     "steps": [_step("native_countpointsinpolygon", {"POLYGONS": "parks", "POINTS": "trees", "FIELD": "NUMPOINTS"})]},
-    {"query": "join each school to the district it falls in",
-     "steps": [_step("native_joinattributesbylocation", {"INPUT": "schools", "JOIN": "districts", "PREDICATE": [0],
-                                                         "METHOD": 1})]},
-    {"query": "add the x and y coordinates of each well as fields",
-     "steps": [_step("native_addxyfields", {"INPUT": "wells"})]},
-    {"query": "convert lakes polygons to lines",
-     "steps": [_step("native_polygonstolines", {"INPUT": "lakes"})]},
+    {
+        "query": "select schools that are inside districts",
+        "steps": [_step("native_extractbylocation", {"INPUT": "schools", "PREDICATE": [6], "INTERSECT": "districts"})],
+    },
+    {
+        "query": "find wells that intersect the floodplain",
+        "steps": [_step("native_extractbylocation", {"INPUT": "wells", "PREDICATE": [0], "INTERSECT": "floodplain"})],
+    },
+    {
+        "query": "find shops outside all parks",
+        "steps": [_step("native_extractbylocation", {"INPUT": "shops", "PREDICATE": [2], "INTERSECT": "parks"})],
+    },
+    {
+        "query": "find stations within 2 km of rivers",
+        "steps": [
+            _step("native_extractwithindistance", {"INPUT": "stations", "REFERENCE": "rivers", "DISTANCE": 2000})
+        ],
+    },
+    {
+        "query": "add an area field to lakes",
+        "steps": [
+            _step(
+                "native_fieldcalculator", {"INPUT": "lakes", "FIELD_NAME": "area", "FIELD_TYPE": 0, "FORMULA": "$area"}
+            )
+        ],
+    },
+    {
+        "query": "calculate the length of each river",
+        "steps": [
+            _step(
+                "native_fieldcalculator",
+                {"INPUT": "rivers", "FIELD_NAME": "length", "FIELD_TYPE": 0, "FORMULA": "$length"},
+            )
+        ],
+    },
+    {
+        "query": "create a 500 m grid of polygons covering farms",
+        "steps": [
+            _step("native_creategrid", {"TYPE": 2, "EXTENT": "farms", "HSPACING": 500, "VSPACING": 500, "CRS": "farms"})
+        ],
+    },
+    {
+        "query": "what is the total population of all towns",
+        "steps": [_step("qgis_basicstatisticsforfields", {"INPUT_LAYER": "towns", "FIELD_NAME": "population"})],
+    },
+    {
+        "query": "how many roads are of type primary",
+        "steps": [
+            _step("native_extractbyattribute", {"INPUT": "roads", "FIELD": "type", "OPERATOR": 0, "VALUE": "primary"})
+        ],
+    },
+    {
+        "query": "extract buildings where height is greater than 20",
+        "steps": [_step("native_extractbyexpression", {"INPUT": "buildings", "EXPRESSION": '"height" > 20'})],
+    },
+    {
+        "query": "dissolve counties by state",
+        "steps": [_step("native_dissolve", {"INPUT": "counties", "FIELD": ["state"]})],
+    },
+    {
+        "query": "which park has the most trees",
+        "steps": [_step("native_countpointsinpolygon", {"POLYGONS": "parks", "POINTS": "trees", "FIELD": "NUMPOINTS"})],
+    },
+    {
+        "query": "count the trees in each park",
+        "steps": [_step("native_countpointsinpolygon", {"POLYGONS": "parks", "POINTS": "trees", "FIELD": "NUMPOINTS"})],
+    },
+    {
+        "query": "join each school to the district it falls in",
+        "steps": [
+            _step(
+                "native_joinattributesbylocation",
+                {"INPUT": "schools", "JOIN": "districts", "PREDICATE": [0], "METHOD": 1},
+            )
+        ],
+    },
+    {
+        "query": "add the x and y coordinates of each well as fields",
+        "steps": [_step("native_addxyfields", {"INPUT": "wells"})],
+    },
+    {"query": "convert lakes polygons to lines", "steps": [_step("native_polygonstolines", {"INPUT": "lakes"})]},
 ]
 
 
-_LAYER_KEYS = {"INPUT", "INPUT_LAYER", "INTERSECT", "REFERENCE", "POLYGONS", "POINTS", "JOIN",
-               "OVERLAY", "MASK", "EXTENT", "INPUT_A", "INPUT_B"}
+_LAYER_KEYS = {
+    "INPUT",
+    "INPUT_LAYER",
+    "INTERSECT",
+    "REFERENCE",
+    "POLYGONS",
+    "POINTS",
+    "JOIN",
+    "OVERLAY",
+    "MASK",
+    "EXTENT",
+    "INPUT_A",
+    "INPUT_B",
+}
 
 
 def _layer_words(example: Dict) -> List[str]:
@@ -115,9 +170,7 @@ class ExampleSelector:
         if self._embed is None:
             return False
         try:
-            self._vectors = self._embed(
-                [f"search_document: {abstract(e['query'], _layer_words(e))}" for e in EXAMPLES]
-            )
+            self._vectors = self._embed([f"search_document: {abstract(e['query'], _layer_words(e))}" for e in EXAMPLES])
         except Exception as e:
             logger.debug(f"example embedding unavailable: {e}")
             self._vectors = []
@@ -180,8 +233,12 @@ def _mentions(text: str, names) -> List[str]:
     low = text.lower()
     found = []
     for name in names:
-        forms = {name.lower(), name.lower().replace("_", " "), name.lower().rstrip("s"),
-                 name.lower().replace("_", " ").rstrip("s")}
+        forms = {
+            name.lower(),
+            name.lower().replace("_", " "),
+            name.lower().rstrip("s"),
+            name.lower().replace("_", " ").rstrip("s"),
+        }
         pos = [m.start() for f in forms if len(f) > 2 for m in re.finditer(rf"\b{re.escape(f)}", low)]
         if pos:
             found.append((min(pos), name))
@@ -235,8 +292,11 @@ def instantiate(example: Dict, query: str, layers: Dict[str, object]) -> Optiona
             elif isinstance(val, str) and val in layer_map:
                 params[key] = layer_map[val]
                 input_layer = input_layer or layer_map[val]
-            elif isinstance(val, (int, float)) and not isinstance(val, bool) and key not in (
-                    "PREDICATE", "TYPE", "FIELD_TYPE", "OPERATOR", "METHOD"):
+            elif (
+                isinstance(val, (int, float))
+                and not isinstance(val, bool)
+                and key not in ("PREDICATE", "TYPE", "FIELD_TYPE", "OPERATOR", "METHOD")
+            ):
                 if float(val) in num_map:
                     params[key] = num_map[float(val)]
                 elif num_map:
@@ -245,9 +305,14 @@ def instantiate(example: Dict, query: str, layers: Dict[str, object]) -> Optiona
                     params[key] = val
             elif isinstance(val, str) and key in ("EXPRESSION",):
                 return None  # expressions need the LLM
-            elif isinstance(val, (str, list)) and key in ("FIELD", "FIELD_NAME", "GROUP_BY") and \
-                    any(isinstance(v, str) and v.lower() in ex_q and v.lower() not in q for v in
-                        (val if isinstance(val, list) else [val])):
+            elif (
+                isinstance(val, (str, list))
+                and key in ("FIELD", "FIELD_NAME", "GROUP_BY")
+                and any(
+                    isinstance(v, str) and v.lower() in ex_q and v.lower() not in q
+                    for v in (val if isinstance(val, list) else [val])
+                )
+            ):
                 f = field_of(input_layer) if input_layer else None
                 if f is None:
                     return None

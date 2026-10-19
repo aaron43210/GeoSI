@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Engine — Facade Class (v2: Dynamic Tool Discovery + Knowledge Layer)
 ═════════════════════════════════════════════════════════════════
@@ -26,11 +25,9 @@ v2 Key Difference:
 
 import logging
 
-from geosi_engine.registry import ToolRegistry
-from geosi_engine.state import StateManager
 from geosi_engine.agent import GeoSIAgent
-from geosi_engine.executor import ExecutionEngine
 from geosi_engine.conversation import ConversationManager
+from geosi_engine.executor import ExecutionEngine
 from geosi_engine.models import (
     AnalysisRequest,
     ExecutionPlan,
@@ -38,12 +35,14 @@ from geosi_engine.models import (
     ExecutionStatus,
     IntentType,
     Layer,
-    ToolSpec,
+    StepLog,
     ToolParameter,
     ToolResult,
+    ToolSpec,
     ToolStep,
-    StepLog,
 )
+from geosi_engine.registry import ToolRegistry
+from geosi_engine.state import StateManager
 
 logger = logging.getLogger("geosi_engine")
 
@@ -117,6 +116,7 @@ class GeoSI:
         # them like any other tool. Non-fatal if unavailable.
         try:
             from geosi_engine.tools.domain_tools import discover_domain_tools
+
             discover_domain_tools(self, self.registry)
         except Exception as exc:
             logger.debug("Domain tool registration skipped: %s", exc)
@@ -146,6 +146,7 @@ class GeoSI:
             state=self.state,
         )
         from geosi_engine.agent_loop import AgentLoop
+
         self.loop = AgentLoop(self)
 
     def _init_knowledge_layer(self):
@@ -161,6 +162,7 @@ class GeoSI:
         # ── Initialize Knowledge Manager ──────────────────────────────
         try:
             from geosi_knowledge import KnowledgeManager
+
             self.knowledge = KnowledgeManager()
             logger.info(f"Knowledge layer initialized: {self.knowledge}")
         except Exception as e:
@@ -170,10 +172,10 @@ class GeoSI:
         try:
             from geosi_data import (
                 Database,
-                PostGISManager,
                 LayerRepository,
-                ProjectRepository,
                 MetadataRepository,
+                PostGISManager,
+                ProjectRepository,
             )
 
             db = Database()

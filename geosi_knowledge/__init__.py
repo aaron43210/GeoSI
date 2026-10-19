@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Knowledge — Memory & Knowledge Layer
 ═══════════════════════════════════════════════════════════════════
@@ -10,10 +9,10 @@ The brain of GeoSI Phase 2 — sits between Parser and Planning Agent:
     - FeedbackMemory: Learns from execution success/failure
 """
 
-from geosi_knowledge.knowledge_manager import KnowledgeManager
-from geosi_knowledge.workflow_memory import WorkflowMemory, WorkflowExample
-from geosi_knowledge.query_memory import QueryMemory, QueryPattern
 from geosi_knowledge.feedback_memory import FeedbackMemory, FeedbackSignal
+from geosi_knowledge.knowledge_manager import KnowledgeManager
+from geosi_knowledge.query_memory import QueryMemory, QueryPattern
+from geosi_knowledge.workflow_memory import WorkflowExample, WorkflowMemory
 
 __all__ = [
     "KnowledgeManager",

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI RAG — Text Chunker
 ═══════════════════════════════════════════════════════════════════
@@ -10,10 +9,10 @@ while respecting chunk_size limits and maintaining overlap for
 context continuity.
 """
 
-import re
 import logging
+import re
 from dataclasses import dataclass, field
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 from geosi_rag.document_loader import Document
 
@@ -23,6 +22,7 @@ logger = logging.getLogger("geosi_rag.chunker")
 _CPP_CHUNKER_AVAILABLE = False
 try:
     from geosi_rag.geosi_chunker import chunk_text as _cpp_chunk_text
+
     _CPP_CHUNKER_AVAILABLE = True
 except ImportError:
     pass
@@ -39,6 +39,7 @@ class Chunk:
         chunk_index: Position within the source document
         metadata: Extra metadata (document format, source, etc.)
     """
+
     text: str
     source: str = ""
     chunk_index: int = 0
@@ -120,15 +121,13 @@ class Chunker:
                 # Flush current buffer first
                 if current_sentences:
                     chunk_text = " ".join(current_sentences)
-                    chunks.append(self._make_chunk(
-                        chunk_text, doc, len(chunks)
-                    ))
+                    chunks.append(self._make_chunk(chunk_text, doc, len(chunks)))
                     current_sentences = []
                     current_length = 0
 
                 # Split the long sentence into fixed-size pieces
                 for i in range(0, sentence_len, self.chunk_size - self.overlap):
-                    piece = sentence[i:i + self.chunk_size]
+                    piece = sentence[i : i + self.chunk_size]
                     chunks.append(self._make_chunk(piece, doc, len(chunks)))
                 continue
 
@@ -171,9 +170,7 @@ class Chunker:
         all_chunks = []
         for doc in docs:
             all_chunks.extend(self.chunk_document(doc))
-        logger.info(
-            f"Chunked {len(docs)} documents → {len(all_chunks)} total chunks"
-        )
+        logger.info(f"Chunked {len(docs)} documents → {len(all_chunks)} total chunks")
         return all_chunks
 
     def _split_sentences(self, text: str) -> List[str]:

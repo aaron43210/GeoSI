@@ -1,18 +1,17 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Test Suite Root
 ===========================
 Shared pytest fixtures available to all test modules.
 """
+
 from __future__ import annotations
 
-import os
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Environment bootstrap — ensure tests never accidentally hit production
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(autouse=True)
 def _isolate_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -29,6 +28,7 @@ def _isolate_env(monkeypatch: pytest.MonkeyPatch) -> None:
 # ---------------------------------------------------------------------------
 # Re-usable mock factories
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def mock_session_id() -> str:

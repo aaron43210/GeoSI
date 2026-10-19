@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Domain Agents as Registered Tools (PRD "any GIS task")
 ════════════════════════════════════════════════════════════════════
@@ -20,6 +19,7 @@ Design (preserves the Golden Rule — one pipeline, no second routing brain):
 Contract 1 (inviolable): ``generate_code`` returns review-only code. It is
 NEVER executed — ``CodeGenerationAgent`` forces ``requires_human_review=True``.
 """
+
 from __future__ import annotations
 
 import logging
@@ -56,10 +56,8 @@ def is_domain_tool(name: str) -> bool:
 # core (GeoPandas / Rasterio / scikit-learn), not the QGIS Processing backend.
 
 
-def _p(name: str, ptype: str, required: bool = False,
-       desc: str = "", example: Optional[str] = None) -> ToolParameter:
-    return ToolParameter(name=name, param_type=ptype, required=required,
-                         description=desc, example=example)
+def _p(name: str, ptype: str, required: bool = False, desc: str = "", example: Optional[str] = None) -> ToolParameter:
+    return ToolParameter(name=name, param_type=ptype, required=required, description=desc, example=example)
 
 
 _DOMAIN_SPECS: dict[str, ToolSpec] = {
@@ -74,15 +72,16 @@ _DOMAIN_SPECS: dict[str, ToolSpec] = {
         ),
         category="codegen",
         parameters=[
-            _p("target_language", "string", False,
-               "One of: pyqgis | geopandas | rasterio | auto", "auto"),
-            _p("query", "string", False,
-               "Natural-language description of what the code should do "
-               "(defaults to the step description)."),
+            _p("target_language", "string", False, "One of: pyqgis | geopandas | rasterio | auto", "auto"),
+            _p(
+                "query",
+                "string",
+                False,
+                "Natural-language description of what the code should do " "(defaults to the step description).",
+            ),
         ],
         outputs=["code"],
-        tags=["code", "script", "python", "pyqgis", "geopandas", "rasterio",
-              "custom", "fallback", "any-task"],
+        tags=["code", "script", "python", "pyqgis", "geopandas", "rasterio", "custom", "fallback", "any-task"],
         requires_qgis=False,
     ),
     "generate_report": ToolSpec(
@@ -95,11 +94,14 @@ _DOMAIN_SPECS: dict[str, ToolSpec] = {
         ),
         category="report",
         parameters=[
-            _p("report_type", "string", False,
-               "execution_summary | methodology | workflow_graph | statistics | full_pdf",
-               "execution_summary"),
-            _p("output_path", "string", False,
-               "Optional path to write the report artefact to."),
+            _p(
+                "report_type",
+                "string",
+                False,
+                "execution_summary | methodology | workflow_graph | statistics | full_pdf",
+                "execution_summary",
+            ),
+            _p("output_path", "string", False, "Optional path to write the report artefact to."),
         ],
         outputs=["report"],
         tags=["report", "summary", "methodology", "pdf", "statistics", "document"],
@@ -114,11 +116,9 @@ _DOMAIN_SPECS: dict[str, ToolSpec] = {
         ),
         category="research",
         parameters=[
-            _p("query", "string", True,
-               "The research question or topic to retrieve literature for."),
+            _p("query", "string", True, "The research question or topic to retrieve literature for."),
             _p("max_results", "number", False, "Maximum number of sources.", "10"),
-            _p("collections", "list", False,
-               "Qdrant collections to search (e.g. research_papers, gis_docs)."),
+            _p("collections", "list", False, "Qdrant collections to search (e.g. research_papers, gis_docs)."),
         ],
         outputs=["papers"],
         tags=["research", "literature", "papers", "citation", "rag", "search"],
@@ -134,14 +134,16 @@ _DOMAIN_SPECS: dict[str, ToolSpec] = {
         ),
         category="remote_sensing",
         parameters=[
-            _p("operation", "string", True,
-               "spectral_index | atmospheric_correction | change_detection | band_composite"),
-            _p("sensor", "string", True,
-               "Sentinel-2 | Landsat-8 | MODIS | SAR | ...", "Sentinel-2"),
+            _p(
+                "operation",
+                "string",
+                True,
+                "spectral_index | atmospheric_correction | change_detection | band_composite",
+            ),
+            _p("sensor", "string", True, "Sentinel-2 | Landsat-8 | MODIS | SAR | ...", "Sentinel-2"),
         ],
         outputs=["output_layer"],
-        tags=["remote sensing", "satellite", "ndvi", "raster", "sentinel",
-              "landsat", "spectral", "change detection"],
+        tags=["remote sensing", "satellite", "ndvi", "raster", "sentinel", "landsat", "spectral", "change detection"],
         requires_qgis=False,
     ),
     "machine_learning": ToolSpec(
@@ -154,17 +156,13 @@ _DOMAIN_SPECS: dict[str, ToolSpec] = {
         ),
         category="machine_learning",
         parameters=[
-            _p("job_type", "string", True,
-               "classification | regression | clustering | forecasting | predict"),
-            _p("algorithm", "string", True,
-               "random_forest | gradient_boosting | kmeans | lstm | ...",
-               "random_forest"),
+            _p("job_type", "string", True, "classification | regression | clustering | forecasting | predict"),
+            _p("algorithm", "string", True, "random_forest | gradient_boosting | kmeans | lstm | ...", "random_forest"),
             _p("target_column", "string", False, "Target/label column name."),
             _p("feature_columns", "list", False, "Feature column names."),
         ],
         outputs=["model"],
-        tags=["machine learning", "ml", "classification", "regression",
-              "clustering", "random forest", "predict", "ai"],
+        tags=["machine learning", "ml", "classification", "regression", "clustering", "random forest", "predict", "ai"],
         requires_qgis=False,
     ),
     "geology": ToolSpec(
@@ -178,17 +176,29 @@ _DOMAIN_SPECS: dict[str, ToolSpec] = {
         ),
         category="geology",
         parameters=[
-            _p("operation", "string", True,
-               "geological_mapping | structural_analysis | stratigraphic_modeling | "
-               "cross_section | fault_visualization | fold_analysis | "
-               "borehole_correlation | mineral_prospectivity | "
-               "landslide_susceptibility | ai_interpretation"),
-            _p("query", "string", False,
-               "Natural-language context (for ai_interpretation)."),
+            _p(
+                "operation",
+                "string",
+                True,
+                "geological_mapping | structural_analysis | stratigraphic_modeling | "
+                "cross_section | fault_visualization | fold_analysis | "
+                "borehole_correlation | mineral_prospectivity | "
+                "landslide_susceptibility | ai_interpretation",
+            ),
+            _p("query", "string", False, "Natural-language context (for ai_interpretation)."),
         ],
         outputs=["output_layer"],
-        tags=["geology", "geological", "stratigraphy", "fault", "fold",
-              "mineral", "landslide", "borehole", "cross section"],
+        tags=[
+            "geology",
+            "geological",
+            "stratigraphy",
+            "fault",
+            "fold",
+            "mineral",
+            "landslide",
+            "borehole",
+            "cross section",
+        ],
         requires_qgis=False,
     ),
 }
@@ -207,6 +217,7 @@ def _permission_for(engine: Any, permission_agent: Optional[Any]) -> Any:
     if permission_agent is not None:
         return permission_agent
     from geosi_engine.agents.permission_safety import PermissionSafetyAgent
+
     return PermissionSafetyAgent(engine)
 
 
@@ -236,6 +247,7 @@ def dispatch_domain_tool(
     # ── generate_code (read-only; Contract 1: NEVER executed) ──────────────
     if name == "generate_code":
         from geosi_engine.agents.code_generation import CodeGenerationAgent, CodeRequest
+
         req = CodeRequest(
             target_language=params.get("target_language", "auto"),
             plan=params.get("plan"),
@@ -256,9 +268,9 @@ def dispatch_domain_tool(
                 "plan_id": gc.plan_id,
             },
             message=(
-                f"Generated {gc.target_language} code for human review "
-                "(NOT executed — review before running)."
-                if gc.success else "Code generation failed."
+                f"Generated {gc.target_language} code for human review " "(NOT executed — review before running)."
+                if gc.success
+                else "Code generation failed."
             ),
             error=gc.error,
         )
@@ -266,6 +278,7 @@ def dispatch_domain_tool(
     # ── generate_report (read-only) ────────────────────────────────────────
     if name == "generate_report":
         from geosi_engine.agents.report_generation import ReportGenerationAgent, ReportRequest
+
         req = ReportRequest(
             report_type=params.get("report_type", "execution_summary"),
             execution_result=params.get("execution_result"),
@@ -292,6 +305,7 @@ def dispatch_domain_tool(
     # ── research (read-only RAG) ───────────────────────────────────────────
     if name == "research":
         from geosi_engine.agents.research import ResearchAgent, ResearchQuery
+
         perm = _permission_for(engine, permission_agent)
         req = ResearchQuery(
             query=query,
@@ -318,6 +332,7 @@ def dispatch_domain_tool(
     # ── remote_sensing (mutating) ─────────────────────────────────────────
     if name == "remote_sensing":
         from geosi_engine.agents.remote_sensing import RasterJobRequest, RemoteSensingAgent
+
         perm = _permission_for(engine, permission_agent)
         job = RasterJobRequest(
             operation=params.get("operation", ""),
@@ -338,7 +353,8 @@ def dispatch_domain_tool(
             },
             message=(
                 f"Remote sensing '{jr.operation}' → {jr.output_layer}"
-                if jr.success else f"Remote sensing '{jr.operation}' failed."
+                if jr.success
+                else f"Remote sensing '{jr.operation}' failed."
             ),
             error=jr.error,
         )
@@ -346,6 +362,7 @@ def dispatch_domain_tool(
     # ── machine_learning (mutating) ───────────────────────────────────────
     if name == "machine_learning":
         from geosi_engine.agents.machine_learning import MachineLearningAgent, MLJobRequest
+
         perm = _permission_for(engine, permission_agent)
         job = MLJobRequest(
             job_type=params.get("job_type", ""),
@@ -370,7 +387,8 @@ def dispatch_domain_tool(
             },
             message=(
                 f"ML {mr.job_type} ({mr.algorithm}) complete → {mr.output_path}"
-                if mr.success else f"ML {mr.job_type} failed."
+                if mr.success
+                else f"ML {mr.job_type} failed."
             ),
             error=mr.error,
         )
@@ -378,6 +396,7 @@ def dispatch_domain_tool(
     # ── geology (mutating) ─────────────────────────────────────────────────
     if name == "geology":
         from geosi_engine.agents.geology import GeologyAgent, GeologyJobRequest
+
         perm = _permission_for(engine, permission_agent)
         job = GeologyJobRequest(
             operation=params.get("operation", ""),
@@ -397,10 +416,8 @@ def dispatch_domain_tool(
                 "rag_sources": gr.rag_sources,
                 "guardrail_flags": gr.guardrail_flags,
             },
-            message=gr.interpretation or (
-                f"Geology '{gr.operation}' complete."
-                if gr.success else f"Geology '{gr.operation}' failed."
-            ),
+            message=gr.interpretation
+            or (f"Geology '{gr.operation}' complete." if gr.success else f"Geology '{gr.operation}' failed."),
             error=gr.error,
         )
 
@@ -428,8 +445,7 @@ class DomainTool(GISTool):
     full-context path share one implementation.
     """
 
-    def __init__(self, engine: Any, spec: ToolSpec,
-                 permission_agent: Optional[Any] = None) -> None:
+    def __init__(self, engine: Any, spec: ToolSpec, permission_agent: Optional[Any] = None) -> None:
         self._engine = engine
         self._spec_obj = spec
         self._permission = permission_agent

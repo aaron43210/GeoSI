@@ -1,16 +1,16 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Conversation Manager — Maintains multi-turn dialogue history for interactive Ollama sessions.
 """
 
 import json
-from typing import List, Dict, Optional
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
+from typing import Dict, List, Optional
 
 
 @dataclass
 class Message:
     """Single message in a conversation."""
+
     role: str  # "user", "assistant", "system"
     content: str
     metadata: Dict = field(default_factory=dict)
@@ -120,31 +120,24 @@ class ConversationManager:
         other_msgs = [m for m in self.history if m.role != "system"]
 
         if len(other_msgs) > self.max_history:
-            other_msgs = other_msgs[-self.max_history:]
+            other_msgs = other_msgs[-self.max_history :]
 
         self.history = system_msgs + other_msgs
 
     def to_json(self) -> str:
         """Serialize conversation to JSON."""
-        return json.dumps(
-            [msg.to_dict() for msg in self.history],
-            indent=2
-        )
+        return json.dumps([msg.to_dict() for msg in self.history], indent=2)
 
     def from_json(self, json_str: str) -> None:
         """Load conversation from JSON."""
         try:
             data = json.loads(json_str)
             self.history = [
-                Message(
-                    role=msg.get("role"),
-                    content=msg.get("content"),
-                    metadata=msg.get("metadata", {})
-                )
+                Message(role=msg.get("role"), content=msg.get("content"), metadata=msg.get("metadata", {}))
                 for msg in data
             ]
         except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid conversation JSON: {e}")
+            raise ValueError(f"Invalid conversation JSON: {e}") from e
 
     def __len__(self) -> int:
         """Return number of messages (excluding system message)."""

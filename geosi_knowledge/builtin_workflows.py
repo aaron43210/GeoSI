@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Knowledge — Built-in Workflow Templates
 ═══════════════════════════════════════════════════════════════════
@@ -26,7 +25,6 @@ def get_builtin_workflows():
     """
     return [
         # ── Spectral Indices ──────────────────────────────────────────
-
         WorkflowExample(
             name="ndvi_calculation",
             description=(
@@ -40,7 +38,6 @@ def get_builtin_workflows():
             tags=["ndvi", "vegetation", "spectral", "sentinel", "raster", "remote_sensing"],
             output_description="Single-band raster with NDVI values (-1 to 1)",
         ),
-
         WorkflowExample(
             name="ndwi_calculation",
             description=(
@@ -53,7 +50,6 @@ def get_builtin_workflows():
             tags=["ndwi", "water", "spectral", "raster", "remote_sensing"],
             output_description="Single-band raster with NDWI values (-1 to 1)",
         ),
-
         WorkflowExample(
             name="ndbi_calculation",
             description=(
@@ -65,9 +61,7 @@ def get_builtin_workflows():
             tags=["ndbi", "urban", "built-up", "spectral", "raster"],
             output_description="Single-band raster with NDBI values",
         ),
-
         # ── Terrain Analysis ──────────────────────────────────────────
-
         WorkflowExample(
             name="slope_analysis",
             description=(
@@ -80,7 +74,6 @@ def get_builtin_workflows():
             tags=["slope", "terrain", "dem", "elevation", "raster"],
             output_description="Slope raster in degrees",
         ),
-
         WorkflowExample(
             name="hillshade_generation",
             description=(
@@ -92,7 +85,6 @@ def get_builtin_workflows():
             tags=["hillshade", "terrain", "dem", "visualization", "raster"],
             output_description="Hillshade raster (grayscale shading)",
         ),
-
         WorkflowExample(
             name="contour_generation",
             description=(
@@ -104,21 +96,17 @@ def get_builtin_workflows():
             tags=["contour", "terrain", "dem", "elevation", "vector"],
             output_description="Vector layer with contour lines",
         ),
-
         WorkflowExample(
             name="terrain_full_analysis",
             description=(
-                "Complete terrain analysis: calculate slope, aspect, and "
-                "hillshade from a DEM in one workflow."
+                "Complete terrain analysis: calculate slope, aspect, and " "hillshade from a DEM in one workflow."
             ),
             user_query="Full terrain analysis from DEM",
             tool_sequence=["native_slope", "native_aspect", "native_hillshade"],
             tags=["slope", "aspect", "hillshade", "terrain", "dem"],
             output_description="Three raster layers: slope, aspect, hillshade",
         ),
-
         # ── Vector Operations ─────────────────────────────────────────
-
         WorkflowExample(
             name="buffer_analysis",
             description=(
@@ -130,7 +118,6 @@ def get_builtin_workflows():
             tags=["buffer", "proximity", "vector", "distance"],
             output_description="Vector layer with buffered polygons",
         ),
-
         WorkflowExample(
             name="proximity_analysis",
             description=(
@@ -142,7 +129,6 @@ def get_builtin_workflows():
             tags=["buffer", "intersect", "proximity", "vector"],
             output_description="Vector layer with features within specified distance",
         ),
-
         WorkflowExample(
             name="spatial_intersection",
             description=(
@@ -154,7 +140,6 @@ def get_builtin_workflows():
             tags=["intersect", "overlay", "vector"],
             output_description="Vector layer with overlapping features",
         ),
-
         WorkflowExample(
             name="dissolve_boundaries",
             description=(
@@ -166,21 +151,15 @@ def get_builtin_workflows():
             tags=["dissolve", "merge", "aggregate", "vector"],
             output_description="Vector layer with merged polygons",
         ),
-
         WorkflowExample(
             name="clip_to_boundary",
-            description=(
-                "Clip features to a boundary polygon, keeping only the "
-                "portions within the clip area."
-            ),
+            description=("Clip features to a boundary polygon, keeping only the " "portions within the clip area."),
             user_query="Clip roads to city boundary",
             tool_sequence=["native_clip"],
             tags=["clip", "extract", "vector", "boundary"],
             output_description="Vector layer clipped to boundary",
         ),
-
         # ── Advanced Analysis ─────────────────────────────────────────
-
         WorkflowExample(
             name="watershed_delineation",
             description=(
@@ -197,7 +176,6 @@ def get_builtin_workflows():
             tags=["watershed", "hydrology", "dem", "drainage", "terrain"],
             output_description="Vector layer with watershed boundaries",
         ),
-
         WorkflowExample(
             name="land_cover_classification",
             description=(
@@ -210,7 +188,6 @@ def get_builtin_workflows():
             tags=["classification", "land_cover", "remote_sensing", "raster", "ai_ml"],
             output_description="Classified raster with land cover categories",
         ),
-
         WorkflowExample(
             name="change_detection",
             description=(

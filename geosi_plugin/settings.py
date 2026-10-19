@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI plugin settings — stored in QgsSettings under "geosi/".
 
@@ -59,6 +58,7 @@ def save(values: dict) -> None:
 
 def _auth_manager():
     from qgis.core import QgsApplication
+
     return QgsApplication.authManager()
 
 
@@ -96,6 +96,7 @@ def load_api_key(authcfg: str) -> str:
 def ollama_models(endpoint: str) -> list:
     try:
         import requests
+
         resp = requests.get(f"{endpoint}/api/tags", timeout=2)
         return [m.get("name") for m in resp.json().get("models", []) if m.get("name")]
     except Exception:
@@ -110,8 +111,9 @@ def apply(engine, values: dict = None) -> None:
     if values["planner_model"]:
         agent._ollama_model = values["planner_model"]
     retriever = getattr(agent, "_tool_retriever", None)
-    if retriever is not None and (retriever.model != values["embed_model"]
-                                  or retriever.endpoint != agent._ollama_endpoint):
+    if retriever is not None and (
+        retriever.model != values["embed_model"] or retriever.endpoint != agent._ollama_endpoint
+    ):
         agent._tool_retriever = None  # rebuilt lazily with the new model
         agent._example_selector = None
     os.environ["GEOSI_EMBED_MODEL"] = values["embed_model"]
@@ -129,7 +131,12 @@ class SettingsDialog:
 
     def __init__(self, parent=None):
         from qgis.PyQt.QtWidgets import (
-            QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLineEdit, QSpinBox,
+            QComboBox,
+            QDialog,
+            QDialogButtonBox,
+            QFormLayout,
+            QLineEdit,
+            QSpinBox,
         )
 
         self.values = load()
@@ -172,8 +179,7 @@ class SettingsDialog:
 
         self.api_key = QLineEdit()
         self.api_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.api_key.setPlaceholderText(
-            "saved in the QGIS auth database" if self.values["api_authcfg"] else "API key")
+        self.api_key.setPlaceholderText("saved in the QGIS auth database" if self.values["api_authcfg"] else "API key")
         form.addRow("API key", self.api_key)
 
         self.attempts = QSpinBox()
@@ -182,9 +188,7 @@ class SettingsDialog:
         self.attempts.setToolTip("How many times GeoSI re-plans when a result fails its checks.")
         form.addRow("Max attempts", self.attempts)
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
-        )
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.dialog.accept)
         buttons.rejected.connect(self.dialog.reject)
         form.addRow(buttons)

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Machine Learning Agent (Core Agent #8)
 ════════════════════════════════════════════════════════════════════
@@ -15,6 +14,7 @@ PRD §4.1 Agent #8 — Production requirements
 * Auto-tier: ``ask`` minimum (never ``allow``-default for training).
 * Libraries: Scikit-Learn, PyTorch (TensorFlow optional).
 """
+
 from __future__ import annotations
 
 import logging
@@ -22,7 +22,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional
 
-from geosi_engine.telemetry import span, set_span_attr
+from geosi_engine.telemetry import set_span_attr, span
 
 logger = logging.getLogger("geosi_engine.agents.ml")
 
@@ -33,13 +33,14 @@ _MIN_ML_RISK: Literal["mutating", "destructive"] = "mutating"
 @dataclass
 class MLJobRequest:
     """A machine learning job request."""
-    job_type: str           # "classification" | "regression" | "clustering" | "forecasting" | "predict"
-    algorithm: str          # e.g. "random_forest" | "gradient_boosting" | "kmeans" | "lstm"
+
+    job_type: str  # "classification" | "regression" | "clustering" | "forecasting" | "predict"
+    algorithm: str  # e.g. "random_forest" | "gradient_boosting" | "kmeans" | "lstm"
     input_layers: List[str] = field(default_factory=list)
     feature_columns: List[str] = field(default_factory=list)
     target_column: Optional[str] = None
     parameters: Dict[str, Any] = field(default_factory=dict)
-    model_path: Optional[str] = None   # for loading a pre-trained model
+    model_path: Optional[str] = None  # for loading a pre-trained model
     output_path: Optional[str] = None  # where to save the model / predictions
     session_id: str = ""
 
@@ -47,6 +48,7 @@ class MLJobRequest:
 @dataclass
 class MLJobResult:
     """Result of a machine learning job."""
+
     success: bool
     job_type: str
     algorithm: str
@@ -95,11 +97,7 @@ class MachineLearningAgent:
         set_span_attr("ml.algorithm", job.algorithm)
 
         # Escalate risk if overwriting an existing model
-        risk_level = (
-            "destructive"
-            if job.output_path and self._path_exists(job.output_path)
-            else _MIN_ML_RISK
-        )
+        risk_level = "destructive" if job.output_path and self._path_exists(job.output_path) else _MIN_ML_RISK
         set_span_attr("ml.risk_level", risk_level)
 
         # ── Permission gate ────────────────────────────────────────────
@@ -112,12 +110,8 @@ class MachineLearningAgent:
             parameters=job.parameters,
             description=f"ML {job.job_type} using {job.algorithm}",
         )
-        decision = self._permission.check_permission(
-            f"ml:{job.job_type}", risk_level
-        )
-        audit_id = self._permission.audit_log_before_execution(
-            proxy_step, session_id=job.session_id, decision=decision
-        )
+        decision = self._permission.check_permission(f"ml:{job.job_type}", risk_level)
+        audit_id = self._permission.audit_log_before_execution(proxy_step, session_id=job.session_id, decision=decision)
 
         if decision.decision == "deny":
             self._permission.update_audit_log(audit_id, "denied")
@@ -154,18 +148,24 @@ class MachineLearningAgent:
     def train_classifier(self, job: MLJobRequest) -> MLJobResult:
         """Train a spatial classification model."""
         try:
-            from sklearn.model_selection import train_test_split
-            from sklearn.metrics import accuracy_score
             import joblib
+            from sklearn.metrics import accuracy_score
+            from sklearn.model_selection import train_test_split
 
             X, y = self._load_spatial_features(job)
             if X is None:
-                return MLJobResult(success=False, job_type="classification", algorithm=job.algorithm,
-                                   error="Could not load spatial features from input layers.")
+                return MLJobResult(
+                    success=False,
+                    job_type="classification",
+                    algorithm=job.algorithm,
+                    error="Could not load spatial features from input layers.",
+                )
 
             X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=job.parameters.get("test_size", 0.2),
-                random_state=job.parameters.get("random_state", 42)
+                X,
+                y,
+                test_size=job.parameters.get("test_size", 0.2),
+                random_state=job.parameters.get("random_state", 42),
             )
 
             clf = self._build_sklearn_classifier(job.algorithm, job.parameters)
@@ -183,28 +183,36 @@ class MachineLearningAgent:
             joblib.dump(clf, out_path)
             logger.info("Classifier trained: accuracy=%.3f → %s", metrics["accuracy"], out_path)
 
-            return MLJobResult(success=True, job_type="classification", algorithm=job.algorithm,
-                               metrics=metrics, output_path=out_path)
+            return MLJobResult(
+                success=True, job_type="classification", algorithm=job.algorithm, metrics=metrics, output_path=out_path
+            )
 
         except ImportError as e:
-            return MLJobResult(success=False, job_type="classification", algorithm=job.algorithm,
-                               error=f"scikit-learn not available: {e}")
+            return MLJobResult(
+                success=False,
+                job_type="classification",
+                algorithm=job.algorithm,
+                error=f"scikit-learn not available: {e}",
+            )
         except Exception as exc:
-            return MLJobResult(success=False, job_type="classification", algorithm=job.algorithm,
-                               error=str(exc))
+            return MLJobResult(success=False, job_type="classification", algorithm=job.algorithm, error=str(exc))
 
     def train_regressor(self, job: MLJobRequest) -> MLJobResult:
         """Train a spatial regression model."""
         try:
-            from sklearn.model_selection import train_test_split
-            from sklearn.metrics import mean_squared_error, r2_score
             import joblib
             import numpy as np
+            from sklearn.metrics import mean_squared_error, r2_score
+            from sklearn.model_selection import train_test_split
 
             X, y = self._load_spatial_features(job)
             if X is None:
-                return MLJobResult(success=False, job_type="regression", algorithm=job.algorithm,
-                                   error="Could not load spatial features.")
+                return MLJobResult(
+                    success=False,
+                    job_type="regression",
+                    algorithm=job.algorithm,
+                    error="Could not load spatial features.",
+                )
 
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
             reg = self._build_sklearn_regressor(job.algorithm, job.parameters)
@@ -219,25 +227,31 @@ class MachineLearningAgent:
             out_path = job.output_path or f"geosi_regressor_{job.algorithm}_{int(time.time())}.joblib"
             joblib.dump(reg, out_path)
 
-            return MLJobResult(success=True, job_type="regression", algorithm=job.algorithm,
-                               metrics=metrics, output_path=out_path)
+            return MLJobResult(
+                success=True, job_type="regression", algorithm=job.algorithm, metrics=metrics, output_path=out_path
+            )
 
         except ImportError as e:
-            return MLJobResult(success=False, job_type="regression", algorithm=job.algorithm,
-                               error=f"scikit-learn not available: {e}")
+            return MLJobResult(
+                success=False, job_type="regression", algorithm=job.algorithm, error=f"scikit-learn not available: {e}"
+            )
         except Exception as exc:
             return MLJobResult(success=False, job_type="regression", algorithm=job.algorithm, error=str(exc))
 
     def cluster(self, job: MLJobRequest) -> MLJobResult:
         """Perform spatial clustering (K-Means, DBSCAN)."""
         try:
-            from sklearn.cluster import KMeans, DBSCAN
+            from sklearn.cluster import DBSCAN, KMeans
             from sklearn.metrics import silhouette_score
 
             X, _ = self._load_spatial_features(job)
             if X is None:
-                return MLJobResult(success=False, job_type="clustering", algorithm=job.algorithm,
-                                   error="Could not load spatial features.")
+                return MLJobResult(
+                    success=False,
+                    job_type="clustering",
+                    algorithm=job.algorithm,
+                    error="Could not load spatial features.",
+                )
 
             algo = job.algorithm.lower()
             if algo == "kmeans":
@@ -249,8 +263,12 @@ class MachineLearningAgent:
                     min_samples=job.parameters.get("min_samples", 5),
                 )
             else:
-                return MLJobResult(success=False, job_type="clustering", algorithm=job.algorithm,
-                                   error=f"Unknown clustering algorithm '{job.algorithm}'. Use kmeans or dbscan.")
+                return MLJobResult(
+                    success=False,
+                    job_type="clustering",
+                    algorithm=job.algorithm,
+                    error=f"Unknown clustering algorithm '{job.algorithm}'. Use kmeans or dbscan.",
+                )
 
             labels = model.fit_predict(X)
             n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
@@ -263,31 +281,41 @@ class MachineLearningAgent:
             return MLJobResult(success=True, job_type="clustering", algorithm=job.algorithm, metrics=metrics)
 
         except ImportError as e:
-            return MLJobResult(success=False, job_type="clustering", algorithm=job.algorithm,
-                               error=f"scikit-learn not available: {e}")
+            return MLJobResult(
+                success=False, job_type="clustering", algorithm=job.algorithm, error=f"scikit-learn not available: {e}"
+            )
         except Exception as exc:
             return MLJobResult(success=False, job_type="clustering", algorithm=job.algorithm, error=str(exc))
 
     def predict(self, job: MLJobRequest) -> MLJobResult:
         """Run inference using a pre-trained model."""
         if not job.model_path:
-            return MLJobResult(success=False, job_type="predict", algorithm=job.algorithm,
-                               error="model_path is required for inference.")
+            return MLJobResult(
+                success=False,
+                job_type="predict",
+                algorithm=job.algorithm,
+                error="model_path is required for inference.",
+            )
         try:
             import joblib
+
             model = joblib.load(job.model_path)
             X, _ = self._load_spatial_features(job)
             if X is None:
-                return MLJobResult(success=False, job_type="predict", algorithm=job.algorithm,
-                                   error="Could not load input features.")
+                return MLJobResult(
+                    success=False, job_type="predict", algorithm=job.algorithm, error="Could not load input features."
+                )
             preds = model.predict(X)
             return MLJobResult(
-                success=True, job_type="predict", algorithm=job.algorithm,
+                success=True,
+                job_type="predict",
+                algorithm=job.algorithm,
                 metrics={"n_predictions": len(preds), "sample_predictions": preds[:5].tolist()},
             )
         except ImportError as e:
-            return MLJobResult(success=False, job_type="predict", algorithm=job.algorithm,
-                               error=f"joblib not available: {e}")
+            return MLJobResult(
+                success=False, job_type="predict", algorithm=job.algorithm, error=f"joblib not available: {e}"
+            )
         except Exception as exc:
             return MLJobResult(success=False, job_type="predict", algorithm=job.algorithm, error=str(exc))
 
@@ -306,9 +334,15 @@ class MachineLearningAgent:
         elif jt == "predict":
             return self.predict(job)
         else:
-            return MLJobResult(success=False, job_type=jt, algorithm=job.algorithm,
-                               error=(f"Unknown ML job type '{job.job_type}'. "
-                                      "Supported: classification, regression, clustering, predict"))
+            return MLJobResult(
+                success=False,
+                job_type=jt,
+                algorithm=job.algorithm,
+                error=(
+                    f"Unknown ML job type '{job.job_type}'. "
+                    "Supported: classification, regression, clustering, predict"
+                ),
+            )
 
     def _load_spatial_features(self, job: MLJobRequest):
         """
@@ -317,9 +351,11 @@ class MachineLearningAgent:
         """
         try:
             import numpy as np
+
             if not job.input_layers:
                 return None, None
             import geopandas as gpd
+
             gdf = gpd.read_file(job.input_layers[0])
             cols = job.feature_columns or [c for c in gdf.columns if c not in ("geometry", job.target_column)]
             X = gdf[cols].select_dtypes(include="number").values
@@ -332,9 +368,10 @@ class MachineLearningAgent:
 
     @staticmethod
     def _build_sklearn_classifier(algorithm: str, params: dict):
-        from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
-        from sklearn.svm import SVC
+        from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
         from sklearn.neighbors import KNeighborsClassifier
+        from sklearn.svm import SVC
+
         algo = algorithm.lower().replace("-", "_").replace(" ", "_")
         if "random_forest" in algo or algo == "rf":
             return RandomForestClassifier(n_estimators=params.get("n_estimators", 100), random_state=42)
@@ -348,8 +385,9 @@ class MachineLearningAgent:
 
     @staticmethod
     def _build_sklearn_regressor(algorithm: str, params: dict):
-        from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-        from sklearn.linear_model import Ridge, LinearRegression
+        from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
+        from sklearn.linear_model import LinearRegression, Ridge
+
         algo = algorithm.lower()
         if "random_forest" in algo or algo == "rf":
             return RandomForestRegressor(n_estimators=params.get("n_estimators", 100), random_state=42)
@@ -366,6 +404,7 @@ class MachineLearningAgent:
             if db is None or not db.available:
                 return None
             from geosi_data.db_models import EvalRunRecord
+
             record = EvalRunRecord(
                 job_type=job.job_type,
                 algorithm=job.algorithm,
@@ -392,4 +431,5 @@ class MachineLearningAgent:
     @staticmethod
     def _path_exists(path: str) -> bool:
         import os
+
         return os.path.exists(path)

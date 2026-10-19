@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Data Layer — Project Repository
 ═══════════════════════════════════════════════════════════════════
@@ -8,7 +7,7 @@ A project groups layers together with a CRS and description.
 """
 
 import logging
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("geosi_data.project_repository")
 
@@ -46,11 +45,7 @@ class ProjectRepository:
 
         try:
             with self.db.get_session() as session:
-                existing = (
-                    session.query(ProjectRecord)
-                    .filter_by(name=name)
-                    .first()
-                )
+                existing = session.query(ProjectRecord).filter_by(name=name).first()
 
                 if existing:
                     existing.description = description
@@ -85,11 +80,7 @@ class ProjectRepository:
 
         try:
             with self.db.get_session() as session:
-                record = (
-                    session.query(ProjectRecord)
-                    .filter_by(name=name)
-                    .first()
-                )
+                record = session.query(ProjectRecord).filter_by(name=name).first()
                 if record:
                     return self._to_dict(record)
                 return None
@@ -106,11 +97,7 @@ class ProjectRepository:
 
         try:
             with self.db.get_session() as session:
-                records = (
-                    session.query(ProjectRecord)
-                    .order_by(ProjectRecord.created_at.desc())
-                    .all()
-                )
+                records = session.query(ProjectRecord).order_by(ProjectRecord.created_at.desc()).all()
                 return [self._to_dict(r) for r in records]
         except Exception as e:
             logger.error(f"Failed to list projects: {e}")
@@ -125,11 +112,7 @@ class ProjectRepository:
 
         try:
             with self.db.get_session() as session:
-                record = (
-                    session.query(ProjectRecord)
-                    .filter_by(name=name)
-                    .first()
-                )
+                record = session.query(ProjectRecord).filter_by(name=name).first()
                 if record:
                     session.delete(record)
                     logger.info(f"Deleted project: {name}")

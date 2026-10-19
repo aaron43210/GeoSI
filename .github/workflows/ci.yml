@@ -31,9 +31,6 @@ jobs:
   lint:
     name: "Lint & Format Check"
     runs-on: ubuntu-latest
-    # Advisory until the existing formatting/typing backlog is cleared
-    # (black reports ~80 files to reformat). Remove to make it blocking.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -44,7 +41,8 @@ jobs:
           cache: pip
 
       - name: Install lint tools
-        run: pip install ruff black isort
+        # Pinned so a new linter release cannot break the build without a code change
+        run: pip install ruff==0.17.1 black==26.10.1 isort==9.0.2 flake8
 
       - name: Run ruff
         run: ruff check . --output-format=github
@@ -55,12 +53,14 @@ jobs:
       - name: Run isort (check only)
         run: isort --check-only --diff .
 
+      - name: Run flake8
+        run: flake8 geosi_engine geosi_data geosi_mcp geosi_server geosi_plugin geosi_rag geosi_knowledge
+
   # ── Stage 2: Type Check ────────────────────────────────────────────
   type_check:
     name: "Type Check (mypy)"
     runs-on: ubuntu-latest
-    # Advisory until the existing formatting/typing backlog is cleared
-    # (black reports ~80 files to reformat). Remove to make it blocking.
+    # Advisory: ~600 strict-mode type errors remain (tracked tech debt).
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -74,7 +74,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install mypy types-passlib types-python-jose
+          pip install mypy==2.4.0 types-passlib types-python-jose
 
       - name: Run mypy
         run: |

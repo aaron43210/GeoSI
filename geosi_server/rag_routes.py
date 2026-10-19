@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Server — RAG Routes
 ═══════════════════════════════════════════════════════════════════
@@ -10,9 +9,8 @@ Endpoints:
 """
 
 import logging
-from typing import List
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from geosi_server.auth import api_key_auth
@@ -22,6 +20,7 @@ router = APIRouter()
 
 
 # ── Request/Response models ────────────────────────────────────────────
+
 
 class SearchRequest(BaseModel):
     query: str = Field(..., description="Search query text")
@@ -38,7 +37,7 @@ class SearchResultItem(BaseModel):
 
 class SearchResponse(BaseModel):
     query: str
-    results: List[SearchResultItem]
+    results: list[SearchResultItem]
     total: int
 
 
@@ -50,10 +49,10 @@ class RAGQueryRequest(BaseModel):
 
 class RAGQueryResponse(BaseModel):
     query: str
-    documents: List[SearchResultItem]
-    workflows: List[SearchResultItem]
+    documents: list[SearchResultItem]
+    workflows: list[SearchResultItem]
     context_prompt: str
-    sources: List[str]
+    sources: list[str]
 
 
 class IngestRequest(BaseModel):
@@ -71,6 +70,7 @@ class IngestResponse(BaseModel):
 
 # ── Endpoints ──────────────────────────────────────────────────────────
 
+
 @router.post("/search", response_model=SearchResponse)
 async def rag_search(req: SearchRequest, api_key: str = Depends(api_key_auth)):
     """
@@ -80,16 +80,14 @@ async def rag_search(req: SearchRequest, api_key: str = Depends(api_key_auth)):
     (semantic + keyword) search with RRF fusion.
     """
     from geosi_server.app import get_pool
+
     engine = get_pool().get_or_create(api_key)
 
     # Force lazy RAG init so a cold session doesn't falsely report 503.
     if engine.knowledge:
         engine.knowledge.ensure_rag()
     if not engine.knowledge or not engine.knowledge.rag:
-        raise HTTPException(
-            status_code=503,
-            detail="RAG service unavailable. Enable knowledge layer."
-        )
+        raise HTTPException(status_code=503, detail="RAG service unavailable. Enable knowledge layer.")
 
     rag = engine.knowledge.rag
     results = rag.retriever.hybrid_search(
@@ -120,16 +118,14 @@ async def rag_query(req: RAGQueryRequest, api_key: str = Depends(api_key_auth)):
     that would be injected into the planning agent's LLM call.
     """
     from geosi_server.app import get_pool
+
     engine = get_pool().get_or_create(api_key)
 
     # Force lazy RAG init so a cold session doesn't falsely report 503.
     if engine.knowledge:
         engine.knowledge.ensure_rag()
     if not engine.knowledge or not engine.knowledge.rag:
-        raise HTTPException(
-            status_code=503,
-            detail="RAG service unavailable. Enable knowledge layer."
-        )
+        raise HTTPException(status_code=503, detail="RAG service unavailable. Enable knowledge layer.")
 
     rag = engine.knowledge.rag
     result = rag.query(
@@ -139,16 +135,10 @@ async def rag_query(req: RAGQueryRequest, api_key: str = Depends(api_key_auth)):
     )
 
     docs = [
-        SearchResultItem(
-            text=r.text, score=r.score, source=r.source, metadata=r.metadata
-        )
-        for r in result.documents
+        SearchResultItem(text=r.text, score=r.score, source=r.source, metadata=r.metadata) for r in result.documents
     ]
     workflows = [
-        SearchResultItem(
-            text=r.text, score=r.score, source=r.source, metadata=r.metadata
-        )
-        for r in result.workflows
+        SearchResultItem(text=r.text, score=r.score, source=r.source, metadata=r.metadata) for r in result.workflows
     ]
 
     return RAGQueryResponse(
@@ -168,6 +158,7 @@ async def rag_ingest(req: IngestRequest, api_key: str = Depends(api_key_auth)):
     Pipeline: load files → chunk → embed → store in Qdrant.
     """
     from geosi_server.app import get_pool
+
     engine = get_pool().get_or_create(api_key)
 
     count = engine.ingest_documents(req.directory, req.collection)

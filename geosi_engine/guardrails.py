@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Guardrails
 ══════════════════════════════════════════════════════════════════════
@@ -25,10 +24,11 @@ Usage
         logger.warning("Guardrail flags: %s", result.flags)
         # attach flags to context object; do not silently trust
 """
+
 from __future__ import annotations
 
-import re
 import logging
+import re
 from dataclasses import dataclass, field
 
 logger = logging.getLogger("geosi_engine.guardrails")
@@ -113,6 +113,7 @@ class GuardrailResult:
 _AHO_AUTOMATON = None
 try:
     import ahocorasick
+
     _AHO_AUTOMATON = ahocorasick.Automaton()
     for _idx, _pat in enumerate(_LITERAL_PATTERNS):
         _AHO_AUTOMATON.add_word(_pat, (_idx, _pat))

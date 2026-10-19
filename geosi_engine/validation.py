@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Engine - Validation Engine
 
@@ -71,10 +70,14 @@ class ValidationEngine:
             return report
         gdf = getattr(layer, "features", None)
         if gdf is None or not hasattr(gdf, "geometry"):
-            report.add(ValidationIssue(
-                "error", "missing_geometry",
-                "Vector layer has no geometry column", layer.name,
-            ))
+            report.add(
+                ValidationIssue(
+                    "error",
+                    "missing_geometry",
+                    "Vector layer has no geometry column",
+                    layer.name,
+                )
+            )
             return report
 
         try:
@@ -89,33 +92,44 @@ class ValidationEngine:
             null = int(null_mask.sum())
             empty = int(empty_mask.sum())
             invalid = int((invalid_mask & ~empty_mask).sum())
-            report.stats.update({
-                "features": int(len(gdf)),
-                "invalid": invalid,
-                "empty": empty,
-                "null": null,
-            })
+            report.stats.update(
+                {
+                    "features": int(len(gdf)),
+                    "invalid": invalid,
+                    "empty": empty,
+                    "null": null,
+                }
+            )
             if invalid:
-                report.add(ValidationIssue(
-                    "warning", "invalid_geometry",
-                    f"{invalid} invalid geometry/geometries (self-intersect, "
-                    "unclosed ring, ...). Fix with buffer(0) or make_valid.",
-                    layer.name,
-                ))
+                report.add(
+                    ValidationIssue(
+                        "warning",
+                        "invalid_geometry",
+                        f"{invalid} invalid geometry/geometries (self-intersect, "
+                        "unclosed ring, ...). Fix with buffer(0) or make_valid.",
+                        layer.name,
+                    )
+                )
             if empty:
-                report.add(ValidationIssue(
-                    "warning", "empty_geometry",
-                    f"{empty} empty geometry/geometries.", layer.name,
-                ))
+                report.add(
+                    ValidationIssue(
+                        "warning",
+                        "empty_geometry",
+                        f"{empty} empty geometry/geometries.",
+                        layer.name,
+                    )
+                )
             if null:
-                report.add(ValidationIssue(
-                    "error", "null_geometry",
-                    f"{null} null geometry/geometries.", layer.name,
-                ))
+                report.add(
+                    ValidationIssue(
+                        "error",
+                        "null_geometry",
+                        f"{null} null geometry/geometries.",
+                        layer.name,
+                    )
+                )
         except Exception as exc:  # pragma: no cover - geopandas missing
-            report.add(ValidationIssue(
-                "warning", "validator_unavailable", str(exc), layer.name
-            ))
+            report.add(ValidationIssue("warning", "validator_unavailable", str(exc), layer.name))
         return report
 
     # -- CRS --------------------------------------------------------------
@@ -123,12 +137,14 @@ class ValidationEngine:
     def validate_crs(self, layer: Layer) -> ValidationReport:
         report = ValidationReport()
         if not layer.crs or layer.crs.lower() in {"unknown", "", "none"}:
-            report.add(ValidationIssue(
-                "error", "missing_crs",
-                "Layer has no defined CRS. Assign an EPSG code before "
-                "running distance or overlay operations.",
-                layer.name,
-            ))
+            report.add(
+                ValidationIssue(
+                    "error",
+                    "missing_crs",
+                    "Layer has no defined CRS. Assign an EPSG code before " "running distance or overlay operations.",
+                    layer.name,
+                )
+            )
         else:
             report.stats["crs"] = layer.crs
         return report
@@ -137,49 +153,57 @@ class ValidationEngine:
         report = ValidationReport()
         report.stats.update({"crs_a": a.crs, "crs_b": b.crs})
         if not a.crs or not b.crs:
-            report.add(ValidationIssue(
-                "error", "missing_crs",
-                "Cannot compare layers without CRS.",
-            ))
+            report.add(
+                ValidationIssue(
+                    "error",
+                    "missing_crs",
+                    "Cannot compare layers without CRS.",
+                )
+            )
             return report
         if a.crs != b.crs:
-            report.add(ValidationIssue(
-                "warning", "crs_mismatch",
-                f"CRS mismatch: {a.name}={a.crs} vs {b.name}={b.crs}. "
-                "Reproject one layer before the operation.",
-            ))
+            report.add(
+                ValidationIssue(
+                    "warning",
+                    "crs_mismatch",
+                    f"CRS mismatch: {a.name}={a.crs} vs {b.name}={b.crs}. " "Reproject one layer before the operation.",
+                )
+            )
         return report
 
     # -- attributes -------------------------------------------------------
 
-    def validate_attributes(
-        self, layer: Layer, required: Optional[List[str]] = None
-    ) -> ValidationReport:
+    def validate_attributes(self, layer: Layer, required: Optional[List[str]] = None) -> ValidationReport:
         report = ValidationReport()
         report.stats["fields"] = list(layer.fields or [])
         for field_name in required or []:
             if field_name not in (layer.fields or []):
-                report.add(ValidationIssue(
-                    "error", "missing_field",
-                    f"Required field '{field_name}' not found on {layer.name}",
-                    layer.name,
-                ))
+                report.add(
+                    ValidationIssue(
+                        "error",
+                        "missing_field",
+                        f"Required field '{field_name}' not found on {layer.name}",
+                        layer.name,
+                    )
+                )
         return report
 
     # -- operation preconditions -----------------------------------------
 
-    def validate_operation_preconditions(
-        self, step: ToolStep, state: Any
-    ) -> ValidationReport:
+    def validate_operation_preconditions(self, step: ToolStep, state: Any) -> ValidationReport:
         """Check a ToolStep can execute against the given StateManager."""
         report = ValidationReport()
         for name in step.input_layers or []:
             layer = state.get_layer(name) if state else None
             if layer is None:
-                report.add(ValidationIssue(
-                    "error", "unknown_layer",
-                    f"Input layer '{name}' is not loaded.", name,
-                ))
+                report.add(
+                    ValidationIssue(
+                        "error",
+                        "unknown_layer",
+                        f"Input layer '{name}' is not loaded.",
+                        name,
+                    )
+                )
                 continue
             report.issues.extend(self.validate_crs(layer).issues)
 
@@ -188,15 +212,21 @@ class ValidationEngine:
         if "DISTANCE" in params and params["DISTANCE"] is not None:
             try:
                 if float(params["DISTANCE"]) <= 0:
-                    report.add(ValidationIssue(
-                        "error", "bad_distance",
-                        "DISTANCE must be greater than zero.",
-                    ))
+                    report.add(
+                        ValidationIssue(
+                            "error",
+                            "bad_distance",
+                            "DISTANCE must be greater than zero.",
+                        )
+                    )
             except (TypeError, ValueError):
-                report.add(ValidationIssue(
-                    "error", "bad_distance_type",
-                    "DISTANCE must be numeric.",
-                ))
+                report.add(
+                    ValidationIssue(
+                        "error",
+                        "bad_distance_type",
+                        "DISTANCE must be numeric.",
+                    )
+                )
         report.ok = not report.errors()
         return report
 
@@ -205,18 +235,23 @@ class ValidationEngine:
     def validate_result(self, step: ToolStep, layer: Layer) -> ValidationReport:
         report = ValidationReport()
         if layer is None:
-            report.add(ValidationIssue(
-                "error", "no_output",
-                f"{step.tool_name} produced no output.",
-            ))
+            report.add(
+                ValidationIssue(
+                    "error",
+                    "no_output",
+                    f"{step.tool_name} produced no output.",
+                )
+            )
             return report
         if layer.layer_type == "vector" and layer.feature_count == 0:
-            report.add(ValidationIssue(
-                "warning", "empty_result",
-                f"{step.tool_name} produced 0 features - double-check "
-                "parameters or input extents.",
-                layer.name,
-            ))
+            report.add(
+                ValidationIssue(
+                    "warning",
+                    "empty_result",
+                    f"{step.tool_name} produced 0 features - double-check " "parameters or input extents.",
+                    layer.name,
+                )
+            )
         return report
 
 

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Data Layer — SQLAlchemy ORM Models
 ═══════════════════════════════════════════════════════════════════
@@ -17,15 +16,15 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Column,
-    String,
-    Integer,
-    Float,
-    Boolean,
-    Text,
-    DateTime,
-    ForeignKey,
     JSON,
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
 )
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -50,6 +49,7 @@ class SpatialLayerRecord(Base):
     (one table per layer, managed by PostGISManager). This record
     tracks the metadata and the table name where geometries live.
     """
+
     __tablename__ = "geosi_layers"
 
     id = Column(String(12), primary_key=True, default=_uuid)
@@ -65,16 +65,14 @@ class SpatialLayerRecord(Base):
     updated_at = Column(DateTime, default=_now, onupdate=_now)
 
     def __repr__(self):
-        return (
-            f"SpatialLayerRecord(name={self.name!r}, "
-            f"type={self.layer_type}, geom={self.geometry_type})"
-        )
+        return f"SpatialLayerRecord(name={self.name!r}, " f"type={self.layer_type}, geom={self.geometry_type})"
 
 
 class ProjectRecord(Base):
     """
     A GIS project definition — groups layers together with a CRS.
     """
+
     __tablename__ = "geosi_projects"
 
     id = Column(String(12), primary_key=True, default=_uuid)
@@ -97,6 +95,7 @@ class WorkflowHistoryRecord(Base):
     This is the primary table for workflow memory — the knowledge
     layer queries this to find similar past workflows.
     """
+
     __tablename__ = "geosi_workflow_history"
 
     id = Column(String(12), primary_key=True, default=_uuid)
@@ -118,10 +117,7 @@ class WorkflowHistoryRecord(Base):
     )
 
     def __repr__(self):
-        return (
-            f"WorkflowHistoryRecord(query={self.query[:50]!r}, "
-            f"status={self.status})"
-        )
+        return f"WorkflowHistoryRecord(query={self.query[:50]!r}, " f"status={self.status})"
 
 
 class ExecutionResultRecord(Base):
@@ -131,6 +127,7 @@ class ExecutionResultRecord(Base):
     Tracks which tool ran, whether it succeeded, timing,
     and any error messages — for the feedback memory system.
     """
+
     __tablename__ = "geosi_execution_results"
 
     id = Column(String(12), primary_key=True, default=_uuid)
@@ -154,10 +151,7 @@ class ExecutionResultRecord(Base):
     workflow = relationship("WorkflowHistoryRecord", back_populates="step_results")
 
     def __repr__(self):
-        return (
-            f"ExecutionResultRecord(step={self.step_id}, "
-            f"tool={self.tool_name}, status={self.status})"
-        )
+        return f"ExecutionResultRecord(step={self.step_id}, " f"tool={self.tool_name}, status={self.status})"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -246,7 +240,7 @@ class PendingApprovalRecord(Base):
     id = Column(String(12), primary_key=True, default=_uuid)
     action_id = Column(String(12), nullable=False, unique=True, index=True)
     session_id = Column(String(255), nullable=False, index=True)
-    step_data_json = Column(JSON, nullable=True)   # serialized ToolStep
+    step_data_json = Column(JSON, nullable=True)  # serialized ToolStep
     risk_level = Column(String(20), default="mutating")
     status = Column(String(20), default="pending")  # pending | approved | rejected | expired
     resolved_by = Column(String(255), nullable=True)
@@ -254,10 +248,7 @@ class PendingApprovalRecord(Base):
     updated_at = Column(DateTime, default=_now, onupdate=_now)
 
     def __repr__(self) -> str:
-        return (
-            f"PendingApprovalRecord(action_id={self.action_id!r}, "
-            f"status={self.status})"
-        )
+        return f"PendingApprovalRecord(action_id={self.action_id!r}, " f"status={self.status})"
 
 
 class EvalRunRecord(Base):
@@ -311,10 +302,7 @@ class EvalRunRecord(Base):
 
     def __repr__(self) -> str:
         q = (self.query or self.job_type or "")[:40]
-        return (
-            f"EvalRunRecord(ref={q!r}, "
-            f"faithfulness={self.faithfulness})"
-        )
+        return f"EvalRunRecord(ref={q!r}, " f"faithfulness={self.faithfulness})"
 
 
 class QueryHistoryRecord(Base):
@@ -334,7 +322,7 @@ class QueryHistoryRecord(Base):
     success = Column(Boolean, default=True)
     duration_ms = Column(Float, nullable=True)
     tools_used_json = Column(JSON, nullable=True)
-    pattern_json = Column(JSON, nullable=True)   # detected query pattern
+    pattern_json = Column(JSON, nullable=True)  # detected query pattern
     created_at = Column(DateTime, default=_now)
 
     def __repr__(self) -> str:

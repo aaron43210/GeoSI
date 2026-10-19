@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Dynamic QGIS Backend Bridge
 ═══════════════════════════════════════════════════════════════════════════
@@ -61,9 +60,11 @@ if plugin_dir not in sys.path:
 
 # imports below need sys.path set above
 from geosi_engine.base import (  # noqa: E402
-    register_backend, register_expression_validator, register_inspector,
+    register_backend,
+    register_expression_validator,
+    register_inspector,
 )
-from geosi_engine.models import ToolResult, ToolParameter, Layer  # noqa: E402
+from geosi_engine.models import Layer, ToolParameter, ToolResult  # noqa: E402
 
 logger = logging.getLogger("geosi_plugin.qgis_bridge")
 
@@ -74,26 +75,45 @@ logger = logging.getLogger("geosi_plugin.qgis_bridge")
 
 # Algorithms whose output is a raster file (need .tif extension)
 # Using frozenset for O(1) amortized membership testing via hash table
-_RASTER_ALGORITHMS: frozenset = frozenset({
-    "native:slope", "native:aspect", "native:hillshade", "native:ruggednessindex",
-    "qgis:slope", "qgis:aspect", "qgis:hillshade", "qgis:ruggednessindex",
-    "gdal:slope", "gdal:aspect", "gdal:hillshade", "gdal:roughness",
-    "gdal:fillnodata", "gdal:translate", "gdal:warpreproject",
-    "gdal:cliprasterbyextent", "gdal:cliprasterbymasklayer",
-    "gdal:contour", "gdal:rastercalculator",
-    "native:rastercalc", "native:createconstantrasterlayer",
-    "native:rastersurfacevolume", "native:rastersampling",
-    "saga:slopeaspectcurvature",
-})
+_RASTER_ALGORITHMS: frozenset = frozenset(
+    {
+        "native:slope",
+        "native:aspect",
+        "native:hillshade",
+        "native:ruggednessindex",
+        "qgis:slope",
+        "qgis:aspect",
+        "qgis:hillshade",
+        "qgis:ruggednessindex",
+        "gdal:slope",
+        "gdal:aspect",
+        "gdal:hillshade",
+        "gdal:roughness",
+        "gdal:fillnodata",
+        "gdal:translate",
+        "gdal:warpreproject",
+        "gdal:cliprasterbyextent",
+        "gdal:cliprasterbymasklayer",
+        "gdal:contour",
+        "gdal:rastercalculator",
+        "native:rastercalc",
+        "native:createconstantrasterlayer",
+        "native:rastersurfacevolume",
+        "native:rastersampling",
+        "saga:slopeaspectcurvature",
+    }
+)
 
 # Algorithms that can be handled by direct PyQGIS API (fast path)
 # These bypass processing.run() entirely for sub-millisecond response
-_FAST_PATH_ALGORITHMS: frozenset = frozenset({
-    "native:countfeatures",
-    "native:layerextent",
-    "native:layercrs",
-    "native:featurecount",
-})
+_FAST_PATH_ALGORITHMS: frozenset = frozenset(
+    {
+        "native:countfeatures",
+        "native:layerextent",
+        "native:layercrs",
+        "native:featurecount",
+    }
+)
 
 # ═══════════════════════════════════════════════════════════════════════════
 # PARAMETER TYPE MAPPING — QgsProcessingParameter* → GeoSI string types
@@ -107,53 +127,50 @@ _FAST_PATH_ALGORITHMS: frozenset = frozenset({
 
 _PARAM_TYPE_MAP: Dict[str, str] = {
     # ── Layer types → "layer" ──────────────────────────────────────────
-    "source":          "layer",   # QgsProcessingParameterFeatureSource
-    "vector":          "layer",   # QgsProcessingParameterVectorLayer
-    "raster":          "layer",   # QgsProcessingParameterRasterLayer
-    "layer":           "layer",   # QgsProcessingParameterMapLayer
-    "mesh":            "layer",   # QgsProcessingParameterMeshLayer
-    "multilayer":      "layer",   # QgsProcessingParameterMultipleLayers
+    "source": "layer",  # QgsProcessingParameterFeatureSource
+    "vector": "layer",  # QgsProcessingParameterVectorLayer
+    "raster": "layer",  # QgsProcessingParameterRasterLayer
+    "layer": "layer",  # QgsProcessingParameterMapLayer
+    "mesh": "layer",  # QgsProcessingParameterMeshLayer
+    "multilayer": "layer",  # QgsProcessingParameterMultipleLayers
     "vectordestination": "layer",  # output vector
     "rasterdestination": "layer",  # output raster
-    "featureSink":     "layer",   # QgsProcessingParameterFeatureSink
-
+    "featureSink": "layer",  # QgsProcessingParameterFeatureSink
     # ── Numeric types → "number" ──────────────────────────────────────
-    "number":          "number",  # QgsProcessingParameterNumber
-    "distance":        "number",  # QgsProcessingParameterDistance
-    "scale":           "number",  # QgsProcessingParameterScale
-    "duration":        "number",  # QgsProcessingParameterDuration
-    "range":           "number",  # QgsProcessingParameterRange
-
+    "number": "number",  # QgsProcessingParameterNumber
+    "distance": "number",  # QgsProcessingParameterDistance
+    "scale": "number",  # QgsProcessingParameterScale
+    "duration": "number",  # QgsProcessingParameterDuration
+    "range": "number",  # QgsProcessingParameterRange
     # ── Boolean → "boolean" ───────────────────────────────────────────
-    "boolean":         "boolean",  # QgsProcessingParameterBoolean
-
+    "boolean": "boolean",  # QgsProcessingParameterBoolean
     # ── Everything else → "string" ────────────────────────────────────
-    "string":          "string",  # QgsProcessingParameterString
-    "field":           "field",   # QgsProcessingParameterField (checked against layer fields)
-    "band":            "string",  # QgsProcessingParameterBand
-    "expression":      "expression",  # QgsProcessingParameterExpression (QgsExpression-validated)
-    "crs":             "string",  # QgsProcessingParameterCrs
-    "enum":            "enum",    # QgsProcessingParameterEnum (options listed for the planner)
-    "extent":          "string",  # QgsProcessingParameterExtent
-    "point":           "string",  # QgsProcessingParameterPoint
-    "geometry":        "string",  # QgsProcessingParameterGeometry
-    "file":            "string",  # QgsProcessingParameterFile
-    "folder":          "string",  # QgsProcessingParameterFolderDestination
-    "matrix":          "string",  # QgsProcessingParameterMatrix
-    "layout":          "string",  # QgsProcessingParameterLayout
-    "layoutitem":      "string",  # QgsProcessingParameterLayoutItem
-    "color":           "string",  # QgsProcessingParameterColor
-    "datetime":        "string",  # QgsProcessingParameterDateTime
-    "databaseschema":  "string",  # QgsProcessingParameterDatabaseSchema
-    "databasetable":   "string",  # QgsProcessingParameterDatabaseTable
+    "string": "string",  # QgsProcessingParameterString
+    "field": "field",  # QgsProcessingParameterField (checked against layer fields)
+    "band": "string",  # QgsProcessingParameterBand
+    "expression": "expression",  # QgsProcessingParameterExpression (QgsExpression-validated)
+    "crs": "string",  # QgsProcessingParameterCrs
+    "enum": "enum",  # QgsProcessingParameterEnum (options listed for the planner)
+    "extent": "string",  # QgsProcessingParameterExtent
+    "point": "string",  # QgsProcessingParameterPoint
+    "geometry": "string",  # QgsProcessingParameterGeometry
+    "file": "string",  # QgsProcessingParameterFile
+    "folder": "string",  # QgsProcessingParameterFolderDestination
+    "matrix": "string",  # QgsProcessingParameterMatrix
+    "layout": "string",  # QgsProcessingParameterLayout
+    "layoutitem": "string",  # QgsProcessingParameterLayoutItem
+    "color": "string",  # QgsProcessingParameterColor
+    "datetime": "string",  # QgsProcessingParameterDateTime
+    "databaseschema": "string",  # QgsProcessingParameterDatabaseSchema
+    "databasetable": "string",  # QgsProcessingParameterDatabaseTable
     "providerconnection": "string",
     "coordinateoperation": "string",
-    "maptheme":        "string",
-    "aggregates":      "string",
-    "tininputlayers":  "string",
-    "fieldsmapping":   "string",
-    "align_rasters":   "string",
-    "annotation":      "string",
+    "maptheme": "string",
+    "aggregates": "string",
+    "tininputlayers": "string",
+    "fieldsmapping": "string",
+    "align_rasters": "string",
+    "annotation": "string",
 }
 
 # ── Category mapping: QGIS group name → GeoSI category ───────────────
@@ -181,22 +198,38 @@ _GROUP_TO_CATEGORY: Dict[str, str] = {
 # Processing algorithms write results to new outputs, so they are
 # read-only for existing data unless they act on something in place,
 # write into a database or file the user owns, or reach the network.
-_DESTRUCTIVE_ALGORITHMS: frozenset = frozenset({
-    "native:truncatetable",
-    "qgis:postgisexecutesql", "native:postgisexecutesql",
-    "qgis:postgisexecuteandloadsql", "native:postgisexecuteandloadsql",
-    "qgis:spatialiteexecutesql", "native:spatialiteexecutesql",
-    "native:spatialiteexecutesqlregistered",
-})
-_MUTATING_ALGORITHMS: frozenset = frozenset({
-    "native:setprojection", "qgis:definecurrentprojection", "native:definecurrentprojection",
-    "native:createspatialindex", "native:createattributeindex",
-    "qgis:importintopostgis", "native:importintopostgis",
-    "qgis:importintospatialite", "native:importintospatialite",
-    "native:package", "native:filedownloader", "native:httprequest",
-    "native:createdirectory", "native:setlayerencoding",
-    "native:exporttospreadsheet", "native:savelog",
-})
+_DESTRUCTIVE_ALGORITHMS: frozenset = frozenset(
+    {
+        "native:truncatetable",
+        "qgis:postgisexecutesql",
+        "native:postgisexecutesql",
+        "qgis:postgisexecuteandloadsql",
+        "native:postgisexecuteandloadsql",
+        "qgis:spatialiteexecutesql",
+        "native:spatialiteexecutesql",
+        "native:spatialiteexecutesqlregistered",
+    }
+)
+_MUTATING_ALGORITHMS: frozenset = frozenset(
+    {
+        "native:setprojection",
+        "qgis:definecurrentprojection",
+        "native:definecurrentprojection",
+        "native:createspatialindex",
+        "native:createattributeindex",
+        "qgis:importintopostgis",
+        "native:importintopostgis",
+        "qgis:importintospatialite",
+        "native:importintospatialite",
+        "native:package",
+        "native:filedownloader",
+        "native:httprequest",
+        "native:createdirectory",
+        "native:setlayerencoding",
+        "native:exporttospreadsheet",
+        "native:savelog",
+    }
+)
 
 
 def _algorithm_risk(alg_id: str) -> str:
@@ -208,11 +241,13 @@ def _algorithm_risk(alg_id: str) -> str:
 
 
 # ── Providers to skip (meta-providers that don't have real algorithms) ─
-_SKIP_PROVIDERS: frozenset = frozenset({
-    "model",        # Graphical modeler (user models, not tools)
-    "script",       # User scripts
-    "preconfigured",  # Pre-configured algorithms (wrappers)
-})
+_SKIP_PROVIDERS: frozenset = frozenset(
+    {
+        "model",  # Graphical modeler (user models, not tools)
+        "script",  # User scripts
+        "preconfigured",  # Pre-configured algorithms (wrappers)
+    }
+)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -228,6 +263,7 @@ _SKIP_PROVIDERS: frozenset = frozenset({
 #   - _PARAM_TYPE_MAP: hash dict for O(1) type mapping
 #   - _GROUP_TO_CATEGORY: hash dict for O(1) category classification
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def auto_discover_qgis_tools(registry) -> int:
     """
@@ -261,6 +297,7 @@ def auto_discover_qgis_tools(registry) -> int:
         In practice: ~1000 algorithms × ~5 params = ~5000 iterations (~50ms)
     """
     from qgis.core import QgsApplication
+
     from geosi_engine.base import BackendTool
 
     # ── Get the processing registry from the running QGIS instance ─────
@@ -280,7 +317,7 @@ def auto_discover_qgis_tools(registry) -> int:
 
     for alg in proc_registry.algorithms():
         try:
-            alg_id = alg.id()          # e.g. "native:buffer"
+            alg_id = alg.id()  # e.g. "native:buffer"
             provider_id = alg.provider().id() if alg.provider() else ""
 
             # ── Skip meta-providers and duplicates (O(1) checks) ───────
@@ -313,11 +350,7 @@ def auto_discover_qgis_tools(registry) -> int:
 
             # ── Extract algorithm metadata ─────────────────────────────
             display_name = alg.displayName() or alg_id
-            description = (
-                alg.shortHelpString()
-                or alg.shortDescription()
-                or f"Runs QGIS algorithm: {alg_id}"
-            )
+            description = alg.shortHelpString() or alg.shortDescription() or f"Runs QGIS algorithm: {alg_id}"
             # Truncate overly long help strings to save LLM token budget
             if len(description) > 300:
                 description = description[:297] + "..."
@@ -394,15 +427,17 @@ def auto_discover_qgis_tools(registry) -> int:
                     except Exception:
                         logger.debug("suppressed exception", exc_info=True)
 
-                tool_params.append(ToolParameter(
-                    name=param.name(),
-                    param_type=geosi_type,
-                    required=is_required,
-                    description=param.description() or param.name(),
-                    default=default_val,
-                    parent_layer=parent_layer,
-                    options=options,
-                ))
+                tool_params.append(
+                    ToolParameter(
+                        name=param.name(),
+                        param_type=geosi_type,
+                        required=is_required,
+                        description=param.description() or param.name(),
+                        default=default_val,
+                        parent_layer=parent_layer,
+                        options=options,
+                    )
+                )
 
             # ── Create the GeoSI tool name from the algorithm ID ───────
             # "native:buffer" → "native_buffer"
@@ -411,11 +446,7 @@ def auto_discover_qgis_tools(registry) -> int:
 
             # ── Determine tags for fuzzy search ────────────────────────
             # Split the display name and algorithm name into searchable tokens
-            tags = list(set(
-                [tool_name]
-                + tool_name.split("_")
-                + display_name.lower().split()
-            ))
+            tags = list(set([tool_name] + tool_name.split("_") + display_name.lower().split()))
 
             # ── Instantiate and register the BackendTool ───────────────
             dynamic_tool = BackendTool(
@@ -457,6 +488,7 @@ def auto_discover_qgis_tools(registry) -> int:
 # Complexity: O(1) for all fast-path operations
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def _try_fast_path(algorithm_id: str, parameters: dict) -> Optional[ToolResult]:
     """
     Attempt to handle a simple query using direct PyQGIS API calls.
@@ -485,8 +517,10 @@ def _try_fast_path(algorithm_id: str, parameters: dict) -> Optional[ToolResult]:
             if qgs_layer and hasattr(qgs_layer, "extent"):
                 ext = qgs_layer.extent()
                 bounds = {
-                    "xmin": ext.xMinimum(), "ymin": ext.yMinimum(),
-                    "xmax": ext.xMaximum(), "ymax": ext.yMaximum(),
+                    "xmin": ext.xMinimum(),
+                    "ymin": ext.yMinimum(),
+                    "xmax": ext.xMaximum(),
+                    "ymax": ext.yMaximum(),
                 }
                 return ToolResult(
                     success=True,
@@ -518,6 +552,7 @@ def _try_fast_path(algorithm_id: str, parameters: dict) -> Optional[ToolResult]:
 # when running concurrent queries. Uses uuid4 for cryptographic randomness.
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def _make_temp_output(algorithm_id: str, raster: Optional[bool] = None) -> str:
     """Generate a collision-free temp file path with correct extension."""
     uid = uuid.uuid4().hex[:8]
@@ -547,6 +582,7 @@ def _detect_layer_type(algorithm_id: str) -> str:
 #   - This avoids accessing QgsProject (a GUI singleton) from a worker thread
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def _normalize_params(algorithm_id: str, params: dict) -> dict:
     """
     Make LLM-written parameters acceptable to processing.run():
@@ -558,6 +594,7 @@ def _normalize_params(algorithm_id: str, params: dict) -> dict:
     """
     try:
         from qgis.core import QgsApplication
+
         alg = QgsApplication.processingRegistry().algorithmById(algorithm_id)
     except Exception:
         alg = None
@@ -595,6 +632,7 @@ def _output_kind(algorithm_id: str) -> Optional[str]:
     """
     try:
         from qgis.core import QgsApplication
+
         alg = QgsApplication.processingRegistry().algorithmById(algorithm_id)
     except Exception:
         alg = None
@@ -639,10 +677,13 @@ def describe_output(path: str, name: str, kind: str) -> Optional[Layer]:
             return None
         ext = lyr.extent()
         return Layer(
-            name=name, filepath=path, layer_type="raster", geometry_type="Raster",
-            feature_count=1, crs=lyr.crs().authid(),
-            bounds={"xmin": ext.xMinimum(), "ymin": ext.yMinimum(),
-                    "xmax": ext.xMaximum(), "ymax": ext.yMaximum()},
+            name=name,
+            filepath=path,
+            layer_type="raster",
+            geometry_type="Raster",
+            feature_count=1,
+            crs=lyr.crs().authid(),
+            bounds={"xmin": ext.xMinimum(), "ymin": ext.yMinimum(), "xmax": ext.xMaximum(), "ymax": ext.yMaximum()},
             fields=[f"band_{i}" for i in range(1, lyr.bandCount() + 1)],
         )
     lyr = QgsVectorLayer(path, name, "ogr")
@@ -651,13 +692,16 @@ def describe_output(path: str, name: str, kind: str) -> Optional[Layer]:
     ext = lyr.extent()
     types, values = field_metadata(lyr)
     return Layer(
-        name=name, filepath=path, layer_type="vector",
+        name=name,
+        filepath=path,
+        layer_type="vector",
         geometry_type=QgsWkbTypes.geometryDisplayString(lyr.geometryType()),
-        feature_count=lyr.featureCount(), crs=lyr.crs().authid(),
-        bounds={"xmin": ext.xMinimum(), "ymin": ext.yMinimum(),
-                "xmax": ext.xMaximum(), "ymax": ext.yMaximum()},
+        feature_count=lyr.featureCount(),
+        crs=lyr.crs().authid(),
+        bounds={"xmin": ext.xMinimum(), "ymin": ext.yMinimum(), "xmax": ext.xMaximum(), "ymax": ext.yMaximum()},
         fields=[f.name() for f in lyr.fields()],
-        field_types=types, field_values=values,
+        field_types=types,
+        field_values=values,
     )
 
 
@@ -689,6 +733,7 @@ def describe_layer(layer: Layer, max_rows: int = 30) -> str:
             all_stats = Qgis.RasterBandStatistic.All  # QGIS >= 3.36
         except AttributeError:
             from qgis.core import QgsRasterBandStats
+
             all_stats = QgsRasterBandStats.All
         for b in range(1, lyr.bandCount() + 1):
             st = lyr.dataProvider().bandStatistics(b, all_stats)
@@ -706,8 +751,10 @@ def describe_layer(layer: Layer, max_rows: int = 30) -> str:
 
     names = [f.name() for f in lyr.fields() if f.name() != "fid"]
     gtype = lyr.geometryType()
-    measure = {QgsWkbTypes.GeometryType.LineGeometry: "length_m",
-               QgsWkbTypes.GeometryType.PolygonGeometry: "area_m2"}.get(gtype)
+    measure = {
+        QgsWkbTypes.GeometryType.LineGeometry: "length_m",
+        QgsWkbTypes.GeometryType.PolygonGeometry: "area_m2",
+    }.get(gtype)
     lines = [f"layer {layer.name}: {lyr.featureCount()} {layer.geometry_type} features, fields {names}"]
     for i, feat in enumerate(lyr.getFeatures()):
         if i >= max_rows:
@@ -783,8 +830,15 @@ def _run_qgis_algorithm(algorithm_id: str, parameters: dict) -> ToolResult:
             if isinstance(v, (list, tuple)) and any(hasattr(i, "filepath") for i in v):
                 # e.g. LAYERS for merge: a list of GeoSI layers → list of paths
                 unwrapped_params[k] = [
-                    (i.filepath if getattr(i, "filepath", "") and os.path.isfile(i.filepath) else
-                     getattr(i, "name", i)) if hasattr(i, "filepath") else i
+                    (
+                        (
+                            i.filepath
+                            if getattr(i, "filepath", "") and os.path.isfile(i.filepath)
+                            else getattr(i, "name", i)
+                        )
+                        if hasattr(i, "filepath")
+                        else i
+                    )
                     for i in v
                 ]
             elif hasattr(v, "filepath") and hasattr(v, "layer_type"):
@@ -821,6 +875,7 @@ def _run_qgis_algorithm(algorithm_id: str, parameters: dict) -> ToolResult:
         # A fresh context + feedback per run: safe from the QgsTask worker
         # thread (inputs are file paths, nothing reads the GUI project).
         from qgis.core import QgsProcessingContext
+
         context = QgsProcessingContext()
         feedback = _collecting_feedback()
         try:
@@ -833,8 +888,9 @@ def _run_qgis_algorithm(algorithm_id: str, parameters: dict) -> ToolResult:
                 unwrapped_params["OUTPUT"] = output_file
                 logger.info(f"Retrying {algorithm_id} with FlatGeobuf output (duplicate fids)")
                 feedback = _collecting_feedback()
-                result = processing.run(algorithm_id, unwrapped_params, context=QgsProcessingContext(),
-                                        feedback=feedback)
+                result = processing.run(
+                    algorithm_id, unwrapped_params, context=QgsProcessingContext(), feedback=feedback
+                )
             else:
                 raise
         elapsed = (time.time() - start) * 1000
@@ -844,7 +900,8 @@ def _run_qgis_algorithm(algorithm_id: str, parameters: dict) -> ToolResult:
         # e.g. qgis:basicstatisticsforfields → {"SUM": ..., "COUNT": ...}
         if output_kind is None:
             values = {
-                k: v for k, v in result.items()
+                k: v
+                for k, v in result.items()
                 if isinstance(v, (int, float, str, bool)) and not str(v).endswith((".html", ".htm"))
             }
             summary = ", ".join(f"{k}={v}" for k, v in list(values.items())[:20])
@@ -889,8 +946,7 @@ def _run_qgis_algorithm(algorithm_id: str, parameters: dict) -> ToolResult:
         # Some algorithms also return values next to the layer
         # (e.g. basic statistics: SUM, MEAN, COUNT) — keep them for answers.
         values = {
-            k: v for k, v in result.items()
-            if k != "OUTPUT" and isinstance(v, (int, float)) and not isinstance(v, bool)
+            k: v for k, v in result.items() if k != "OUTPUT" and isinstance(v, (int, float)) and not isinstance(v, bool)
         }
         message = f"QGIS algorithm completed: {algorithm_id}"
         if values:
@@ -913,6 +969,7 @@ def _run_qgis_algorithm(algorithm_id: str, parameters: dict) -> ToolResult:
 # ═══════════════════════════════════════════════════════════════════════════
 # INSTALL — The single entry point called by the plugin at startup
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def install(registry=None) -> int:
     """

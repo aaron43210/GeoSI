@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — RAGAS Evaluation Runner (Phase P2, FR-7.1/7.2)
 ════════════════════════════════════════════════════════════════════
@@ -16,15 +15,17 @@ Design decisions for best time/space complexity:
 
 PRD references: FR-7.1, FR-7.2, FR-7.3
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
 import os
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("geosi_engine.evaluation.ragas_runner")
 
@@ -37,17 +38,19 @@ _BATCH_SIZE = int(os.environ.get("GEOSI_EVAL_BATCH_SIZE", "10"))
 @dataclass
 class GoldenQuery:
     """A single entry in the evaluation golden set."""
+
     query_id: str
     query: str
     expected_answer: str
     contexts: List[str] = field(default_factory=list)
-    agent_scope: str = "planning"          # "planning" | "research" | "gis" | "geology"
+    agent_scope: str = "planning"  # "planning" | "research" | "gis" | "geology"
     tags: List[str] = field(default_factory=list)
 
 
 @dataclass
 class EvalResult:
     """Result for a single golden query evaluation."""
+
     query_id: str
     query: str
     agent_scope: str
@@ -62,6 +65,7 @@ class EvalResult:
 @dataclass
 class EvalRunSummary:
     """Aggregate summary of a full evaluation run."""
+
     run_id: str
     total_queries: int
     passed: int
@@ -69,7 +73,7 @@ class EvalRunSummary:
     mean_faithfulness: float
     mean_context_precision: float
     mean_answer_relevancy: float
-    gate_passed: bool          # True iff both thresholds met on the mean
+    gate_passed: bool  # True iff both thresholds met on the mean
     per_agent: Dict[str, Dict[str, float]] = field(default_factory=dict)
     timestamp: str = ""
     duration_s: float = 0.0
@@ -130,12 +134,15 @@ class RAGASRunner:
         queries = list(golden_queries)
         logger.info(
             "RAGAS evaluation started: run_id=%s queries=%d batch_size=%d ragas=%s",
-            run_id, len(queries), self._batch_size, self._ragas_available,
+            run_id,
+            len(queries),
+            self._batch_size,
+            self._ragas_available,
         )
 
         # Stream batches — O(B) peak memory
         for batch_start in range(0, len(queries), self._batch_size):
-            batch = queries[batch_start: batch_start + self._batch_size]
+            batch = queries[batch_start : batch_start + self._batch_size]
             batch_results = await asyncio.gather(
                 *[self._eval_one(q) for q in batch],
                 return_exceptions=False,
@@ -145,7 +152,8 @@ class RAGASRunner:
                 "Batch %d/%d complete (%d/%d queries evaluated)",
                 batch_start // self._batch_size + 1,
                 (len(queries) + self._batch_size - 1) // self._batch_size,
-                len(results), len(queries),
+                len(results),
+                len(queries),
             )
             # Persist batch to DB immediately (incremental writes)
             self._persist_batch(run_id, batch_results)
@@ -172,9 +180,7 @@ class RAGASRunner:
         start = time.monotonic()
         try:
             # Step 1: retrieve contexts from GeoSI knowledge
-            contexts = await asyncio.get_event_loop().run_in_executor(
-                None, self._retrieve_contexts, q
-            )
+            contexts = await asyncio.get_event_loop().run_in_executor(None, self._retrieve_contexts, q)
 
             # Step 2: score with RAGAS or heuristic fallback
             if self._ragas_available:
@@ -200,8 +206,10 @@ class RAGASRunner:
         except Exception as exc:
             logger.warning("Failed to evaluate query %s: %s", q.query_id, exc)
             return EvalResult(
-                query_id=q.query_id, query=q.query,
-                agent_scope=q.agent_scope, error=str(exc),
+                query_id=q.query_id,
+                query=q.query,
+                agent_scope=q.agent_scope,
+                error=str(exc),
                 latency_ms=(time.monotonic() - start) * 1000,
             )
 
@@ -212,9 +220,7 @@ class RAGASRunner:
         try:
             if not self._engine or not self._engine.knowledge:
                 return []
-            results = self._engine.knowledge.search_gis_docs(
-                q.query, limit=5
-            )
+            results = self._engine.knowledge.search_gis_docs(q.query, limit=5)
             return [getattr(r, "text", str(r)) for r in results]
         except Exception as exc:
             logger.debug("Context retrieval failed for %s: %s", q.query_id, exc)
@@ -222,18 +228,17 @@ class RAGASRunner:
 
     async def _ragas_score(self, q: GoldenQuery, contexts: list[str]) -> dict:
         """Score using the RAGAS library (async-wrapped)."""
-        return await asyncio.get_event_loop().run_in_executor(
-            None, self._ragas_score_sync, q, contexts
-        )
+        return await asyncio.get_event_loop().run_in_executor(None, self._ragas_score_sync, q, contexts)
 
     def _ragas_score_sync(self, q: GoldenQuery, contexts: list[str]) -> dict:
         """Synchronous RAGAS scoring — called from executor thread."""
         try:
             from ragas import evaluate
+
             try:
-                from ragas.metrics.collections import faithfulness, context_precision, answer_relevancy
+                from ragas.metrics.collections import answer_relevancy, context_precision, faithfulness
             except ImportError:
-                from ragas.metrics import faithfulness, context_precision, answer_relevancy  # older ragas
+                from ragas.metrics import answer_relevancy, context_precision, faithfulness  # older ragas
             from datasets import Dataset
 
             data = {
@@ -280,10 +285,7 @@ class RAGASRunner:
         if not contexts:
             precision = 0.0
         else:
-            relevant = sum(
-                1 for c in contexts
-                if any(t in c.lower() for t in query_terms)
-            )
+            relevant = sum(1 for c in contexts if any(t in c.lower() for t in query_terms))
             precision = relevant / len(contexts)
 
         # Answer relevancy: overlap of query terms in expected answer
@@ -299,9 +301,7 @@ class RAGASRunner:
     # Summarise and persist
     # ------------------------------------------------------------------
 
-    def _summarise(
-        self, run_id: str, results: list[EvalResult], duration: float
-    ) -> EvalRunSummary:
+    def _summarise(self, run_id: str, results: list[EvalResult], duration: float) -> EvalRunSummary:
         """Compute aggregate metrics across all results. O(N) time."""
         valid = [r for r in results if not r.error]
         n = len(valid) or 1
@@ -325,10 +325,14 @@ class RAGASRunner:
             }
 
         gate_passed = (
-            mean_faith >= FAITHFULNESS_THRESHOLD
-            and mean_prec >= CONTEXT_PRECISION_THRESHOLD
-            and self._ragas_available is not False  # only PASS with real RAGAS
-        ) if self._ragas_available else False  # heuristic → SKIP (treated as not-failed)
+            (
+                mean_faith >= FAITHFULNESS_THRESHOLD
+                and mean_prec >= CONTEXT_PRECISION_THRESHOLD
+                and self._ragas_available is not False  # only PASS with real RAGAS
+            )
+            if self._ragas_available
+            else False
+        )  # heuristic → SKIP (treated as not-failed)
 
         return EvalRunSummary(
             run_id=run_id,
@@ -351,20 +355,23 @@ class RAGASRunner:
             if db is None or not db.available:
                 return
             from geosi_data.db_models import EvalRunRecord
+
             with db.get_session() as sess:
                 for r in batch:
-                    sess.add(EvalRunRecord(
-                        job_type="ragas_eval",
-                        algorithm=r.query_id,
-                        metrics={
-                            "faithfulness": r.faithfulness,
-                            "context_precision": r.context_precision,
-                            "answer_relevancy": r.answer_relevancy,
-                            "passed": r.passed,
-                        },
-                        status="success" if r.passed else "failed",
-                        session_id=run_id,
-                    ))
+                    sess.add(
+                        EvalRunRecord(
+                            job_type="ragas_eval",
+                            algorithm=r.query_id,
+                            metrics={
+                                "faithfulness": r.faithfulness,
+                                "context_precision": r.context_precision,
+                                "answer_relevancy": r.answer_relevancy,
+                                "passed": r.passed,
+                            },
+                            status="success" if r.passed else "failed",
+                            session_id=run_id,
+                        )
+                    )
         except Exception as exc:
             logger.debug("Failed to persist eval batch: %s", exc)
 
@@ -375,20 +382,23 @@ class RAGASRunner:
             if db is None or not db.available:
                 return
             from geosi_data.db_models import EvalRunRecord
+
             with db.get_session() as sess:
-                sess.add(EvalRunRecord(
-                    job_type="ragas_summary",
-                    algorithm=run_id,
-                    metrics={
-                        "mean_faithfulness": summary.mean_faithfulness,
-                        "mean_context_precision": summary.mean_context_precision,
-                        "gate_passed": summary.gate_passed,
-                        "per_agent": summary.per_agent,
-                        "duration_s": summary.duration_s,
-                    },
-                    status="success" if summary.gate_passed else "failed",
-                    session_id=run_id,
-                ))
+                sess.add(
+                    EvalRunRecord(
+                        job_type="ragas_summary",
+                        algorithm=run_id,
+                        metrics={
+                            "mean_faithfulness": summary.mean_faithfulness,
+                            "mean_context_precision": summary.mean_context_precision,
+                            "gate_passed": summary.gate_passed,
+                            "per_agent": summary.per_agent,
+                            "duration_s": summary.duration_s,
+                        },
+                        status="success" if summary.gate_passed else "failed",
+                        session_id=run_id,
+                    )
+                )
         except Exception as exc:
             logger.debug("Failed to persist eval summary: %s", exc)
 
@@ -404,6 +414,7 @@ class RAGASRunner:
     def _check_ragas() -> bool:
         try:
             import ragas  # noqa: F401
+
             return True
         except ImportError:
             logger.info("ragas not installed — using heuristic scorer. Install ragas for CI gate.")

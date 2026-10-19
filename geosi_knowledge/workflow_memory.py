@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Knowledge — Workflow Memory
 ═══════════════════════════════════════════════════════════════════
@@ -14,8 +13,8 @@ Data flow:
 
 import logging
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("geosi_knowledge.workflow_memory")
 
@@ -37,6 +36,7 @@ class WorkflowExample:
         output_description: What the workflow produces
         created_at: When this workflow was recorded
     """
+
     name: str = ""
     description: str = ""
     user_query: str = ""
@@ -46,9 +46,7 @@ class WorkflowExample:
     execution_time_ms: float = 0.0
     tags: List[str] = field(default_factory=list)
     output_description: str = ""
-    created_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def __repr__(self):
         tools = " → ".join(self.tool_sequence) if self.tool_sequence else "N/A"
@@ -165,7 +163,7 @@ class WorkflowMemory:
         # Store in cache
         self._cache.append(workflow)
         if len(self._cache) > self._max_cache:
-            self._cache = self._cache[-self._max_cache:]
+            self._cache = self._cache[-self._max_cache :]
 
         # Store in Qdrant if RAG service available
         if self.rag and self.rag.available:
@@ -246,8 +244,10 @@ class WorkflowMemory:
         matching the operation.
         """
         matching = [
-            wf for wf in self._cache
-            if wf.success and (
+            wf
+            for wf in self._cache
+            if wf.success
+            and (
                 operation in wf.tool_sequence
                 or operation.lower() in wf.name.lower()
                 or operation.lower() in wf.user_query.lower()
@@ -290,6 +290,7 @@ class WorkflowMemory:
     def _derive_name(query: str, tools: List[str]) -> str:
         """Generate a workflow name from query and tools."""
         import re
+
         # Use first tool and key words from query
         key_words = re.findall(r"\b[a-z]{3,}\b", query.lower())
         # Filter out common words
@@ -303,16 +304,34 @@ class WorkflowMemory:
     def _extract_tags(query: str, tools: List[str]) -> List[str]:
         """Extract search tags from query and tool list."""
         import re
+
         tags = set()
         # Add tool names (without prefixes)
         for tool in tools:
             tags.add(tool.replace("native_", "").replace("gdal_", ""))
         # Add key GIS terms from query
         gis_terms = {
-            "ndvi", "ndwi", "ndbi", "slope", "aspect", "hillshade",
-            "buffer", "intersect", "clip", "dissolve", "contour",
-            "dem", "sentinel", "landsat", "watershed", "classification",
-            "raster", "vector", "reproject", "merge", "mosaic",
+            "ndvi",
+            "ndwi",
+            "ndbi",
+            "slope",
+            "aspect",
+            "hillshade",
+            "buffer",
+            "intersect",
+            "clip",
+            "dissolve",
+            "contour",
+            "dem",
+            "sentinel",
+            "landsat",
+            "watershed",
+            "classification",
+            "raster",
+            "vector",
+            "reproject",
+            "merge",
+            "mosaic",
         }
         for word in re.findall(r"\b\w+\b", query.lower()):
             if word in gis_terms:
@@ -323,6 +342,7 @@ class WorkflowMemory:
         """Load built-in workflow templates."""
         try:
             from geosi_knowledge.builtin_workflows import get_builtin_workflows
+
             builtins = get_builtin_workflows()
             self._cache.extend(builtins)
             logger.info(f"Loaded {len(builtins)} built-in workflow templates")

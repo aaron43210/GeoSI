@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Visualization Routes (map/3D data source for the web console)
 ════════════════════════════════════════════════════════════════════
@@ -15,10 +14,11 @@ Degrade-safe by design: if GeoPandas / rasterio / matplotlib are absent, the
 endpoints return a clear, structured error instead of raising — the UI simply
 shows "geometry unavailable" rather than breaking.
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -36,28 +36,31 @@ _MAX_RASTER_PX = 1024
 
 # ── Models ─────────────────────────────────────────────────────────────
 
+
 class VizLayer(BaseModel):
     name: str
-    layer_type: str = "vector"          # "vector" | "raster"
+    layer_type: str = "vector"  # "vector" | "raster"
     geometry_type: str = "Unknown"
     crs: str = "EPSG:4326"
     feature_count: int = 0
-    bounds_wgs84: Optional[List[float]] = None   # [minLng, minLat, maxLng, maxLat]
-    fields: List[str] = []
+    bounds_wgs84: list[float] | None = None  # [minLng, minLat, maxLng, maxLat]
+    fields: list[str] = []
 
 
 class VizLayerList(BaseModel):
-    layers: List[VizLayer]
+    layers: list[VizLayer]
 
 
 # ── Helpers ────────────────────────────────────────────────────────────
 
-def _engine(api_key: str, session_id: Optional[str]):
+
+def _engine(api_key: str, session_id: str | None):
     from geosi_server.app import get_pool
+
     return get_pool().get_or_create(session_id or api_key)
 
 
-def _session_layers(engine) -> Dict[str, Any]:
+def _session_layers(engine) -> dict[str, Any]:
     state = getattr(engine, "state", None)
     return dict(getattr(state, "layers", {}) or {})
 
@@ -69,6 +72,7 @@ def _load_gdf(layer):
     be produced (missing geopandas, no features, unreadable file).
     """
     import importlib.util
+
     if importlib.util.find_spec("geopandas") is None:  # pragma: no cover
         raise RuntimeError("geopandas not available")
 
@@ -78,6 +82,7 @@ def _load_gdf(layer):
         if not fp:
             raise RuntimeError("layer has no in-memory features and no filepath")
         import geopandas
+
         gdf = geopandas.read_file(fp)
     return gdf
 
@@ -97,7 +102,7 @@ def _to_wgs84(gdf, declared_crs: str):
     return gdf
 
 
-def _bounds_wgs84(layer) -> Optional[List[float]]:
+def _bounds_wgs84(layer) -> list[float] | None:
     """Best-effort WGS84 [minLng, minLat, maxLng, maxLat] for a layer."""
     # Vector: derive from the (reprojected) geometry.
     if getattr(layer, "layer_type", "vector") == "vector":
@@ -112,37 +117,40 @@ def _bounds_wgs84(layer) -> Optional[List[float]]:
     if {"xmin", "ymin", "xmax", "ymax"} <= set(b):
         try:
             from pyproj import Transformer
+
             src = getattr(layer, "crs", "") or "EPSG:4326"
             tf = Transformer.from_crs(src, "EPSG:4326", always_xy=True)
             minx, miny = tf.transform(b["xmin"], b["ymin"])
             maxx, maxy = tf.transform(b["xmax"], b["ymax"])
             return [float(minx), float(miny), float(maxx), float(maxy)]
         except Exception:
-            return [float(b["xmin"]), float(b["ymin"]),
-                    float(b["xmax"]), float(b["ymax"])]
+            return [float(b["xmin"]), float(b["ymin"]), float(b["xmax"]), float(b["ymax"])]
     return None
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────
 
+
 @router.get("/layers", response_model=VizLayerList, tags=["Visualization"])
 async def list_viz_layers(
     api_key: str = Depends(api_key_auth),
-    session_id: Optional[str] = Query(None),
+    session_id: str | None = Query(None),
 ):
     """List the live working layers for a session (what the map should draw)."""
     engine = _engine(api_key, session_id)
-    out: List[VizLayer] = []
+    out: list[VizLayer] = []
     for name, layer in _session_layers(engine).items():
-        out.append(VizLayer(
-            name=name,
-            layer_type=getattr(layer, "layer_type", "vector"),
-            geometry_type=getattr(layer, "geometry_type", "Unknown"),
-            crs=getattr(layer, "crs", "EPSG:4326"),
-            feature_count=int(getattr(layer, "feature_count", 0) or 0),
-            bounds_wgs84=_bounds_wgs84(layer),
-            fields=list(getattr(layer, "fields", []) or []),
-        ))
+        out.append(
+            VizLayer(
+                name=name,
+                layer_type=getattr(layer, "layer_type", "vector"),
+                geometry_type=getattr(layer, "geometry_type", "Unknown"),
+                crs=getattr(layer, "crs", "EPSG:4326"),
+                feature_count=int(getattr(layer, "feature_count", 0) or 0),
+                bounds_wgs84=_bounds_wgs84(layer),
+                fields=list(getattr(layer, "fields", []) or []),
+            )
+        )
     return VizLayerList(layers=out)
 
 
@@ -150,7 +158,7 @@ async def list_viz_layers(
 async def layer_geojson(
     name: str,
     api_key: str = Depends(api_key_auth),
-    session_id: Optional[str] = Query(None),
+    session_id: str | None = Query(None),
     limit: int = Query(_MAX_FEATURES, ge=1, le=_MAX_FEATURES),
     simplify: float = Query(0.0, ge=0.0, description="Tolerance in degrees; 0 = none"),
 ):
@@ -165,7 +173,7 @@ async def layer_geojson(
     try:
         gdf = _to_wgs84(_load_gdf(layer), getattr(layer, "crs", ""))
     except RuntimeError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     if len(gdf) > limit:
         gdf = gdf.iloc[:limit]
@@ -177,6 +185,7 @@ async def layer_geojson(
             logger.debug("Simplify skipped: %s", exc)
 
     import json
+
     fc = json.loads(gdf.to_json())
     fc["_meta"] = {
         "name": name,
@@ -191,7 +200,7 @@ async def layer_geojson(
 async def layer_raster(
     name: str,
     api_key: str = Depends(api_key_auth),
-    session_id: Optional[str] = Query(None),
+    session_id: str | None = Query(None),
 ):
     """Return WGS84 bounds + an optional downsampled PNG overlay for a raster."""
     engine = _engine(api_key, session_id)
@@ -206,14 +215,15 @@ async def layer_raster(
     return {
         "name": name,
         "bounds_wgs84": bounds,
-        "image": image,            # data: URL or None
+        "image": image,  # data: URL or None
         "crs": getattr(layer, "crs", "EPSG:4326"),
     }
 
 
 # ── Raster rendering (fully guarded; None on any missing dependency) ────
 
-def _render_raster_png(layer) -> Optional[str]:
+
+def _render_raster_png(layer) -> str | None:
     """Downsample a raster to a PNG ``data:`` URL. Returns None if impossible.
 
     Single-band → viridis colormap; 3+ band → RGB composite. Pure best-effort:
@@ -221,10 +231,11 @@ def _render_raster_png(layer) -> Optional[str]:
     back to drawing just the footprint box.
     """
     try:
-        import numpy as np
-        from PIL import Image
         import base64
         import io
+
+        import numpy as np
+        from PIL import Image
     except Exception as exc:  # pragma: no cover - env without numpy/PIL
         logger.debug("Raster PNG skipped (no numpy/PIL): %s", exc)
         return None
@@ -236,6 +247,7 @@ def _render_raster_png(layer) -> Optional[str]:
             if not fp:
                 return None
             import rasterio
+
             with rasterio.open(fp) as ds:
                 count = min(ds.count, 3)
                 arr = ds.read(list(range(1, count + 1)))  # (bands, h, w)
@@ -262,6 +274,7 @@ def _render_raster_png(layer) -> Optional[str]:
             norm = np.clip((band - lo) / (hi - lo + 1e-9), 0, 1)
             try:
                 from matplotlib import cm
+
                 rgba = (cm.get_cmap("viridis")(norm) * 255).astype("uint8")
                 img = Image.fromarray(rgba, mode="RGBA")
             except Exception:
@@ -273,6 +286,5 @@ def _render_raster_png(layer) -> Optional[str]:
         b64 = base64.b64encode(buf.getvalue()).decode("ascii")
         return f"data:image/png;base64,{b64}"
     except Exception as exc:
-        logger.debug("Raster PNG render failed for %s: %s",
-                     getattr(layer, "name", "?"), exc)
+        logger.debug("Raster PNG render failed for %s: %s", getattr(layer, "name", "?"), exc)
         return None

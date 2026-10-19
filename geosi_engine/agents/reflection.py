@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Reflection Agent (Core Agent #4)
 ════════════════════════════════════════════════════════════════════
@@ -15,6 +14,7 @@ PRD §4.1 Agent #4 — Production requirements
 * Read-only by design — never executes tools directly.
 * Auto-tier: ``allow`` (no permission gate needed).
 """
+
 from __future__ import annotations
 
 import logging
@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
 from geosi_engine.models import ExecutionPlan
-from geosi_engine.telemetry import span, set_span_attr
+from geosi_engine.telemetry import set_span_attr, span
 
 logger = logging.getLogger("geosi_engine.agents.reflection")
 
@@ -36,7 +36,8 @@ _MIN_RELIABILITY_THRESHOLD = 0.4
 @dataclass
 class CriticFinding:
     """One issue found by the pre-execution critic."""
-    severity: str           # "warning" | "error"
+
+    severity: str  # "warning" | "error"
     tool_name: str
     message: str
     reliability_score: Optional[float] = None
@@ -45,6 +46,7 @@ class CriticFinding:
 @dataclass
 class CriticReport:
     """Result of the pre-execution critic pass."""
+
     ok: bool
     findings: list[CriticFinding] = field(default_factory=list)
 
@@ -101,27 +103,31 @@ class ReflectionAgent:
             # a. Reliability check
             score = self._get_reliability(step.tool_name)
             if score is not None and score < _MIN_RELIABILITY_THRESHOLD:
-                findings.append(CriticFinding(
-                    severity="warning",
-                    tool_name=step.tool_name,
-                    message=(
-                        f"Tool '{step.tool_name}' has low reliability score "
-                        f"({score:.2f} < threshold {_MIN_RELIABILITY_THRESHOLD}). "
-                        "Consider an alternative tool."
-                    ),
-                    reliability_score=score,
-                ))
+                findings.append(
+                    CriticFinding(
+                        severity="warning",
+                        tool_name=step.tool_name,
+                        message=(
+                            f"Tool '{step.tool_name}' has low reliability score "
+                            f"({score:.2f} < threshold {_MIN_RELIABILITY_THRESHOLD}). "
+                            "Consider an alternative tool."
+                        ),
+                        reliability_score=score,
+                    )
+                )
 
             # b. Registry check — tool must be discoverable
             if not self._tool_known(step.tool_name):
-                findings.append(CriticFinding(
-                    severity="warning",
-                    tool_name=step.tool_name,
-                    message=(
-                        f"Tool '{step.tool_name}' is not in the current tool registry. "
-                        "May fail at execution time (QGIS not loaded or tool not discovered)."
-                    ),
-                ))
+                findings.append(
+                    CriticFinding(
+                        severity="warning",
+                        tool_name=step.tool_name,
+                        message=(
+                            f"Tool '{step.tool_name}' is not in the current tool registry. "
+                            "May fail at execution time (QGIS not loaded or tool not discovered)."
+                        ),
+                    )
+                )
 
         errors = [f for f in findings if f.severity == "error"]
         set_span_attr("critic.findings", len(findings))
@@ -143,23 +149,24 @@ class ReflectionAgent:
 
     # Common failure messages → what the planner should change
     _HINTS: tuple[tuple[str, str], ...] = (
-        (r"not found in registry|unknown tool",
-         "Use only tool names from the Available tools list."),
-        (r"Missing required parameter: (\w+)",
-         "Set the required parameter {0}."),
-        (r"Incorrect parameter value for (\w+)",
-         "The value for {0} is invalid for this tool; check its type and allowed options."),
-        (r"does not exist in layer",
-         "Use one of the field names listed for that layer."),
-        (r"0 features",
-         "Check which layer is the INPUT and which is the comparison layer, the spatial "
-         "relationship, and distance units (metres)."),
-        (r"is not loaded|no layer named",
-         "Reference only layers from the Available layers list."),
-        (r"invalid expression|parser error",
-         "Write a valid QGIS expression: field names in double quotes, text in single quotes."),
-        (r"no result layer",
-         "Use a processing tool whose output is a new layer."),
+        (r"not found in registry|unknown tool", "Use only tool names from the Available tools list."),
+        (r"Missing required parameter: (\w+)", "Set the required parameter {0}."),
+        (
+            r"Incorrect parameter value for (\w+)",
+            "The value for {0} is invalid for this tool; check its type and allowed options.",
+        ),
+        (r"does not exist in layer", "Use one of the field names listed for that layer."),
+        (
+            r"0 features",
+            "Check which layer is the INPUT and which is the comparison layer, the spatial "
+            "relationship, and distance units (metres).",
+        ),
+        (r"is not loaded|no layer named", "Reference only layers from the Available layers list."),
+        (
+            r"invalid expression|parser error",
+            "Write a valid QGIS expression: field names in double quotes, text in single quotes.",
+        ),
+        (r"no result layer", "Use a processing tool whose output is a new layer."),
     )
 
     def feedback_for(self, plan: ExecutionPlan, problem: str) -> str:
@@ -225,16 +232,17 @@ class ReflectionAgent:
         for attempt in range(1, _MAX_RETRIES + 1):
             logger.info(
                 "Reflection retry %d/%d for plan %s (error: %s)",
-                attempt, _MAX_RETRIES, original_plan.plan_id, error[:100],
+                attempt,
+                _MAX_RETRIES,
+                original_plan.plan_id,
+                error[:100],
             )
 
             # a. Retrieve similar failures from knowledge memory
             similar_failures = self._retrieve_similar_failures(error)
 
             # b. Generate corrected plan
-            corrected = self._generate_corrected_plan(
-                original_plan, error, similar_failures, attempt
-            )
+            corrected = self._generate_corrected_plan(original_plan, error, similar_failures, attempt)
             if corrected is None:
                 logger.warning("Could not generate a corrected plan — retrying with original.")
                 corrected = original_plan
@@ -250,8 +258,7 @@ class ReflectionAgent:
                 logger.warning("Reflection retry %d failed: %s", attempt, exc)
 
         raise RuntimeError(
-            f"Reflection Agent exhausted all {_MAX_RETRIES} retry attempts. "
-            f"Last error: {last_error}"
+            f"Reflection Agent exhausted all {_MAX_RETRIES} retry attempts. " f"Last error: {last_error}"
         )
 
     # ------------------------------------------------------------------
@@ -320,10 +327,7 @@ class ReflectionAgent:
             # without it, re-planning would raise, so bail out gracefully.
             supervisor = getattr(self._engine, "supervisor", None)
             if supervisor is None:
-                logger.debug(
-                    "No supervisor available for reflection re-planning; "
-                    "retrying original plan instead."
-                )
+                logger.debug("No supervisor available for reflection re-planning; " "retrying original plan instead.")
                 return None
 
             planner = PlanningAgent(self._engine, supervisor=supervisor)

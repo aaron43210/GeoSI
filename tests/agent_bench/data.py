@@ -34,14 +34,14 @@ HOSPITALS = [
     # (name, x, y)       inside Z1 -> H0, H1 ; inside Z2 -> H5, H6, H7
     ("H0", 500500, 1400500),
     ("H1", 501500, 1401500),
-    ("H2", 503500, 1400500),   # 500 m east of Z1
-    ("H3", 504200, 1401000),   # 1.2 km east of Z1
-    ("H4", 505600, 1401000),   # 600 m west of Z2
+    ("H2", 503500, 1400500),  # 500 m east of Z1
+    ("H3", 504200, 1401000),  # 1.2 km east of Z1
+    ("H4", 505600, 1401000),  # 600 m west of Z2
     ("H5", 507000, 1401000),
     ("H6", 508000, 1402000),
     ("H7", 509000, 1401500),
-    ("H8", 500500, 1406000),   # far north
-    ("H9", 512500, 1405500),   # far north-east
+    ("H8", 500500, 1406000),  # far north
+    ("H9", 512500, 1405500),  # far north-east
 ]
 ZONES = [
     ("Z1", "high", "POLYGON((500000 1400000,503000 1400000,503000 1402000,500000 1402000,500000 1400000))"),
@@ -63,8 +63,13 @@ CRS = "EPSG:32643"
 
 def _vector(path, name, geom, fields, rows):
     from qgis.core import (
-        QgsCoordinateTransformContext, QgsFeature, QgsField, QgsGeometry,
-        QgsPointXY, QgsVectorFileWriter, QgsVectorLayer,
+        QgsCoordinateTransformContext,
+        QgsFeature,
+        QgsField,
+        QgsGeometry,
+        QgsPointXY,
+        QgsVectorFileWriter,
+        QgsVectorLayer,
     )
     from qgis.PyQt.QtCore import QMetaType
 
@@ -96,6 +101,7 @@ def _raster(path, bands, x0, y0, res):
     ds.SetProjection(srs.ExportToWkt())
     for i, band in enumerate(bands, start=1):
         import numpy as np
+
         b = ds.GetRasterBand(i)
         b.WriteArray(np.array(band, dtype="float32"))
         b.SetNoDataValue(-9999)
@@ -109,8 +115,13 @@ def build(out_dir: str) -> dict:
     paths = {}
 
     p = paths["hospitals"] = os.path.join(out_dir, "hospitals.gpkg")
-    _vector(p, "hospitals", "Point", [("name", str), ("beds", int)],
-            [(n, 50 + 25 * i, (x, y)) for i, (n, x, y) in enumerate(HOSPITALS)])
+    _vector(
+        p,
+        "hospitals",
+        "Point",
+        [("name", str), ("beds", int)],
+        [(n, 50 + 25 * i, (x, y)) for i, (n, x, y) in enumerate(HOSPITALS)],
+    )
     p = paths["flood_zones"] = os.path.join(out_dir, "flood_zones.gpkg")
     _vector(p, "flood_zones", "Polygon", [("zone", str), ("risk", str)], ZONES)
     p = paths["roads"] = os.path.join(out_dir, "roads.gpkg")
@@ -126,8 +137,10 @@ def build(out_dir: str) -> dict:
 
     # Image: B, G, R, NIR. Left half vegetation (NIR >> R), right half bare soil.
     m = 50
+
     def band(left, right):
         return [[left if c < m // 2 else right for c in range(m)] for _ in range(m)]
+
     p = paths["image"] = os.path.join(out_dir, "image.tif")
     _raster(p, [band(0.04, 0.12), band(0.08, 0.14), band(0.05, 0.20), band(0.50, 0.25)], 500000, 1403000, 60)
     return paths

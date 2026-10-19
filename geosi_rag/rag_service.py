@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI RAG — RAG Service
 ═══════════════════════════════════════════════════════════════════
@@ -15,14 +14,14 @@ for document retrieval.
 
 import logging
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
 
-from geosi_rag.document_loader import DocumentLoader
 from geosi_rag.chunker import Chunker
+from geosi_rag.document_loader import DocumentLoader
 from geosi_rag.embedding_service import EmbeddingService
 from geosi_rag.qdrant_store import QdrantStore
-from geosi_rag.retriever import Retriever, SearchResult
 from geosi_rag.reranker import Reranker
+from geosi_rag.retriever import Retriever, SearchResult
 
 logger = logging.getLogger("geosi_rag.rag_service")
 
@@ -38,6 +37,7 @@ class RAGResult:
         context_prompt: Assembled prompt section for the LLM
         sources: List of source file paths referenced
     """
+
     documents: List[SearchResult] = field(default_factory=list)
     workflows: List[SearchResult] = field(default_factory=list)
     context_prompt: str = ""
@@ -125,14 +125,10 @@ class RAGService:
         workflow_results = self.reranker.rerank(user_query, workflow_results, top_k=workflow_limit)
 
         # 4. Collect unique sources
-        sources = list(set(
-            r.source for r in doc_results + workflow_results if r.source
-        ))
+        sources = list(set(r.source for r in doc_results + workflow_results if r.source))
 
         # 5. Build context prompt
-        context_prompt = self._build_context_prompt(
-            user_query, doc_results, workflow_results
-        )
+        context_prompt = self._build_context_prompt(user_query, doc_results, workflow_results)
 
         result = RAGResult(
             documents=doc_results,
@@ -142,8 +138,7 @@ class RAGService:
         )
 
         logger.info(
-            f"RAG query: '{user_query[:50]}...' → "
-            f"{len(doc_results)} docs, {len(workflow_results)} workflows"
+            f"RAG query: '{user_query[:50]}...' → " f"{len(doc_results)} docs, {len(workflow_results)} workflows"
         )
         return result
 
@@ -186,9 +181,7 @@ class RAGService:
             return 0
 
         # 3. Ensure collection exists
-        self.store.create_collection(
-            collection, self.embeddings.vector_size
-        )
+        self.store.create_collection(collection, self.embeddings.vector_size)
 
         # 4. Generate embeddings
         logger.info(f"Generating embeddings for {len(chunks)} chunks...")
@@ -198,9 +191,7 @@ class RAGService:
         # 5. Store in Qdrant
         count = self.store.upsert(chunks, embeddings, collection)
 
-        logger.info(
-            f"Ingested {count} chunks from '{directory}' → '{collection}'"
-        )
+        logger.info(f"Ingested {count} chunks from '{directory}' → '{collection}'")
         return count
 
     def ingest_workflow(
@@ -267,10 +258,7 @@ class RAGService:
             sections.append("## Relevant GIS Documentation\n")
             for i, doc in enumerate(docs, 1):
                 source_label = doc.source.split("/")[-1] if doc.source else "unknown"
-                sections.append(
-                    f"### [{i}] {source_label} (relevance: {doc.score:.2f})\n"
-                    f"{doc.text[:500]}\n"
-                )
+                sections.append(f"### [{i}] {source_label} (relevance: {doc.score:.2f})\n" f"{doc.text[:500]}\n")
 
         if workflows:
             sections.append("## Similar Workflow Examples\n")
@@ -289,9 +277,7 @@ class RAGService:
         return (
             "─── GIS Knowledge Context ───\n"
             "The following information was retrieved from the GIS knowledge base "
-            "and may help with planning the workflow.\n\n"
-            + "\n".join(sections)
-            + "\n─── End Knowledge Context ───\n"
+            "and may help with planning the workflow.\n\n" + "\n".join(sections) + "\n─── End Knowledge Context ───\n"
         )
 
     def __repr__(self):

@@ -1,16 +1,15 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI v2 — Neo4j Client + Graph Writer Tests (Phase P9, FR-8.4)
 Tests graceful degradation, circuit breaker, schema helpers, and writer queue.
 """
+
 from __future__ import annotations
 
-import pytest
-from unittest.mock import MagicMock, patch
 import threading
-
+from unittest.mock import MagicMock, patch
 
 # ── Neo4j Client Tests ────────────────────────────────────────────────────
+
 
 def test_neo4j_client_unavailable_when_no_driver():
     """Client gracefully marks itself unavailable when neo4j is not installed."""
@@ -23,8 +22,8 @@ def test_neo4j_client_unavailable_when_no_driver():
 
 def test_neo4j_client_upsert_node_returns_false_when_unavailable():
     """upsert_node must return False (not raise) when client is unavailable."""
-    from geosi_data.neo4j_client import Neo4jClient
     from geosi_data.graph_schema import NodeLabel
+    from geosi_data.neo4j_client import Neo4jClient
 
     with patch.dict("sys.modules", {"neo4j": None}):
         client = Neo4jClient(uri="bolt://nonexistent:7687")
@@ -110,9 +109,10 @@ def test_circuit_breaker_thread_safety():
 
 # ── Graph Schema Tests ────────────────────────────────────────────────────
 
+
 def test_build_dataset_props_deterministic_id():
     """Dataset ID must be deterministic from name + path."""
-    from geosi_data.graph_schema import build_dataset_props, _make_dataset_id
+    from geosi_data.graph_schema import build_dataset_props
 
     props1 = build_dataset_props("roads", "/data/roads.gpkg")
     props2 = build_dataset_props("roads", "/data/roads.gpkg")
@@ -151,6 +151,7 @@ def test_infer_provider_from_tool_name():
 
 # ── Graph Writer Tests ────────────────────────────────────────────────────
 
+
 def test_graph_writer_singleton():
     """GraphWriter must return same instance on repeated calls."""
     from geosi_engine.graph_writer import GraphWriter
@@ -162,7 +163,7 @@ def test_graph_writer_singleton():
 
 def test_graph_writer_enqueue_bounded():
     """Queue must not exceed maxlen (bounded memory O(capacity))."""
-    from geosi_engine.graph_writer import GraphWriter, GraphEvent, _QUEUE_CAPACITY
+    from geosi_engine.graph_writer import _QUEUE_CAPACITY, GraphEvent, GraphWriter
 
     writer = GraphWriter.get_instance()
     # Fill past capacity
@@ -176,6 +177,7 @@ def test_graph_writer_enqueue_bounded():
 def test_graph_writer_record_execution_no_block():
     """record_execution must return quickly (fire-and-forget)."""
     import time
+
     from geosi_engine.graph_writer import GraphWriter
 
     writer = GraphWriter.get_instance()
@@ -205,7 +207,9 @@ def test_graph_writer_dataset_relation_enqueued():
     writer = GraphWriter.get_instance()
     queue_len_before = len(writer._queue)
     writer.record_dataset_relation(
-        source_name="dem.tif", source_path="/data/dem.tif",
-        derived_name="slope.tif", derived_path="/data/slope.tif",
+        source_name="dem.tif",
+        source_path="/data/dem.tif",
+        derived_name="slope.tif",
+        derived_path="/data/slope.tif",
     )
     assert len(writer._queue) >= queue_len_before  # At least one event added

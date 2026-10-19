@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI — OpenStreetMap Overpass Extractor
 ═══════════════════════════════════════════════════════════════════════
@@ -11,6 +10,7 @@ Usage:
     layer = fetch_osm_features("hospitals", "London")
     layer = fetch_osm_features("buildings", bbox=(xmin, ymin, xmax, ymax))
 """
+
 from __future__ import annotations
 
 import json
@@ -25,38 +25,38 @@ NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 # ── Tag presets ───────────────────────────────────────────────────────
 # Maps natural-language categories to Overpass tag filters
 TAG_PRESETS: Dict[str, List[Dict[str, str]]] = {
-    "hospitals":    [{"amenity": "hospital"}],
-    "clinics":      [{"amenity": "clinic"}, {"amenity": "doctors"}],
-    "schools":      [{"amenity": "school"}],
+    "hospitals": [{"amenity": "hospital"}],
+    "clinics": [{"amenity": "clinic"}, {"amenity": "doctors"}],
+    "schools": [{"amenity": "school"}],
     "universities": [{"amenity": "university"}],
-    "pharmacies":   [{"amenity": "pharmacy"}],
-    "restaurants":  [{"amenity": "restaurant"}],
-    "cafes":        [{"amenity": "cafe"}],
-    "banks":        [{"amenity": "bank"}],
-    "atms":         [{"amenity": "atm"}],
-    "parking":      [{"amenity": "parking"}],
-    "parks":        [{"leisure": "park"}],
-    "playgrounds":  [{"leisure": "playground"}],
-    "sports":       [{"leisure": "sports_centre"}, {"leisure": "stadium"}],
-    "hotels":       [{"tourism": "hotel"}],
-    "tourist":      [{"tourism": "attraction"}],
-    "museums":      [{"tourism": "museum"}],
-    "buildings":    [{"building": "yes"}],
-    "roads":        [{"highway": "primary"}, {"highway": "secondary"}, {"highway": "residential"}],
-    "motorways":    [{"highway": "motorway"}],
-    "railways":     [{"railway": "rail"}],
-    "waterways":    [{"waterway": "river"}, {"waterway": "stream"}],
-    "water":        [{"natural": "water"}],
-    "forests":      [{"landuse": "forest"}, {"natural": "wood"}],
-    "residential":  [{"landuse": "residential"}],
-    "industrial":   [{"landuse": "industrial"}],
+    "pharmacies": [{"amenity": "pharmacy"}],
+    "restaurants": [{"amenity": "restaurant"}],
+    "cafes": [{"amenity": "cafe"}],
+    "banks": [{"amenity": "bank"}],
+    "atms": [{"amenity": "atm"}],
+    "parking": [{"amenity": "parking"}],
+    "parks": [{"leisure": "park"}],
+    "playgrounds": [{"leisure": "playground"}],
+    "sports": [{"leisure": "sports_centre"}, {"leisure": "stadium"}],
+    "hotels": [{"tourism": "hotel"}],
+    "tourist": [{"tourism": "attraction"}],
+    "museums": [{"tourism": "museum"}],
+    "buildings": [{"building": "yes"}],
+    "roads": [{"highway": "primary"}, {"highway": "secondary"}, {"highway": "residential"}],
+    "motorways": [{"highway": "motorway"}],
+    "railways": [{"railway": "rail"}],
+    "waterways": [{"waterway": "river"}, {"waterway": "stream"}],
+    "water": [{"natural": "water"}],
+    "forests": [{"landuse": "forest"}, {"natural": "wood"}],
+    "residential": [{"landuse": "residential"}],
+    "industrial": [{"landuse": "industrial"}],
     "fire_stations": [{"amenity": "fire_station"}],
-    "police":       [{"amenity": "police"}],
+    "police": [{"amenity": "police"}],
     "post_offices": [{"amenity": "post_office"}],
-    "bus_stops":    [{"highway": "bus_stop"}, {"public_transport": "stop_position"}],
+    "bus_stops": [{"highway": "bus_stop"}, {"public_transport": "stop_position"}],
     "supermarkets": [{"shop": "supermarket"}],
-    "fuel":         [{"amenity": "fuel"}],
-    "charging":     [{"amenity": "charging_station"}],
+    "fuel": [{"amenity": "fuel"}],
+    "charging": [{"amenity": "charging_station"}],
 }
 
 
@@ -69,19 +69,22 @@ def resolve_category(name: str) -> Optional[List[Dict[str, str]]]:
     return None
 
 
-def geocode_bbox(
-    place: str, padding_deg: float = 0.05
-) -> Optional[Tuple[float, float, float, float]]:
+def geocode_bbox(place: str, padding_deg: float = 0.05) -> Optional[Tuple[float, float, float, float]]:
     """
     Geocode *place* with Nominatim and return (south, west, north, east)
     padded by *padding_deg* degrees.
     """
     try:
-        import urllib.request
         import urllib.parse
-        params = urllib.parse.urlencode({
-            "q": place, "format": "json", "limit": "1",
-        })
+        import urllib.request
+
+        params = urllib.parse.urlencode(
+            {
+                "q": place,
+                "format": "json",
+                "limit": "1",
+            }
+        )
         req = urllib.request.Request(
             f"{NOMINATIM_URL}?{params}",
             headers={"User-Agent": "GeoSI/2.0 (geosi-plugin)"},
@@ -96,8 +99,7 @@ def geocode_bbox(
             return (s - padding_deg, w - padding_deg, n + padding_deg, e + padding_deg)
         # Fallback: point + padding
         lat, lon = float(data[0]["lat"]), float(data[0]["lon"])
-        return (lat - padding_deg, lon - padding_deg,
-                lat + padding_deg, lon + padding_deg)
+        return (lat - padding_deg, lon - padding_deg, lat + padding_deg, lon + padding_deg)
     except Exception as exc:
         logger.warning("Nominatim geocoding failed for %r: %s", place, exc)
         return None
@@ -136,27 +138,27 @@ def _overpass_to_geojson(data: dict) -> dict:
     for el in data.get("elements", []):
         tags = el.get("tags", {})
         if el["type"] == "node" and tags:
-            features.append({
-                "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [el["lon"], el["lat"]]},
-                "properties": {"osm_id": el["id"], "osm_type": "node", **tags},
-            })
+            features.append(
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [el["lon"], el["lat"]]},
+                    "properties": {"osm_id": el["id"], "osm_type": "node", **tags},
+                }
+            )
         elif el["type"] == "way" and "nodes" in el:
-            coords = [
-                [nodes[n]["lon"], nodes[n]["lat"]]
-                for n in el["nodes"]
-                if n in nodes
-            ]
+            coords = [[nodes[n]["lon"], nodes[n]["lat"]] for n in el["nodes"] if n in nodes]
             if len(coords) >= 2:
                 if coords[0] == coords[-1] and len(coords) >= 4:
                     geom = {"type": "Polygon", "coordinates": [coords]}
                 else:
                     geom = {"type": "LineString", "coordinates": coords}
-                features.append({
-                    "type": "Feature",
-                    "geometry": geom,
-                    "properties": {"osm_id": el["id"], "osm_type": "way", **tags},
-                })
+                features.append(
+                    {
+                        "type": "Feature",
+                        "geometry": geom,
+                        "properties": {"osm_id": el["id"], "osm_type": "way", **tags},
+                    }
+                )
 
     return {"type": "FeatureCollection", "features": features}
 
@@ -206,11 +208,11 @@ def fetch_osm_features(
     query = _overpass_query(tags, bbox)
     try:
         import urllib.request
+
         req = urllib.request.Request(
             OVERPASS_URL,
             data=query.encode(),
-            headers={"Content-Type": "application/x-www-form-urlencoded",
-                     "User-Agent": "GeoSI/2.0"},
+            headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": "GeoSI/2.0"},
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=45) as resp:  # nosec B310
@@ -227,19 +229,16 @@ def fetch_osm_features(
 
     # Load into QGIS in-memory layer
     try:
-        from qgis.core import QgsVectorLayer, QgsProject
+        from qgis.core import QgsProject, QgsVectorLayer
 
         layer_name = f"OSM_{category}" + (f"_{location}" if location else "")
-        layer = QgsVectorLayer(
-            json.dumps(geojson), layer_name, "ogr"
-        )
+        layer = QgsVectorLayer(json.dumps(geojson), layer_name, "ogr")
         if not layer.isValid():
             # Fall back to temp file
             import tempfile
+
             # Use NamedTemporaryFile (delete=False) instead of insecure mktemp
-            with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".geojson", delete=False
-            ) as tf:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".geojson", delete=False) as tf:
                 tmp = tf.name
                 json.dump(geojson, tf)
             layer = QgsVectorLayer(tmp, layer_name, "ogr")

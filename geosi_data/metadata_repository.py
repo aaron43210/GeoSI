@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Data Layer — Metadata Repository
 ═══════════════════════════════════════════════════════════════════
@@ -10,7 +9,7 @@ retrieval and learning.
 """
 
 import logging
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("geosi_data.metadata_repository")
 
@@ -49,8 +48,8 @@ class MetadataRepository:
             return None
 
         from geosi_data.db_models import (
-            WorkflowHistoryRecord,
             ExecutionResultRecord,
+            WorkflowHistoryRecord,
         )
 
         try:
@@ -125,8 +124,7 @@ class MetadataRepository:
                         session.add(step_record)
 
                 logger.info(
-                    f"Stored workflow history: query='{query[:50]}...', "
-                    f"status={status}, {len(tool_sequence)} tools"
+                    f"Stored workflow history: query='{query[:50]}...', " f"status={status}, {len(tool_sequence)} tools"
                 )
                 return workflow.id
 
@@ -182,9 +180,7 @@ class MetadataRepository:
             with self.db.get_session() as session:
                 records = (
                     session.query(WorkflowHistoryRecord)
-                    .filter(
-                        WorkflowHistoryRecord.query.ilike(f"%{query_text}%")
-                    )
+                    .filter(WorkflowHistoryRecord.query.ilike(f"%{query_text}%"))
                     .order_by(WorkflowHistoryRecord.created_at.desc())
                     .limit(limit)
                     .all()
@@ -204,8 +200,9 @@ class MetadataRepository:
         if not self.db.available:
             return {}
 
-        from geosi_data.db_models import ExecutionResultRecord
         from sqlalchemy import func
+
+        from geosi_data.db_models import ExecutionResultRecord
 
         try:
             with self.db.get_session() as session:
@@ -213,9 +210,7 @@ class MetadataRepository:
                     session.query(
                         ExecutionResultRecord.tool_name,
                         func.count().label("total"),
-                        func.sum(
-                            (ExecutionResultRecord.status == "success").cast(int)
-                        ).label("success_count"),
+                        func.sum((ExecutionResultRecord.status == "success").cast(int)).label("success_count"),
                         func.avg(ExecutionResultRecord.duration_ms).label("avg_ms"),
                     )
                     .group_by(ExecutionResultRecord.tool_name)

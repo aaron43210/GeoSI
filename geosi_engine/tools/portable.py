@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeoSI Engine — Portable Tools (Non-QGIS)
 
@@ -11,7 +10,7 @@ import os
 from typing import Any, Optional
 
 from geosi_engine.base import PortableTool
-from geosi_engine.models import ToolSpec, ToolParameter, ToolResult, Layer
+from geosi_engine.models import Layer, ToolParameter, ToolResult, ToolSpec
 
 logger = logging.getLogger("geosi_engine.tools.portable")
 
@@ -27,21 +26,22 @@ class LoadLayerTool(PortableTool):
             category="data",
             parameters=[
                 ToolParameter("filepath", "string", True, "Path to the file"),
-                ToolParameter("layer_name", "string", False, "Optional name for the layer")
-            ]
+                ToolParameter("layer_name", "string", False, "Optional name for the layer"),
+            ],
         )
 
     def execute(self, filepath: str, layer_name: Optional[str] = None, **kwargs) -> ToolResult:
         if not os.path.exists(filepath):
             return ToolResult(success=False, error=f"File not found: {filepath}")
 
-        name = layer_name or os.path.basename(filepath).split('.')[0]
+        name = layer_name or os.path.basename(filepath).split(".")[0]
         ext = os.path.splitext(filepath)[1].lower()
 
         try:
             # Vector loading
-            if ext in ['.shp', '.geojson', '.gpkg', '.kml']:
+            if ext in [".shp", ".geojson", ".gpkg", ".kml"]:
                 import geopandas as gdf
+
                 # Prefer the pyogrio engine when available: ~3-5x faster
                 # reads for large vector files. Silently fall back if
                 # pyogrio is not installed.
@@ -62,13 +62,14 @@ class LoadLayerTool(PortableTool):
                     feature_count=len(data),
                     crs=str(data.crs) if data.crs else "unknown",
                     filepath=filepath,
-                    features=data
+                    features=data,
                 )
                 return ToolResult(success=True, output=layer, message=f"Loaded vector layer: {name}")
 
             # Raster loading
-            elif ext in ['.tif', '.tiff', '.asc', '.img']:
+            elif ext in [".tif", ".tiff", ".asc", ".img"]:
                 import rasterio
+
                 with rasterio.open(filepath) as src:
                     layer = Layer(
                         name=name,
@@ -77,7 +78,7 @@ class LoadLayerTool(PortableTool):
                         feature_count=src.count,
                         crs=str(src.crs) if src.crs else "unknown",
                         filepath=filepath,
-                        features=None  # We don't load full raster into memory here
+                        features=None,  # We don't load full raster into memory here
                     )
                 return ToolResult(success=True, output=layer, message=f"Loaded raster layer: {name}")
 
@@ -98,8 +99,8 @@ class SaveLayerTool(PortableTool):
             parameters=[
                 ToolParameter("layer_name", "layer", True, "Layer to save"),
                 ToolParameter("filepath", "string", True, "Destination path"),
-                ToolParameter("driver", "string", False, "Format driver (GeoJSON, ESRI Shapefile, etc.)")
-            ]
+                ToolParameter("driver", "string", False, "Format driver (GeoJSON, ESRI Shapefile, etc.)"),
+            ],
         )
 
     def execute(self, layer_name: Any, filepath: str, driver: Optional[str] = None, **kwargs) -> ToolResult:
@@ -129,8 +130,8 @@ class CleanLayerTool(PortableTool):
             parameters=[
                 ToolParameter("layer_name", "layer", True, "Input layer"),
                 ToolParameter("fix_geometries", "boolean", False, "Run fix_geometries?", "True"),
-                ToolParameter("drop_empty", "boolean", False, "Drop empty geometries?", "True")
-            ]
+                ToolParameter("drop_empty", "boolean", False, "Drop empty geometries?", "True"),
+            ],
         )
 
     def execute(self, layer_name: Any, fix_geometries: bool = True, drop_empty: bool = True, **kwargs) -> ToolResult:
@@ -148,9 +149,7 @@ class CleanLayerTool(PortableTool):
             empty_mask = gdf.geometry.is_empty
             if fix_geometries and (~valid_mask).any():
                 invalid_idx = gdf.index[~valid_mask]
-                gdf.loc[invalid_idx, "geometry"] = (
-                    gdf.loc[invalid_idx, "geometry"].make_valid()
-                )
+                gdf.loc[invalid_idx, "geometry"] = gdf.loc[invalid_idx, "geometry"].make_valid()
                 # Refresh the mask for the repaired rows.
                 valid_mask = gdf.geometry.is_valid
             if drop_empty:
@@ -163,7 +162,7 @@ class CleanLayerTool(PortableTool):
                 feature_count=len(gdf),
                 crs=layer.crs,
                 filepath=layer.filepath,
-                features=gdf
+                features=gdf,
             )
             return ToolResult(success=True, output=new_layer, message="Layer cleaned successfully")
         except Exception as e:
@@ -182,8 +181,8 @@ class CalculateFieldTool(PortableTool):
             parameters=[
                 ToolParameter("layer_name", "layer", True, "Input layer"),
                 ToolParameter("field_name", "string", True, "Target field name"),
-                ToolParameter("expression", "string", True, "Python-style expression")
-            ]
+                ToolParameter("expression", "string", True, "Python-style expression"),
+            ],
         )
 
     def execute(self, layer_name: Any, field_name: str, expression: str, **kwargs) -> ToolResult:
@@ -200,7 +199,7 @@ class CalculateFieldTool(PortableTool):
                 feature_count=len(gdf),
                 crs=layer.crs,
                 filepath=layer.filepath,
-                features=gdf
+                features=gdf,
             )
             return ToolResult(success=True, output=new_layer, message=f"Field {field_name} calculated")
         except Exception as e:
@@ -210,6 +209,7 @@ class CalculateFieldTool(PortableTool):
 # ─────────────────────────────────────────────────────────────────────────────
 # CountFeaturesTool  —  handles "Count all schools from Schools.shp" queries
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class CountFeaturesTool(PortableTool):
     """Count the number of features / rows in a vector layer."""
@@ -224,8 +224,7 @@ class CountFeaturesTool(PortableTool):
             ),
             category="statistics",
             parameters=[
-                ToolParameter("layer_name", "layer", True,
-                              "Input layer object or file path string"),
+                ToolParameter("layer_name", "layer", True, "Input layer object or file path string"),
             ],
             outputs=["count"],
             tags=["count", "total", "features", "rows", "statistics", "how many"],
@@ -265,6 +264,7 @@ class CountFeaturesTool(PortableTool):
             # Try geopandas first
             try:
                 import geopandas as gpd
+
                 try:
                     gdf = gpd.read_file(layer_name, engine="pyogrio")
                 except Exception:
@@ -282,6 +282,7 @@ class CountFeaturesTool(PortableTool):
             # Try fiona
             try:
                 import fiona
+
                 with fiona.open(layer_name) as src:
                     count = len(src)
                 name = os.path.splitext(os.path.basename(layer_name))[0]
@@ -296,6 +297,7 @@ class CountFeaturesTool(PortableTool):
             # Try osgeo.ogr (always present in QGIS / GDAL installations)
             try:
                 from osgeo import ogr
+
                 ds = ogr.Open(layer_name)
                 if ds is None:
                     return ToolResult(success=False, error=f"OGR cannot open: {layer_name}")
@@ -312,10 +314,7 @@ class CountFeaturesTool(PortableTool):
 
             return ToolResult(
                 success=False,
-                error=(
-                    "Cannot count features: no geospatial library available. "
-                    "Install geopandas, fiona, or GDAL."
-                ),
+                error=("Cannot count features: no geospatial library available. " "Install geopandas, fiona, or GDAL."),
             )
 
         except Exception as e:
@@ -325,6 +324,7 @@ class CountFeaturesTool(PortableTool):
 # ─────────────────────────────────────────────────────────────────────────────
 # ValidateGeometryTool  —  quick geometry quality check
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class ValidateGeometryTool(PortableTool):
     """Run a geometry validity check on a vector layer."""
@@ -336,8 +336,7 @@ class ValidateGeometryTool(PortableTool):
             description="Check a vector layer for invalid, empty, or null geometries.",
             category="validation",
             parameters=[
-                ToolParameter("layer_name", "layer", True,
-                              "Input layer to validate"),
+                ToolParameter("layer_name", "layer", True, "Input layer to validate"),
             ],
             outputs=["report"],
             tags=["validate", "geometry", "quality", "check", "fix"],
@@ -365,7 +364,7 @@ class ValidateGeometryTool(PortableTool):
                 "empty": empty_count,
                 "null": null_count,
             }
-            ok = (invalid_count == 0 and null_count == 0)
+            ok = invalid_count == 0 and null_count == 0
             msg = (
                 f"✅ '{layer.name}': {total} features — all geometries are valid."
                 if ok
