@@ -83,6 +83,11 @@ def test_chat_routes_through_supervisor():
             execution_summary=None,
             session_id="test-key-unit",
             latency_ms=42.0,
+            approval_pending=None,
+            execution_result=None,
+            report=None,
+            warnings=[],
+            plan_source=None,
         ),
     ):
         client = TestClient(app)

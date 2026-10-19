@@ -1,5 +1,6 @@
-/* GeoSI console — chat panel: prompt → /chat → plan/results/approval, then
-   refresh the map so freshly-produced layers appear. */
+/* GeoSI console — chat panel: prompt → /chat → plan/results/approval.
+   Approval: calls /approval/{id}/approve (or /reject) which returns the
+   *resumed* execution result — no need to re-send the original query. */
 (function (G) {
   "use strict";
 
@@ -36,15 +37,37 @@
       bubble.appendChild(div);
     },
 
-    _renderResults(bubble, results) {
-      if (!results || !results.length) return;
-      const div = document.createElement("div");
-      div.className = "results";
-      div.innerHTML = results.map((r) => `<div>• ${G.esc(r)}</div>`).join("");
-      bubble.appendChild(div);
+    _renderResults(bubble, results, warnings) {
+      if (results && results.length) {
+        const div = document.createElement("div");
+        div.className = "results";
+        div.innerHTML = results.map((r) => `<div>• ${G.esc(r)}</div>`).join("");
+        bubble.appendChild(div);
+      }
+      if (warnings && warnings.length) {
+        const div = document.createElement("div");
+        div.className = "results warn";
+        div.innerHTML = warnings.map((w) => `<div>⚠ ${G.esc(w)}</div>`).join("");
+        bubble.appendChild(div);
+      }
     },
 
-    _renderApproval(bubble, actionId, query) {
+    _renderReport(bubble, report) {
+      if (!report) return;
+      const details = document.createElement("details");
+      details.className = "report";
+      const summary = document.createElement("summary");
+      summary.textContent = "Execution report";
+      const pre = document.createElement("pre");
+      pre.textContent = report;
+      details.appendChild(summary);
+      details.appendChild(pre);
+      bubble.appendChild(details);
+    },
+
+    // Render the approval widget.  On approve/reject, call the approval
+    // endpoint and render the result — never re-send the original query.
+    _renderApproval(bubble, actionId) {
       const div = document.createElement("div");
       div.className = "approval";
       div.innerHTML = `<b>⏸ Approval required</b>`
@@ -55,21 +78,32 @@
       yes.className = "primary"; yes.textContent = "Approve & run";
       const no = document.createElement("button");
       no.className = "ghost"; no.textContent = "Reject";
+
       yes.onclick = async () => {
         yes.disabled = no.disabled = true;
+        const resumeBubble = this._add("GeoSI");
+        resumeBubble.textContent = "Running approved step…";
         try {
           const r = await G.Api.approval(actionId, true);
-          this._note(bubble, `Action ${actionId} → ${r.status}.`);
-          await this.send(query, true);          // re-run so the approved step executes
-        } catch (e) { this._err(bubble, "Approval failed: " + e.message); }
+          resumeBubble.textContent = r.answer || (r.error ? "" : "(no answer)");
+          if (r.error) this._err(resumeBubble, r.error);
+          this._renderPlan(resumeBubble, r.plan);
+          this._renderResults(resumeBubble, r.results, r.warnings);
+          this._renderReport(resumeBubble, r.report);
+          if (r.approval_pending) this._renderApproval(resumeBubble, r.approval_pending);
+          await G.Layers.refresh();
+          G.MapView.fitAll();
+        } catch (e) { this._err(div, "Approval failed: " + e.message); yes.disabled = no.disabled = false; }
       };
+
       no.onclick = async () => {
         yes.disabled = no.disabled = true;
         try {
           const r = await G.Api.approval(actionId, false);
-          this._note(bubble, `Action ${actionId} → ${r.status}.`);
-        } catch (e) { this._err(bubble, "Reject failed: " + e.message); }
+          this._note(div, r.answer || `Action ${actionId} rejected.`);
+        } catch (e) { this._err(div, "Reject failed: " + e.message); yes.disabled = no.disabled = false; }
       };
+
       act.appendChild(yes); act.appendChild(no);
       div.appendChild(act);
       bubble.appendChild(div);
@@ -86,12 +120,12 @@
       bubble.appendChild(n);
     },
 
-    async send(queryText, isResume) {
+    async send(queryText) {
       const promptEl = document.getElementById("prompt");
-      const query = (queryText != null && isResume) ? queryText : promptEl.value.trim();
+      const query = queryText != null ? queryText : promptEl.value.trim();
       if (!query) return;
-      if (!isResume) {
-        this._add("You", "user").textContent = query;
+      this._add("You", "user").textContent = query;
+      if (queryText == null) {
         promptEl.value = "";
         promptEl.style.height = "auto";
       }
@@ -115,9 +149,9 @@
         bubble.textContent = data.answer || (data.error ? "" : "(no answer)");
         if (data.error) this._err(bubble, data.error);
         this._renderPlan(bubble, data.plan);
-        this._renderResults(bubble, data.results);
-        if (data.approval_pending) this._renderApproval(bubble, data.approval_pending, query);
-        // Pull any layers the pipeline produced onto the map.
+        this._renderResults(bubble, data.results, data.warnings);
+        this._renderReport(bubble, data.report);
+        if (data.approval_pending) this._renderApproval(bubble, data.approval_pending);
         await G.Layers.refresh();
         G.MapView.fitAll();
       } catch (e) {
@@ -132,4 +166,3 @@
 
   G.Chat = Chat;
 })(window.GeoSI);
-

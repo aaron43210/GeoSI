@@ -13,12 +13,12 @@
       try {
         list = await G.Api.listLayers(this._sessionId);
       } catch (e) {
-        this.render();                 // keep local overlays, show what we have
+        this.render();
         return;
       }
       for (const l of list) {
         this._meta[l.name] = l;
-        if (G.MapView.has(l.name)) continue;   // already drawn — don't refetch
+        if (G.MapView.has(l.name)) continue;
         try {
           if (l.layer_type === "raster") {
             const r = await G.Api.raster(l.name, this._sessionId);
@@ -27,7 +27,7 @@
             const fc = await G.Api.geojson(l.name, this._sessionId);
             G.MapView.addVector(l.name, fc);
           }
-        } catch (e) { /* geometry unavailable — card still lists it */ }
+        } catch (e) { /* geometry unavailable — card still shows */ }
       }
       this.render();
     },
@@ -41,6 +41,48 @@
       G.MapView.addVector(name, fc);
       this.render();
       G.MapView.fitTo(name);
+    },
+
+    // ── File upload: upload to /workspace/layers then load into session ──
+    async uploadFile(file) {
+      const statusEl = document.getElementById("upload-status");
+      if (statusEl) { statusEl.textContent = `Uploading ${file.name}…`; statusEl.style.color = ""; }
+
+      const sid = this._sessionId;
+      const qp = sid ? `?session_id=${encodeURIComponent(sid)}` : "";
+
+      try {
+        // 1. Upload to workspace
+        const fd = new FormData();
+        fd.append("file", file);
+        const upRes = await fetch(`/workspace/layers${qp}`, {
+          method: "POST",
+          headers: { "Authorization": "Bearer " + (G.Api.key || "") },
+          body: fd,
+        });
+        if (!upRes.ok) {
+          const err = await upRes.json().catch(() => ({}));
+          throw new Error(err.detail || `Upload failed (${upRes.status})`);
+        }
+        const upData = await upRes.json();
+
+        // 2. Load into engine state
+        const loadRes = await fetch(
+          `/workspace/layers/${encodeURIComponent(upData.name)}/load${qp}`,
+          { method: "POST", headers: { "Authorization": "Bearer " + (G.Api.key || "") } },
+        );
+        const loadData = await loadRes.json().catch(() => ({}));
+        if (!loadRes.ok) throw new Error(loadData.detail || `Load failed (${loadRes.status})`);
+
+        if (statusEl) { statusEl.textContent = loadData.message || `${upData.name} loaded.`; }
+
+        // 3. Refresh the layer panel + map
+        await this.refresh();
+        G.MapView.fitAll();
+      } catch (e) {
+        if (statusEl) { statusEl.textContent = `Upload error: ${e.message}`; statusEl.style.color = "var(--err,#c00)"; }
+        console.error("Layer upload failed:", e);
+      }
     },
 
     render() {
@@ -74,10 +116,8 @@
     _wire(card, name, meta, o, isPoly) {
       const ctrls = card.querySelector(".ctrls");
 
-      // Visibility toggle
       const vis = document.createElement("button");
-      vis.className = "icon-btn on"; vis.textContent = "👁";
-      vis.title = "Toggle visibility";
+      vis.className = "icon-btn on"; vis.textContent = "👁"; vis.title = "Toggle visibility";
       vis.onclick = () => {
         o.visible = !o.visible;
         G.MapView.setVisible(name, o.visible);
@@ -85,20 +125,17 @@
       };
       ctrls.appendChild(vis);
 
-      // Zoom-to
       const zoom = document.createElement("button");
       zoom.className = "icon-btn"; zoom.textContent = "⤢"; zoom.title = "Zoom to layer";
       zoom.onclick = () => G.MapView.fitTo(name);
       ctrls.appendChild(zoom);
 
-      // Opacity
       const op = document.createElement("input");
       op.type = "range"; op.min = "0"; op.max = "1"; op.step = "0.05"; op.value = o.opacity;
       op.title = "Opacity";
       op.oninput = () => G.MapView.setOpacity(name, parseFloat(op.value));
       ctrls.appendChild(op);
 
-      // Color picker (hidden input behind the swatch)
       const color = document.createElement("input");
       color.type = "color"; color.value = this._hex(o.color);
       color.style.cssText = "width:0;height:0;opacity:0;position:absolute;";
@@ -109,7 +146,6 @@
       card.querySelector(".swatch").onclick = () => color.click();
       ctrls.appendChild(color);
 
-      // Remove
       const del = document.createElement("button");
       del.className = "icon-btn"; del.textContent = "✕"; del.title = "Remove from map";
       del.onclick = () => {
@@ -119,7 +155,6 @@
       };
       ctrls.appendChild(del);
 
-      // 3D extrude (polygons only)
       if (isPoly) {
         const lbl = document.createElement("label");
         lbl.className = "chk3d";
