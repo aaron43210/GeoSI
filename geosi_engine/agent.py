@@ -35,6 +35,7 @@ import json
 import logging
 import os
 import re
+import time
 from difflib import SequenceMatcher
 from typing import Dict, List, Optional, Tuple
 
@@ -205,8 +206,10 @@ class GeoSIAgent:
         Priority:
             1. Retrieve knowledge context (Phase 2)
             2. Validate layers exist
-            3. Well-understood ops → rule-based (skip LLM)
-            4. Ollama → Gemini → Claude → rule-based fallback
+            3. Model connected: the model plans (hosted API → Ollama → Gemini
+               → Claude); the deterministic planners and rules are only a
+               safety net when it fails.
+               Offline: deterministic planners and rules.
         """
         self._prompt_state = state
 
@@ -229,7 +232,45 @@ class GeoSIAgent:
                     reasoning=error_msg or "Layer validation failed",
                 )
 
-        # ── Well-understood operations: skip LLM entirely ──────────────
+        model_first = not feedback and self.model_connected()
+        if not model_first and not feedback:
+            plan = self._plan_without_model(request, state)
+            if plan is not None:
+                return plan
+
+        plan = self._plan_with_models(request, state, feedback)
+        if plan is not None:
+            return plan
+        if feedback:
+            return ExecutionPlan(request=request, steps=[], reasoning="Re-planning failed", plan_source="none")
+        if model_first:
+            logger.info("Model planning failed; falling back to built-in planners")
+            plan = self._plan_without_model(request, state)
+            if plan is not None:
+                return plan
+        plan = self._plan_with_rules(request)
+        plan.plan_source = "rule_based"
+        return plan
+
+    # Seconds a self-probed connection result is reused (the dock sets it directly)
+    _MODEL_PROBE_TTL = 60.0
+
+    def model_connected(self) -> bool:
+        """True when a language model can plan. Set by the plugin's connection check, else probed."""
+        if not self.use_llm:
+            return False
+        known = getattr(self, "model_available", None)
+        if known is not None:
+            return bool(known)
+        cached = getattr(self, "_model_probe", None)
+        now = time.monotonic()
+        if cached is None or now - cached[0] > self._MODEL_PROBE_TTL:
+            cached = (now, self.can_replan())
+            self._model_probe = cached
+        return cached[1]
+
+    def _plan_without_model(self, request: AnalysisRequest, state: Optional[StateManager]) -> Optional[ExecutionPlan]:
+        """Rules and deterministic planners: the offline mode and the fallback when a model fails."""
         operation = request.parameters.get("operation", "")
         well_understood = {
             "clip",
@@ -253,34 +294,38 @@ class GeoSIAgent:
             "join_attributes",
             "extract_by_attribute",
         }
-        # A retry from the agent loop always goes to the LLM with the
-        # problem from the previous attempt; rules would repeat themselves.
-        if operation in well_understood and not feedback and self._is_simple_request(request.query):
+        if operation in well_understood and self._is_simple_request(request.query):
             logger.info(f"Op '{operation}' well-understood → rule-based plan")
             plan = self._plan_with_rules(request)
             plan.plan_source = "rule_based"
-            return plan
+            if plan.steps:
+                return plan
 
-        # ── Deterministic shortcuts tried before the LLM ───────────────
-        if not feedback:
-            for planner in (
-                self._plan_field_statistics,
-                self._plan_attribute_filter,
-                self._plan_grid,
-                self._plan_merge,
-                self._plan_from_template,
-            ):
-                plan = planner(request, state)
-                if plan is not None:
-                    logger.info(f"Deterministic plan: {plan.reasoning}")
-                    if planner != self._plan_from_template:
-                        plan.plan_source = "deterministic"
-                    return plan
+        for planner in (
+            self._plan_open_data,
+            self._plan_spatial_selection,
+            self._plan_field_statistics,
+            self._plan_attribute_filter,
+            self._plan_grid,
+            self._plan_merge,
+            self._plan_from_template,
+        ):
+            plan = planner(request, state)
+            if plan is not None:
+                logger.info(f"Deterministic plan: {plan.reasoning}")
+                if planner != self._plan_from_template:
+                    plan.plan_source = "deterministic"
+                return plan
+        return None
 
-        # ── LLM cascade ────────────────────────────────────────────────
-        # Each provider is guarded by the Supervisor's circuit breaker when
-        # one is attached (``breakers``): a provider that keeps failing is
-        # skipped until its reset window passes.
+    def _plan_with_models(
+        self, request: AnalysisRequest, state: Optional[StateManager], feedback: Optional[str]
+    ) -> Optional[ExecutionPlan]:
+        """
+        LLM cascade. Each provider is guarded by the Supervisor's circuit
+        breaker when one is attached (``breakers``): a provider that keeps
+        failing is skipped until its reset window passes.
+        """
         self._prompt_state = state
         self._feedback = feedback
         breakers = getattr(self, "breakers", None) or {}
@@ -306,12 +351,7 @@ class GeoSIAgent:
                     logger.warning(f"{name} plan referenced nonexistent layers")
         finally:
             self._feedback = None
-
-        if feedback:
-            return ExecutionPlan(request=request, steps=[], reasoning="Re-planning failed", plan_source="none")
-        plan = self._plan_with_rules(request)
-        plan.plan_source = "rule_based"
-        return plan
+        return None
 
     def _provider_model(self, name: str) -> str:
         return {
@@ -582,10 +622,10 @@ class GeoSIAgent:
 
             spec = tool.spec()
             params = {}
-            desc_parts = [spec.display_name]
 
             # ── Fill parameters based on operation type ─────────────────
             primary = request.entities.get("primary_layer") or request.entities.get("layer")
+            desc_parts = [spec.display_name] + ([primary] if primary else [])
             # Word order decides roles: "clip A to B" → INPUT A, OVERLAY B
             state = getattr(self, "_prompt_state", None)
             mentioned = self._mentioned_layers(request.query, state) if state else []
@@ -620,7 +660,7 @@ class GeoSIAgent:
                 dist = request.parameters.get("distance_value")
                 if dist:
                     params["DISTANCE"] = dist
-                    desc_parts.append(f"by {dist}m")
+                    desc_parts.append(f"by {dist:g} m")
 
             elif op_name == "clip" and tool_name == "gdal_cliprasterbymasklayer":
                 mask = request.entities.get("secondary_layer") or next(
@@ -638,6 +678,14 @@ class GeoSIAgent:
 
             elif op_name == "convex_hull":
                 params["TYPE"] = 3  # one convex hull around all features
+
+            elif op_name == "dissolve":
+                # "dissolve parcels by owner": group by that field when the layer has it
+                group = re.search(r"\b(?:by|per)\s+([A-Za-z_]\w*)", request.query or "", re.I)
+                fields = {f.lower(): f for f in getattr(self._state_layer(primary), "fields", None) or []}
+                if group and group.group(1).lower() in fields:
+                    params["FIELD"] = [fields[group.group(1).lower()]]
+                    desc_parts.append(f"by {params['FIELD'][0]}")
 
             elif op_name == "contour":
                 m = re.search(r"(?:every|interval(?: of)?)\s+(\d+(?:\.\d+)?)", request.query or "", re.I)
@@ -759,6 +807,86 @@ class GeoSIAgent:
         r"biggest|statistics|stats)\b",
         re.I,
     )
+
+    _BASEMAP_RE = re.compile(
+        r"\b(?:basemap|base map|background map|satellite (?:map|image(?:ry)?|view|basemap)|aerial|"
+        r"(?:street|topo(?:graphic)?|terrain|dark|light) (?:map|basemap|background))\b",
+        re.I,
+    )
+    _ZOOM_RE = re.compile(
+        r"^\s*(?:please\s+)?(?:zoom|pan|go|fly|navigate|move the map)\s+(?:in\s+)?to\s+(.+?)[.?!]*\s*$", re.I
+    )
+    _OSM_RE = re.compile(
+        r"\b(?:fetch|download|get|load|add|find|show)\s+(?:all\s+|the\s+)*(.+?)\s+(?:in|around|near|for|of)\s+"
+        r"(.+?)\s+(?:from|using|via|on)\s+(?:openstreetmap|osm)\b",
+        re.I,
+    )
+    _GEOCODE_RE = re.compile(
+        r"^\s*(?:where is|find the coordinates of|coordinates of|geocode|locate)\s+(.+?)[.?!]*\s*$", re.I
+    )
+
+    def _plan_open_data(self, request, state) -> Optional[ExecutionPlan]:
+        """Basemaps, "zoom to <place>", OpenStreetMap downloads and geocoding without a model."""
+        query = (request.query or "").strip()
+        loaded = {n.lower() for n in (state.list_layers() if state else [])}
+
+        def tool(name):
+            return self.registry.get_tool(name) is not None
+
+        osm = self._OSM_RE.search(query)
+        if osm and tool("fetch_osm"):
+            category, place = osm.group(1).strip(), osm.group(2).strip()
+            return self._one_step_plan(
+                request, "fetch_osm", {"category": category, "location": place}, f"OpenStreetMap {category} in {place}"
+            )
+        if self._BASEMAP_RE.search(query) and re.search(
+            r"\b(add|show|use|load|put|switch|display|give)\b", query, re.I
+        ):
+            if tool("add_basemap"):
+                from geosi_data.basemaps import provider_in_text
+
+                key = provider_in_text(query)
+                return self._one_step_plan(request, "add_basemap", {"provider": key}, f"Add the {key} basemap")
+        zoom = self._ZOOM_RE.match(query)
+        if zoom and tool("zoom_to_place"):
+            place = re.sub(r"^(?:the\s+)", "", zoom.group(1).strip(), flags=re.I)
+            if place.lower() not in loaded and not place.lower().startswith(("layer", "extent", "selection")):
+                return self._one_step_plan(request, "zoom_to_place", {"address": place}, f"Zoom to {place}")
+        where = self._GEOCODE_RE.match(query)
+        if where and tool("geocode_address") and where.group(1).strip().lower() not in loaded:
+            place = where.group(1).strip()
+            return self._one_step_plan(request, "geocode_address", {"address": place}, f"Find {place}")
+        return None
+
+    _SELECT_Q_RE = re.compile(r"\b(how many|count|which|select|find|extract|list|show|get)\b", re.I)
+    _NOT_SELECTION_RE = re.compile(
+        r"\b(buffer|clip|dissolve|reproject|centroids?|merge|union|join|each|every|per)\b|\d", re.I
+    )
+    _WITHIN_RE = re.compile(r"\b(inside|within|in|falls? in|located in|intersect\w*|overlap\w*)\b", re.I)
+
+    def _plan_spatial_selection(self, request, state) -> Optional[ExecutionPlan]:
+        """ "how many hospitals are inside flood_zones" → extract by location (then counted)."""
+        query = request.query or ""
+        if not state or not self._SELECT_Q_RE.search(query) or self._NOT_SELECTION_RE.search(query):
+            return None
+        outside = bool(self._OUTSIDE_RE.search(query))
+        if not outside and not self._WITHIN_RE.search(query):
+            return None
+        vectors = [n for n in self._mentioned_layers(query, state) if state.get_layer(n).layer_type == "vector"]
+        if len(vectors) != 2:
+            return None
+        tool = next(
+            (t for t in ("native_extractbylocation", "qgis_extractbylocation") if self.registry.get_tool(t)), None
+        )
+        if tool is None:
+            return None
+        target, other = vectors
+        return self._one_step_plan(
+            request,
+            tool,
+            {"INPUT": target, "PREDICATE": "disjoint" if outside else "intersect", "INTERSECT": other},
+            f"{target} {'outside' if outside else 'inside'} {other}",
+        )
 
     def _plan_field_statistics(self, request, state) -> Optional[ExecutionPlan]:
         """ "total beds across hospitals" → basic statistics of hospitals.beds."""

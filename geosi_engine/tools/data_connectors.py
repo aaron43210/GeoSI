@@ -1,119 +1,107 @@
 """
-GeoSI Engine — Open Data Connector Tools (Sprint 1)
+GeoSI Engine — open data and map tools (basemaps, OpenStreetMap, geocoding,
+WFS, styling, map export).
 
-Registers basemap, OSM fetch, and geocoding capabilities as PortableTool
-subclasses so the Planner can invoke them by name in an ExecutionPlan.
+Requests run in a background task. Network work happens there; anything that
+touches the QGIS project or map canvas goes through ``run_in_ui`` so it runs
+on the main thread. Data tools write a file and return it as a Layer, which
+the plugin loads like any processing result.
 """
 
 from __future__ import annotations
 
+import os
+import tempfile
 from typing import Any, Optional
 
-from geosi_engine.base import PortableTool
-from geosi_engine.models import ToolParameter, ToolResult, ToolSpec
+from geosi_engine.base import PortableTool, run_in_ui
+from geosi_engine.models import Layer, ToolParameter, ToolResult, ToolSpec
+
+# Tools whose effect is on the map itself (no result layer to verify)
+ACTION_TOOL_NAMES = frozenset({"add_basemap", "zoom_to_place", "apply_style", "export_map", "geocode_address"})
 
 
 class AddBasemapTool(PortableTool):
-    """Add an XYZ tile basemap layer to the current QGIS project."""
+    """Add an XYZ tile basemap under the project's layers."""
 
     def spec(self) -> ToolSpec:
         return ToolSpec(
             name="add_basemap",
             display_name="Add Basemap",
             description=(
-                "Add a background tile basemap to the QGIS project. "
-                "Providers: osm, carto_light, carto_dark, esri_satellite, "
-                "esri_topo, esri_streets, google_satellite, google_hybrid, "
-                "usgs_topo, usgs_imagery, stadia_toner, stadia_watercolor, opentopomap."
+                "Add a background tile basemap to the map. Providers: osm, carto_light, carto_dark, "
+                "esri_satellite, esri_topo, esri_streets, google_satellite, google_hybrid, usgs_topo, "
+                "usgs_imagery, stadia_toner, stadia_watercolor, opentopomap."
             ),
             category="data",
-            parameters=[
-                ToolParameter(
-                    "provider",
-                    "string",
-                    False,
-                    "Basemap provider key (default: osm)",
-                ),
-            ],
+            parameters=[ToolParameter("provider", "string", False, "Basemap provider key (default: osm)")],
         )
 
-    def execute(self, provider: str = "osm", **kwargs) -> ToolResult:
-        try:
-            from geosi_data.basemaps import add_basemap, resolve_provider
+    def execute(self, provider: str = "osm", **kwargs: Any) -> ToolResult:
+        from geosi_data.basemaps import PROVIDERS, add_basemap, resolve_provider
 
-            key = resolve_provider(provider)
-            layer = add_basemap(key)
-            if layer is None:
-                return ToolResult(
-                    success=False, error=f"Basemap provider '{provider}' not available (QGIS not running?)."
-                )
-            return ToolResult(success=True, message=f"Basemap '{key}' added.", output=None)
-        except Exception as exc:
-            return ToolResult(success=False, error=str(exc))
+        key = resolve_provider(provider or "osm")
+        if key not in PROVIDERS:
+            return ToolResult(success=False, error=f"Unknown basemap '{provider}'. Options: {', '.join(PROVIDERS)}")
+        label = PROVIDERS[key]["label"]
+        run_in_ui(f"Added the {label} basemap.", lambda: add_basemap(key))
+        return ToolResult(success=True, message=f"Adding the {label} basemap.", output={"basemap": key})
 
 
 class FetchOSMTool(PortableTool):
-    """Fetch OpenStreetMap features for a category and optional location."""
+    """Download OpenStreetMap features for a place or bounding box."""
 
     def spec(self) -> ToolSpec:
         return ToolSpec(
             name="fetch_osm",
             display_name="Fetch OSM Features",
             description=(
-                "Download OpenStreetMap features (hospitals, schools, parks, roads, "
-                "buildings, etc.) for a city / bounding box via the Overpass API."
+                "Download OpenStreetMap features (hospitals, schools, parks, roads, buildings, ...) for a "
+                "city or bounding box via the Overpass API, as a new layer."
             ),
             category="data",
             parameters=[
                 ToolParameter("category", "string", True, "Feature category, e.g. 'hospitals', 'schools', 'parks'"),
-                ToolParameter("location", "string", False, "Place name to geocode, e.g. 'London'"),
-                ToolParameter("bbox", "string", False, "Bounding box as 'south,west,north,east' (decimal degrees)"),
+                ToolParameter("location", "string", False, "Place name to search, e.g. 'Leeds'"),
+                ToolParameter("bbox", "string", False, "Bounding box 'south,west,north,east' in degrees"),
             ],
         )
 
     def execute(
-        self,
-        category: str,
-        location: Optional[str] = None,
-        bbox: Optional[str] = None,
-        **kwargs: Any,
+        self, category: str, location: Optional[str] = None, bbox: Optional[str] = None, **kwargs: Any
     ) -> ToolResult:
+        from geosi_data.osm import fetch_osm_to_file
+
+        box = None
+        if bbox:
+            parts = [float(x) for x in str(bbox).split(",")]
+            if len(parts) != 4:
+                return ToolResult(success=False, error="bbox must be 'south,west,north,east'")
+            box = tuple(parts)
+        if box is None and not location:
+            return ToolResult(success=False, error="Say where to search: a place name or a bounding box.")
         try:
-            from geosi_data.osm import fetch_osm_features
-
-            parsed_bbox = None
-            if bbox:
-                parts = [float(x) for x in bbox.split(",")]
-                if len(parts) == 4:
-                    parsed_bbox = tuple(parts)  # (south, west, north, east)
-
-            layer = fetch_osm_features(
-                category=category,
-                location=location,
-                bbox=parsed_bbox,
-            )
-            if layer is None:
-                return ToolResult(success=False, error=f"No features found for category '{category}'.")
-            from geosi_engine.models import Layer
-
-            engine_layer = Layer(
-                name=layer.name() if hasattr(layer, "name") else f"osm_{category}",
-                layer_type="vector",
-                geometry_type="mixed",
-                feature_count=layer.featureCount() if hasattr(layer, "featureCount") else 0,
-                crs="EPSG:4326",
-            )
-            return ToolResult(
-                success=True,
-                output=engine_layer,
-                message=f"OSM '{category}' features fetched.",
-            )
-        except Exception as exc:
-            return ToolResult(success=False, error=str(exc))
+            found = fetch_osm_to_file(category, location=location, bbox=box)
+        except Exception as exc:  # noqa: BLE001 — network failures are reported to the user
+            return ToolResult(success=False, error=f"OpenStreetMap download failed: {exc}")
+        if found is None:
+            where = location or bbox
+            return ToolResult(success=False, error=f"No OpenStreetMap '{category}' found for {where}.")
+        layer = Layer(
+            name=found["name"],
+            geometry_type=found["geometry"],
+            feature_count=found["count"],
+            crs="EPSG:4326",
+            filepath=found["path"],
+            layer_type="vector",
+        )
+        return ToolResult(
+            success=True, output=layer, message=f"Downloaded {found['count']} OpenStreetMap '{category}' features."
+        )
 
 
 class GeocodeTool(PortableTool):
-    """Forward-geocode an address to coordinates."""
+    """Find the coordinates of an address or place name."""
 
     def spec(self) -> ToolSpec:
         return ToolSpec(
@@ -122,68 +110,70 @@ class GeocodeTool(PortableTool):
             description="Convert a street address or place name to longitude/latitude coordinates.",
             category="data",
             parameters=[
-                ToolParameter("address", "string", True, "Address or place name to geocode"),
-                ToolParameter("provider", "string", False, "Geocoding provider: 'nominatim' (default) or 'photon'"),
+                ToolParameter("address", "string", True, "Address or place name"),
+                ToolParameter("provider", "string", False, "'nominatim' (default) or 'photon'"),
             ],
         )
 
     def execute(self, address: str, provider: str = "nominatim", **kwargs: Any) -> ToolResult:
-        try:
-            from geosi_data.geocoding import geocode
+        from geosi_data.geocoding import geocode
 
+        try:
             lon, lat, display_name = geocode(address, provider=provider)
-            return ToolResult(
-                success=True,
-                message=f"Geocoded: {display_name} → ({lon:.6f}, {lat:.6f})",
-                output={"lon": lon, "lat": lat, "display_name": display_name},
-            )
-        except Exception as exc:
-            return ToolResult(success=False, error=str(exc))
+        except Exception as exc:  # noqa: BLE001
+            return ToolResult(success=False, error=f"Couldn't find '{address}': {exc}")
+        return ToolResult(
+            success=True,
+            message=f"{display_name}: longitude {lon:.6f}, latitude {lat:.6f}.",
+            output={"lon": lon, "lat": lat, "display_name": display_name},
+        )
 
 
 class ZoomToPlaceTool(PortableTool):
-    """Geocode a place and zoom the QGIS canvas to it."""
+    """Find a place and centre the map on it."""
 
     def spec(self) -> ToolSpec:
         return ToolSpec(
             name="zoom_to_place",
             display_name="Zoom to Place",
-            description="Geocode a place name and set the QGIS map canvas extent to it.",
+            description="Find a place name or address and move the map to it.",
             category="navigation",
-            parameters=[
-                ToolParameter("address", "string", True, "Place name or address to zoom to"),
-            ],
+            parameters=[ToolParameter("address", "string", True, "Place name or address")],
         )
 
     def execute(self, address: str, **kwargs: Any) -> ToolResult:
-        try:
-            from geosi_data.geocoding import zoom_to_place
+        from geosi_data.geocoding import geocode, zoom_canvas_to
 
-            zoom_to_place(address)
-            return ToolResult(success=True, message=f"Map zoomed to '{address}'.")
-        except Exception as exc:
-            return ToolResult(success=False, error=str(exc))
+        try:
+            lon, lat, display_name = geocode(address)
+        except Exception as exc:  # noqa: BLE001
+            return ToolResult(success=False, error=f"Couldn't find '{address}': {exc}")
+        run_in_ui(f"Map moved to {display_name}.", lambda: zoom_canvas_to(lon, lat))
+        return ToolResult(
+            success=True,
+            message=f"Zooming to {display_name}.",
+            output={"lon": lon, "lat": lat, "display_name": display_name},
+        )
 
 
 class ApplyStyleTool(PortableTool):
-    """Apply graduated or categorized symbology to a loaded vector layer."""
+    """Graduated or categorized symbology for a loaded vector layer."""
 
     def spec(self) -> ToolSpec:
         return ToolSpec(
             name="apply_style",
             display_name="Apply Layer Style",
             description=(
-                "Apply graduated or categorized symbology to a QGIS vector layer. "
-                "style_type: 'graduated' or 'categorized'. "
-                "ramp: viridis, magma, blues, reds, rdylgn, spectral."
+                "Colour a vector layer by an attribute: style_type 'graduated' (numbers) or 'categorized' "
+                "(classes). ramp: viridis, magma, blues, reds, rdylgn, spectral."
             ),
             category="cartography",
             parameters=[
-                ToolParameter("layer_name", "layer", True, "Name of the layer to style"),
-                ToolParameter("field", "field", True, "Attribute field to classify by", parent_layer="layer_name"),
-                ToolParameter("style_type", "string", False, "Style type: 'graduated' (default) or 'categorized'"),
-                ToolParameter("classes", "number", False, "Number of classes (graduated, default 5)"),
-                ToolParameter("ramp", "string", False, "Color ramp name (default: viridis)"),
+                ToolParameter("layer_name", "layer", True, "Layer to style"),
+                ToolParameter("field", "field", True, "Attribute to classify by", parent_layer="layer_name"),
+                ToolParameter("style_type", "string", False, "'graduated' (default) or 'categorized'"),
+                ToolParameter("classes", "number", False, "Number of classes for graduated (default 5)"),
+                ToolParameter("ramp", "string", False, "Colour ramp (default viridis)"),
             ],
         )
 
@@ -196,196 +186,122 @@ class ApplyStyleTool(PortableTool):
         ramp: str = "viridis",
         **kwargs: Any,
     ) -> ToolResult:
-        try:
-            from qgis.core import QgsProject
+        from qgis.core import QgsProject
 
-            qgs_layer = QgsProject.instance().mapLayersByName(layer_name)
-            if not qgs_layer:
-                return ToolResult(success=False, error=f"Layer '{layer_name}' not found in project.")
-            qgs_layer = qgs_layer[0]
+        layer_name = getattr(layer_name, "name", layer_name)  # a resolved Layer or its name
+        layers = QgsProject.instance().mapLayersByName(layer_name)
+        if not layers:
+            return ToolResult(success=False, error=f"Layer '{layer_name}' is not in the project.")
+        if layers[0].fields().indexOf(field) < 0:
+            names = ", ".join(f.name() for f in layers[0].fields())
+            return ToolResult(success=False, error=f"Layer '{layer_name}' has no field '{field}'. Fields: {names}")
+
+        def apply() -> bool:
+            from geosi_engine.cartography.styling import apply_categorized_symbology, apply_graduated_symbology
+
+            target = QgsProject.instance().mapLayersByName(layer_name)[0]
             if style_type == "categorized":
-                from geosi_engine.cartography.styling import apply_categorized_symbology
+                return apply_categorized_symbology(target, field)
+            return apply_graduated_symbology(target, field, classes=int(classes), ramp=ramp)
 
-                apply_categorized_symbology(qgs_layer, field)
-            else:
-                from geosi_engine.cartography.styling import apply_graduated_symbology
-
-                apply_graduated_symbology(qgs_layer, field, classes=int(classes), ramp=ramp)
-            return ToolResult(success=True, message=f"Style applied to '{layer_name}' ({style_type}, field={field}).")
-        except Exception as exc:
-            return ToolResult(success=False, error=str(exc))
+        run_in_ui(f"Styled {layer_name} by {field}.", apply)
+        return ToolResult(success=True, message=f"Styling {layer_name} by {field} ({style_type}).")
 
 
 class ExportMapTool(PortableTool):
-    """Export the current QGIS map view as a print layout to PDF or PNG."""
+    """Export the map as a print layout (PDF or PNG)."""
 
     def spec(self) -> ToolSpec:
         return ToolSpec(
             name="export_map",
             display_name="Export Map Layout",
-            description="Build a print layout and export it as PDF or PNG.",
+            description="Build a print layout with legend, scale bar and north arrow, and export it as PDF or PNG.",
             category="cartography",
             parameters=[
-                ToolParameter("output_path", "string", True, "Output file path (.pdf or .png)"),
-                ToolParameter("title", "string", False, "Map title (optional)"),
-                ToolParameter("fmt", "string", False, "Format: 'pdf' (default) or 'png'"),
-                ToolParameter("dpi", "number", False, "Resolution in DPI (default 150)"),
+                ToolParameter("output_path", "string", False, "Output file (.pdf or .png); default in temp folder"),
+                ToolParameter("title", "string", False, "Map title"),
+                ToolParameter("fmt", "string", False, "'pdf' (default) or 'png'"),
+                ToolParameter("dpi", "number", False, "Resolution (default 150)"),
             ],
         )
 
     def execute(
-        self,
-        output_path: str,
-        title: str = "",
-        fmt: str = "pdf",
-        dpi: int = 150,
-        **kwargs: Any,
+        self, output_path: str = "", title: str = "", fmt: str = "pdf", dpi: int = 150, **kwargs: Any
     ) -> ToolResult:
-        try:
+        fmt = "png" if str(output_path).lower().endswith(".png") else (fmt or "pdf").lower()
+        if not output_path:
+            output_path = os.path.join(tempfile.mkdtemp(prefix="geosi_map_"), f"map.{fmt}")
+        folder = os.path.dirname(os.path.abspath(output_path))
+        if not os.path.isdir(folder):
+            return ToolResult(success=False, error=f"Folder does not exist: {folder}")
+
+        def export() -> Any:
             from qgis.core import QgsProject
 
             from geosi_engine.cartography.layouts import build_print_layout, export_layout
 
-            project = QgsProject.instance()
-            layout = build_print_layout(project, title=title)
-            export_layout(layout, output_path, fmt=fmt, dpi=int(dpi))
-            return ToolResult(success=True, message=f"Map exported to {output_path}.")
-        except Exception as exc:
-            return ToolResult(success=False, error=str(exc))
+            layout = build_print_layout(QgsProject.instance(), title=title)
+            return export_layout(layout, output_path, fmt=fmt, dpi=int(dpi))
 
-
-class FetchOvertureTool(PortableTool):
-    """Fetch Overture Maps buildings, roads, or places for a bounding box."""
-
-    def spec(self) -> ToolSpec:
-        return ToolSpec(
-            name="fetch_overture",
-            display_name="Fetch Overture Maps Data",
-            description=(
-                "Download Overture Maps features (buildings, roads, places, "
-                "divisions, base) for a city or bounding box via PMTiles/GeoParquet. "
-                "themes: buildings, roads, places, divisions, base."
-            ),
-            category="data",
-            parameters=[
-                ToolParameter("theme", "string", True, "Overture theme: buildings, roads, places, divisions, base"),
-                ToolParameter("location", "string", False, "Place name to geocode, e.g. 'Paris'"),
-                ToolParameter("bbox", "string", False, "Bounding box 'west,south,east,north' (decimal degrees)"),
-                ToolParameter("max_features", "number", False, "Maximum features to load (default 10000)"),
-            ],
-        )
-
-    def execute(
-        self,
-        theme: str,
-        location: Optional[str] = None,
-        bbox: Optional[str] = None,
-        max_features: int = 10000,
-        **kwargs: Any,
-    ) -> ToolResult:
-        try:
-            # Resolve bbox
-            resolved_bbox = None
-            if bbox:
-                parts = [float(x) for x in bbox.split(",")]
-                if len(parts) == 4:
-                    resolved_bbox = tuple(parts)  # (west, south, east, north)
-            if resolved_bbox is None and location:
-                from geosi_data.geocoding import geocode
-
-                result = geocode(location)
-                if result is None:
-                    return ToolResult(success=False, error=f"Could not geocode '{location}'.")
-                lon, lat, _ = result
-                pad = 0.05
-                resolved_bbox = (lon - pad, lat - pad, lon + pad, lat + pad)
-            if resolved_bbox is None:
-                return ToolResult(success=False, error="Provide location or bbox for Overture fetch.")
-
-            # Build Overture GeoParquet URL and stream via GDAL VSI
-            west, south, east, north = resolved_bbox
-            from geosi_engine.models import Layer
-
-            layer = Layer(
-                name=f"overture_{theme}",
-                layer_type="vector",
-                geometry_type="mixed",
-                feature_count=0,
-                crs="EPSG:4326",
-            )
-            layer._overture_theme = theme
-            layer._overture_bbox = resolved_bbox
-            return ToolResult(
-                success=True,
-                output=layer,
-                message=(
-                    f"Overture '{theme}' queued for bbox "
-                    f"({west:.3f},{south:.3f},{east:.3f},{north:.3f}). "
-                    "Load via QGIS WFS/GDAL or use fetch_osm as an alternative."
-                ),
-            )
-        except Exception as exc:
-            return ToolResult(success=False, error=str(exc))
+        run_in_ui(f"Map exported to {output_path}.", export)
+        return ToolResult(success=True, message=f"Exporting the map to {output_path}.", output={"path": output_path})
 
 
 class FetchWFSTool(PortableTool):
-    """Connect to an OGC WFS endpoint and load a feature type."""
+    """Download a feature type from an OGC WFS service as a new layer."""
 
     def spec(self) -> ToolSpec:
         return ToolSpec(
             name="fetch_wfs",
             display_name="Fetch WFS Layer",
-            description=(
-                "Connect to an OGC Web Feature Service (WFS) endpoint and load "
-                "a feature type as a vector layer. Supports WFS 1.0, 1.1, 2.0."
-            ),
+            description="Download a feature type from an OGC Web Feature Service (WFS 1.0/1.1/2.0) as a new layer.",
             category="data",
             parameters=[
-                ToolParameter("url", "string", True, "WFS endpoint URL (GetCapabilities base URL)"),
+                ToolParameter("url", "string", True, "WFS endpoint URL"),
                 ToolParameter("typename", "string", True, "Feature type name, e.g. 'topp:states'"),
-                ToolParameter("version", "string", False, "WFS version: '1.0.0', '1.1.0', '2.0.0' (default auto)"),
-                ToolParameter("max_features", "number", False, "Max features to load (default 5000)"),
-                ToolParameter("bbox", "string", False, "Bounding box filter 'west,south,east,north'"),
+                ToolParameter("version", "string", False, "'1.0.0', '1.1.0' or '2.0.0' (default)"),
+                ToolParameter("max_features", "number", False, "Maximum features (default 5000)"),
             ],
         )
 
     def execute(
-        self,
-        url: str,
-        typename: str,
-        version: str = "2.0.0",
-        max_features: int = 5000,
-        bbox: Optional[str] = None,
-        **kwargs: Any,
+        self, url: str, typename: str, version: str = "2.0.0", max_features: int = 5000, **kwargs: Any
     ) -> ToolResult:
-        try:
-            from qgis.core import QgsDataSourceUri, QgsProject, QgsVectorLayer
+        from qgis.core import (
+            QgsCoordinateTransformContext,
+            QgsDataSourceUri,
+            QgsVectorFileWriter,
+            QgsVectorLayer,
+            QgsWkbTypes,
+        )
 
-            uri = QgsDataSourceUri()
-            uri.setParam("url", url.rstrip("?"))
-            uri.setParam("typename", typename)
-            uri.setParam("version", version)
-            uri.setParam("maxNumFeatures", str(int(max_features)))
-            if bbox:
-                uri.setParam("bbox", bbox)
-            layer_name = typename.split(":")[-1]
-            layer = QgsVectorLayer(f"WFS?{uri.encodedUri().data().decode()}", layer_name, "WFS")
-            if not layer.isValid():
-                return ToolResult(success=False, error=f"WFS layer '{typename}' failed to load from {url}.")
-            QgsProject.instance().addMapLayer(layer)
-            from geosi_engine.models import Layer as GLayer
-
-            engine_layer = GLayer(
-                name=layer_name,
-                layer_type="vector",
-                geometry_type=str(layer.geometryType()),
-                feature_count=layer.featureCount(),
-                crs=layer.crs().authid(),
-            )
-            return ToolResult(
-                success=True,
-                output=engine_layer,
-                message=f"WFS layer '{typename}' loaded ({layer.featureCount()} features).",
-            )
-        except Exception as exc:
-            return ToolResult(success=False, error=str(exc))
+        if not str(url).lower().startswith(("http://", "https://")):
+            return ToolResult(success=False, error="The WFS URL must start with http:// or https://")
+        uri = QgsDataSourceUri()
+        uri.setParam("url", url.rstrip("?"))
+        uri.setParam("typename", typename)
+        uri.setParam("version", version)
+        uri.setParam("maxNumFeatures", str(int(max_features)))
+        name = typename.split(":")[-1]
+        # Not added to the project here: the data is copied to a file and the
+        # plugin loads that file on the main thread.
+        source = QgsVectorLayer(uri.uri(False), name, "WFS")
+        if not source.isValid():
+            return ToolResult(success=False, error=f"Couldn't open '{typename}' from {url}.")
+        path = os.path.join(tempfile.mkdtemp(prefix="geosi_wfs_"), f"{name}.gpkg")
+        options = QgsVectorFileWriter.SaveVectorOptions()
+        options.driverName = "GPKG"
+        err = QgsVectorFileWriter.writeAsVectorFormatV3(source, path, QgsCoordinateTransformContext(), options)
+        if err[0] != QgsVectorFileWriter.WriterError.NoError:
+            return ToolResult(success=False, error=f"Couldn't save the WFS data: {err[1]}")
+        layer = Layer(
+            name=name,
+            geometry_type=QgsWkbTypes.displayString(source.wkbType()),
+            feature_count=source.featureCount(),
+            crs=source.crs().authid(),
+            filepath=path,
+            layer_type="vector",
+        )
+        return ToolResult(
+            success=True, output=layer, message=f"Downloaded {layer.feature_count} '{typename}' features."
+        )

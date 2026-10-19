@@ -158,6 +158,13 @@ jobs:
       - name: Install QGIS
         run: conda install -y qgis
 
+      - name: Expose QGIS Python bindings (Windows)
+        # conda-forge installs them under Library\python, which is not on sys.path on Windows
+        if: runner.os == 'Windows'
+        run: |
+          echo "PYTHONPATH=$CONDA_PREFIX\\Library\\python;$CONDA_PREFIX\\Library\\python\\plugins" >> "$GITHUB_ENV"
+          echo "QGIS_PREFIX_PATH=$CONDA_PREFIX\\Library" >> "$GITHUB_ENV"
+
       - name: Load plugin in QGIS
         run: python tests/plugin_smoke.py "dist/geosi_plugin-*.zip"
 

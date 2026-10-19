@@ -22,9 +22,10 @@ Data Structures:
 """
 
 import logging
+import threading
 import time
 from abc import ABC, abstractmethod
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from geosi_engine.models import (
     ToolParameter,
@@ -159,9 +160,10 @@ def get_backend(name: str) -> Optional[BackendFn]:
 def clear_backends() -> None:
     """Clear all registered backends (used in tests)."""
     _BACKENDS.clear()
-    global _INSPECTOR, _EXPRESSION_VALIDATOR
+    global _INSPECTOR, _EXPRESSION_VALIDATOR, _ROW_READER
     _INSPECTOR = None
     _EXPRESSION_VALIDATOR = None
+    _ROW_READER = None
 
 
 # Layer inspector: (Layer, max_rows) → text summary of the layer's contents.
@@ -178,6 +180,68 @@ def register_inspector(fn: InspectorFn) -> None:
 
 def get_inspector() -> Optional[InspectorFn]:
     return _INSPECTOR
+
+
+# Row reader: (Layer, max_rows) → attribute rows as dicts. Lets answers be
+# computed exactly from result tables (the QGIS plugin registers one).
+RowReaderFn = Callable[..., List[Dict[str, Any]]]
+_ROW_READER: Optional[RowReaderFn] = None
+
+
+def register_row_reader(fn: RowReaderFn) -> None:
+    global _ROW_READER
+    _ROW_READER = fn
+
+
+def get_row_reader() -> Optional[RowReaderFn]:
+    return _ROW_READER
+
+
+# UI actions: tools that must touch the QGIS GUI or project (add a basemap,
+# move the map) hand a callable to run_in_ui(). Requests run in a background
+# task, and Qt objects may only be used from the main thread, so while a UI is
+# attached the call is queued and the plugin runs it on the main thread once
+# the request finishes. With no UI (server, tests) it runs immediately.
+_UI_LOCK = threading.Lock()
+_UI_QUEUE: List[Tuple[str, Callable[[], Any]]] = []
+_UI_ATTACHED = False
+_UI_IFACE: Any = None
+
+
+def attach_ui(attached: bool = True, iface: Any = None) -> None:
+    """Called by the plugin dock; ``iface`` is the QgisInterface map actions should use."""
+    global _UI_ATTACHED, _UI_IFACE
+    _UI_ATTACHED = attached
+    _UI_IFACE = iface if attached else None
+    if not attached:
+        drain_ui_actions()
+
+
+def ui_iface() -> Any:
+    """The attached QgisInterface, else QGIS's global one (None outside QGIS)."""
+    if _UI_IFACE is not None:
+        return _UI_IFACE
+    try:
+        from qgis.utils import iface
+
+        return iface
+    except ImportError:
+        return None
+
+
+def run_in_ui(description: str, fn: Callable[[], Any]) -> Any:
+    if not _UI_ATTACHED:
+        return fn()
+    with _UI_LOCK:
+        _UI_QUEUE.append((description, fn))
+    return None
+
+
+def drain_ui_actions() -> List[Tuple[str, Callable[[], Any]]]:
+    with _UI_LOCK:
+        items = list(_UI_QUEUE)
+        _UI_QUEUE.clear()
+    return items
 
 
 # Expression validator: (expression) → error message, or None when valid.

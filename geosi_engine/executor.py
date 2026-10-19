@@ -11,6 +11,7 @@ See FILE_CONNECTIONS.md:
 """
 
 import logging
+import re
 import time
 from typing import Any, Dict
 
@@ -21,6 +22,7 @@ from geosi_engine.models import (
     Layer,
     StepLog,
     ToolResult,
+    ToolStep,
 )
 from geosi_engine.registry import ToolRegistry
 from geosi_engine.state import StateManager
@@ -85,8 +87,11 @@ class ExecutionEngine:
                     else:
                         resolved_params[key] = prev_result
 
-        # Resolve layer-name references from state
+        # Resolve layer-name references from state (only where a layer is expected)
+        plain = self._non_layer_params(step)
         for key, value in list(resolved_params.items()):
+            if key in plain:
+                continue
             if isinstance(value, str):
                 layer = st.get_layer(value)
                 if layer is not None:
@@ -172,8 +177,11 @@ class ExecutionEngine:
                         resolved_params[key] = prev_result
 
             # Resolve layer references: if a string matches a loaded layer name,
-            # fetch the Layer object from state
+            # fetch the Layer object from state (only where a layer is expected)
+            plain = self._non_layer_params(step)
             for key, value in resolved_params.items():
+                if key in plain:
+                    continue
                 if isinstance(value, str):
                     layer = self.state.get_layer(value)
                     if layer is not None:
@@ -292,6 +300,19 @@ class ExecutionEngine:
             plan_source=getattr(plan, "plan_source", ""),
         )
 
+    def _non_layer_params(self, step: ToolStep) -> set:
+        """
+        Parameters the tool declares as something other than a layer. A text
+        value that happens to equal a layer name ("hospitals" as an OSM
+        category) must stay text.
+        """
+        tool = self.registry.get_tool(step.tool_name)
+        if tool is None:
+            return set()
+        # QGIS extent and CRS parameters also accept a layer (its extent / its CRS)
+        takes_layer = ("layer", "vector", "raster", "extent", "crs")
+        return {p.name for p in tool.spec().parameters or [] if p.param_type not in takes_layer}
+
     # ── Answer generation ─────────────────────────────────────────────
 
     def _build_answer(self, plan: ExecutionPlan, logs: list, last_result: Any) -> str:
@@ -301,11 +322,30 @@ class ExecutionEngine:
 
         if succeeded == total and last_result and last_result.success:
             msg = last_result.message or "Analysis completed successfully."
+            if msg.startswith("QGIS algorithm completed"):
+                msg = self._describe_outcome(plan, last_result, msg)
             return f"✅ {msg}"
         elif succeeded > 0:
             return f"⚠ Partial success: {succeeded}/{total} steps completed. " f"Check logs for details."
         else:
             return "❌ Analysis failed. Check error logs for details."
+
+    def _describe_outcome(self, plan: ExecutionPlan, last_result: Any, tool_message: str = "") -> str:
+        """ "Buffer hospitals by 500 m → new layer 'buffer_result' (10 features)." """
+        step = plan.steps[-1] if plan.steps else None
+        what = (getattr(step, "description", "") or "").strip()
+        if not what or what.startswith("As in:"):
+            tool = self.registry.get_tool(step.tool_name) if step is not None else None
+            what = tool.spec().display_name if tool is not None else "Done"
+        # Values the algorithm returned next to its output (e.g. SUM=1625) are the answer
+        values = re.search(r"\((.+)\)\s*$", tool_message or "")
+        if values:
+            return f"{what}: {values.group(1)}."
+        out = getattr(last_result, "output", None)
+        if isinstance(out, Layer):
+            count = f" ({out.feature_count} features)" if out.layer_type == "vector" else ""
+            return f"{what} → new layer '{out.name}'{count}."
+        return f"{what}."
 
     def _build_reasoning(self, plan: ExecutionPlan, logs: list) -> str:
         """Build step-by-step reasoning from execution logs."""

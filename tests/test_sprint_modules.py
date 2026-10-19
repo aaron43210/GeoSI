@@ -487,44 +487,45 @@ class TestASTGuardExpanded(unittest.TestCase):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class TestNewDataConnectorSpecs(unittest.TestCase):
-    def test_fetch_overture_spec(self):
-        from geosi_engine.tools.data_connectors import FetchOvertureTool
-
-        spec = FetchOvertureTool().spec()
-        self.assertEqual(spec.name, "fetch_overture")
-        self.assertEqual(spec.category, "data")
-        required = [p.name for p in spec.parameters if p.required]
-        self.assertIn("theme", required)
-
-    def test_fetch_wfs_spec(self):
-        from geosi_engine.tools.data_connectors import FetchWFSTool
-
-        spec = FetchWFSTool().spec()
-        self.assertEqual(spec.name, "fetch_wfs")
-        required = [p.name for p in spec.parameters if p.required]
-        self.assertIn("url", required)
-        self.assertIn("typename", required)
-
-    def test_fetch_overture_no_bbox_no_location_fails(self):
-        from geosi_engine.tools.data_connectors import FetchOvertureTool
-
-        result = FetchOvertureTool().execute(theme="buildings")
-        self.assertFalse(result.success)
-        self.assertIn("bbox", result.error.lower() or result.error)
-
-    def test_fetch_overture_with_bbox_succeeds(self):
-        # Mock geocoding not needed — bbox provided directly
-        from geosi_engine.tools.data_connectors import FetchOvertureTool
-
-        result = FetchOvertureTool().execute(theme="buildings", bbox="-0.15,51.48,0.0,51.55")
-        self.assertTrue(result.success)
-        self.assertIn("buildings", result.message)
-
-    def test_all_tools_in_registry(self):
+class TestDataConnectorTools(unittest.TestCase):
+    def test_registry_has_data_tools_and_no_placeholder_overture(self):
         from geosi_engine.registry import ToolRegistry
 
         reg = ToolRegistry()
         reg.discover_portable_tools()
-        for name in ("fetch_overture", "fetch_wfs"):
-            self.assertIsNotNone(reg.get_tool(name), f"{name} not in registry")
+        for name in ("add_basemap", "fetch_osm", "fetch_wfs", "geocode_address", "zoom_to_place"):
+            self.assertIsNotNone(reg.get_tool(name), name)
+        self.assertIsNone(reg.get_tool("fetch_overture"))
+
+    def test_fetch_osm_needs_a_place(self):
+        from geosi_engine.tools.data_connectors import FetchOSMTool
+
+        result = FetchOSMTool().execute(category="hospitals")
+        self.assertFalse(result.success)
+        self.assertIn("place name", result.error)
+
+    def test_fetch_osm_returns_file_layer(self):
+        from geosi_engine.models import Layer
+        from geosi_engine.tools.data_connectors import FetchOSMTool
+
+        found = {
+            "path": "/x/osm_hospitals_leeds.geojson",
+            "name": "osm_hospitals_leeds",
+            "count": 7,
+            "geometry": "Point",
+        }
+        with patch("geosi_data.osm.fetch_osm_to_file", return_value=found):
+            result = FetchOSMTool().execute(category="hospitals", location="Leeds")
+        self.assertTrue(result.success)
+        self.assertIsInstance(result.output, Layer)
+        self.assertEqual((result.output.filepath, result.output.feature_count), (found["path"], 7))
+
+    def test_fetch_wfs_rejects_non_http_url(self):
+        qgis_core = sys.modules.get("qgis.core")
+        if qgis_core is None:
+            self.skipTest("needs the qgis.core stub")
+        from geosi_engine.tools.data_connectors import FetchWFSTool
+
+        with patch.dict(sys.modules, {"qgis.core": MagicMock()}):
+            result = FetchWFSTool().execute(url="file:///etc/passwd", typename="x")
+        self.assertFalse(result.success)

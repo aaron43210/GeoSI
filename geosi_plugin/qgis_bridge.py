@@ -63,6 +63,7 @@ from geosi_engine.base import (  # noqa: E402
     register_backend,
     register_expression_validator,
     register_inspector,
+    register_row_reader,
 )
 from geosi_engine.models import Layer, ToolParameter, ToolResult  # noqa: E402
 
@@ -149,9 +150,9 @@ _PARAM_TYPE_MAP: Dict[str, str] = {
     "field": "field",  # QgsProcessingParameterField (checked against layer fields)
     "band": "string",  # QgsProcessingParameterBand
     "expression": "expression",  # QgsProcessingParameterExpression (QgsExpression-validated)
-    "crs": "string",  # QgsProcessingParameterCrs
+    "crs": "crs",  # QgsProcessingParameterCrs (accepts a layer: use its CRS)
     "enum": "enum",  # QgsProcessingParameterEnum (options listed for the planner)
-    "extent": "string",  # QgsProcessingParameterExtent
+    "extent": "extent",  # QgsProcessingParameterExtent (accepts a layer: use its extent)
     "point": "string",  # QgsProcessingParameterPoint
     "geometry": "string",  # QgsProcessingParameterGeometry
     "file": "string",  # QgsProcessingParameterFile
@@ -769,6 +770,25 @@ def describe_layer(layer: Layer, max_rows: int = 30) -> str:
     return "\n".join(lines)
 
 
+def read_rows(layer: Layer, max_rows: int = 500) -> list:
+    """Attribute rows of a vector result as dicts (registered as the row reader)."""
+    from qgis.core import QgsVectorLayer
+
+    path = getattr(layer, "filepath", "") or ""
+    lyr = QgsVectorLayer(path, layer.name, "ogr") if path else None
+    if (lyr is None or not lyr.isValid()) and isinstance(getattr(layer, "features", None), QgsVectorLayer):
+        lyr = layer.features
+    if lyr is None or not lyr.isValid():
+        return []
+    names = [f.name() for f in lyr.fields() if f.name() != "fid"]
+    rows = []
+    for i, feat in enumerate(lyr.getFeatures()):
+        if i >= max_rows:
+            break
+        rows.append({n: feat[n] for n in names})
+    return rows
+
+
 def _collecting_feedback():
     """QgsProcessingFeedback that keeps reported errors for the agent."""
     from qgis.core import QgsProcessingFeedback
@@ -985,6 +1005,7 @@ def install(registry=None) -> int:
     """
     register_backend("qgis", _run_qgis_algorithm)
     register_inspector(describe_layer)
+    register_row_reader(read_rows)
     register_expression_validator(validate_expression)
     logger.info("GeoSI: QGIS backend installed.")
 

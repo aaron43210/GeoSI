@@ -132,6 +132,7 @@ def run_task(plugin_mod, paths, query):
     plugin.engine.run = run_and_capture
     start = time.time()
     plugin.dock.run_in_background = False  # score the result synchronously
+    plugin.dock.offline_ok = True  # no model in CI: the user's "Continue offline" choice
     plugin.dock.input_box.setText(query)
     plugin.dock._on_submit()
     elapsed = time.time() - start

@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("geosi_data.osm")
@@ -163,6 +165,106 @@ def _overpass_to_geojson(data: dict) -> dict:
     return {"type": "FeatureCollection", "features": features}
 
 
+def _centroid(coords: List[List[float]]) -> List[float]:
+    ring = coords[:-1] if len(coords) > 1 and coords[0] == coords[-1] else coords
+    return [sum(c[0] for c in ring) / len(ring), sum(c[1] for c in ring) / len(ring)]
+
+
+def single_geometry(geojson: dict) -> Tuple[dict, str]:
+    """
+    One geometry type per layer, as QGIS needs. The dominant type wins:
+    points keep building outlines as their centre point (a hospital mapped
+    as an area is still a hospital); lines keep closed ways as their outline;
+    polygons drop stray points and lines.
+    """
+    feats = geojson.get("features", [])
+    counts = {"Point": 0, "LineString": 0, "Polygon": 0}
+    for f in feats:
+        counts[f["geometry"]["type"]] = counts.get(f["geometry"]["type"], 0) + 1
+    dominant = max(counts, key=lambda k: (counts[k], k == "Point"))
+    out = []
+    for f in feats:
+        g = f["geometry"]
+        if g["type"] == dominant:
+            out.append(f)
+        elif dominant == "Point" and g["type"] == "Polygon":
+            out.append({**f, "geometry": {"type": "Point", "coordinates": _centroid(g["coordinates"][0])}})
+        elif dominant == "LineString" and g["type"] == "Polygon":
+            out.append({**f, "geometry": {"type": "LineString", "coordinates": g["coordinates"][0]}})
+    return {"type": "FeatureCollection", "features": out}, dominant
+
+
+# The public Overpass servers are often busy; these mirrors serve the same API
+OVERPASS_MIRRORS = [
+    OVERPASS_URL,
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+]
+_RETRY_STATUS = {429, 502, 503, 504}
+
+
+def overpass_request(query: str, timeout: float = 60) -> dict:
+    """POST an Overpass QL query, moving to the next mirror when one is overloaded or down."""
+    import urllib.error
+
+    last: Exception = RuntimeError("no Overpass server configured")
+    for url in OVERPASS_MIRRORS:
+        req = urllib.request.Request(
+            url,
+            data=urllib.parse.urlencode({"data": query}).encode(),
+            headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": "GeoSI/2.0"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310 — fixed Overpass mirrors
+                return json.loads(resp.read())
+        except urllib.error.HTTPError as exc:
+            last = exc
+            if exc.code not in _RETRY_STATUS:
+                raise
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            last = exc
+        logger.warning("Overpass server %s unavailable (%s); trying the next mirror", url, last)
+    raise last
+
+
+def fetch_osm_to_file(
+    category: str,
+    location: Optional[str] = None,
+    bbox: Optional[Tuple[float, float, float, float]] = None,
+    out_dir: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Download OSM features to a GeoJSON file without touching QGIS, so it is
+    safe in a background task. Returns {path, name, count, geometry} or None.
+    """
+    import tempfile
+
+    tags = resolve_category(category)
+    if tags is None:
+        if "=" in category:
+            k, v = category.split("=", 1)
+            tags = [{k.strip(): v.strip()}]
+        else:
+            tags = [{"amenity": category}]
+    if bbox is None and location:
+        bbox = geocode_bbox(location)
+    if bbox is None:
+        logger.error("No bounding box — provide location or bbox")
+        return None
+    raw = overpass_request(_overpass_query(tags, bbox))
+    geojson, geometry = single_geometry(_overpass_to_geojson(raw))
+    if not geojson["features"]:
+        return None
+    slug = re.sub(r"[^A-Za-z0-9]+", "_", f"{category} {location or ''}").strip("_").lower()
+    name = f"osm_{slug}"
+    out_dir = out_dir or tempfile.mkdtemp(prefix="geosi_osm_")
+    path = os.path.join(out_dir, f"{name}.geojson")
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(geojson, fh)
+    return {"path": path, "name": name, "count": len(geojson["features"]), "geometry": geometry}
+
+
 def fetch_osm_features(
     category: str,
     location: Optional[str] = None,
@@ -207,16 +309,7 @@ def fetch_osm_features(
     # Fetch from Overpass
     query = _overpass_query(tags, bbox)
     try:
-        import urllib.request
-
-        req = urllib.request.Request(
-            OVERPASS_URL,
-            data=query.encode(),
-            headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": "GeoSI/2.0"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=45) as resp:  # nosec B310
-            raw = json.loads(resp.read())
+        raw = overpass_request(query)
     except Exception as exc:
         logger.error("Overpass request failed: %s", exc)
         return None

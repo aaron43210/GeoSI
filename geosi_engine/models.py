@@ -141,7 +141,8 @@ class ToolParameter:
 
     Attributes:
         name: Parameter name (e.g., "distance", "layer", "field")
-        param_type: Data type expected ("layer", "number", "string", "boolean")
+        param_type: Data type expected ("layer", "number", "string", "boolean", "field",
+            "expression", "enum", "extent", "crs"); extent/crs also accept a layer
         required: True if this parameter must be provided
         description: Human-readable explanation of what this parameter does
         example: Example value to help the user understand

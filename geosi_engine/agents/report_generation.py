@@ -19,11 +19,12 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from geosi_engine.telemetry import set_span_attr, span
 
@@ -55,6 +56,60 @@ class ReportResult:
     statistics: Dict[str, Any] = field(default_factory=dict)
     error: Optional[str] = None
     duration_ms: float = 0.0
+
+
+_SUPERLATIVE_RE = re.compile(
+    r"\b(?:which|what)\b.*?\b(most|least|highest|lowest|largest|smallest|biggest|fewest|greatest|maximum|minimum)\b",
+    re.IGNORECASE,
+)
+_HIGH_WORDS = {"most", "highest", "largest", "biggest", "greatest", "maximum"}
+_ID_FIELD_RE = re.compile(r"(fid|id|.*_id|objectid|ogc_fid)", re.IGNORECASE)
+
+
+def _is_number(value: Any) -> bool:
+    if isinstance(value, bool) or value is None:
+        return False
+    try:
+        float(value)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def superlative_answer(query: str, rows: List[Dict[str, Any]], prefer: Sequence[str] = ()) -> Optional[str]:
+    """
+    "Which zone has the most hospitals?" answered exactly from result rows.
+
+    The value column is a numeric field named in the question, else one the
+    tool added (``prefer``), else a count-like field. Ties are all reported.
+    """
+    m = _SUPERLATIVE_RE.search(query or "")
+    if not m or not rows:
+        return None
+    keys = list(rows[0])
+    numeric = [k for k in keys if not _ID_FIELD_RE.fullmatch(k) and all(_is_number(r.get(k)) for r in rows)]
+    if not numeric:
+        return None
+    q = query.lower()
+    named = [k for k in numeric if k.lower() in q or k.lower().rstrip("s") in q]
+    added = [k for k in prefer if k in numeric]
+    countish = [k for k in numeric if re.search(r"count|numpoints|total|^n$|num", k, re.IGNORECASE)]
+    col = (named or added or countish or [numeric[-1]])[0]
+    labels = [k for k in keys if k not in numeric and not _ID_FIELD_RE.fullmatch(k)]
+    label = next((k for k in labels if re.search(r"name|zone|label|code|title|type", k, re.IGNORECASE)), None)
+    label = label or (labels[0] if labels else None)
+    word = m.group(1).lower()
+    pick = max if word in _HIGH_WORDS else min
+    best = float(pick(rows, key=lambda r: float(r[col]))[col])
+    winners = [r for r in rows if float(r[col]) == best]
+    who = ", ".join(str(r[label]) for r in winners) if label else f"{len(winners)} feature(s)"
+    value = int(best) if best.is_integer() else round(best, 4)
+    verb = "have" if len(winners) > 1 else "has"
+    # "...the most hospitals?" → "Z2 has the most hospitals (3)."
+    thing = re.match(r"\s*([A-Za-z_][\w ]{0,40}?)\s*(?:\?|$|\bin\b|\bof\b|\bper\b)", query[m.end() :])
+    if thing and thing.group(1).strip() and not named:
+        return f"{who} {verb} the {word} {thing.group(1).strip()} ({value})."
+    return f"{who} {verb} the {word} {col} ({value})."
 
 
 class ReportGenerationAgent:
@@ -149,7 +204,7 @@ class ReportGenerationAgent:
         import re as _re
 
         from geosi_engine.agents.verification import geom_family
-        from geosi_engine.base import get_inspector
+        from geosi_engine.base import get_inspector, get_row_reader
         from geosi_engine.models import Layer
 
         steps = getattr(plan, "steps", []) or []
@@ -164,6 +219,22 @@ class ReportGenerationAgent:
                 f"{final.feature_count} — the result layer '{final.name}' has "
                 f"{final.feature_count} matching feature(s)."
             )
+
+        reader = get_row_reader()
+        if reader is not None and isinstance(final, Layer) and _SUPERLATIVE_RE.search(query or ""):
+            try:
+                rows = reader(final, 500)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("row read failed: %s", exc)
+                rows = []
+            if rows:
+                state = getattr(self._engine, "state", None)
+                inputs = set()
+                for name in state.list_layers() if state is not None else []:
+                    inputs.update(getattr(state.get_layer(name), "fields", None) or [])
+                exact = superlative_answer(query, rows, prefer=[k for k in rows[0] if k not in inputs])
+                if exact:
+                    return exact
 
         inspector = get_inspector()
         evidence = []

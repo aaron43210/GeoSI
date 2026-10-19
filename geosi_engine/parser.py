@@ -303,11 +303,37 @@ _DISTANCE_PATTERN = re.compile(
 _NUMBER_PATTERN = re.compile(r"\b(\d+(?:\.\d+)?)\b")
 
 # "field = value", "field > 10", "population above 1000"
+# Symbol operators may touch their operands ("pop>100"); word operators must be
+# whole words, otherwise "dissolve" parses as field "d" / op "is" / value "solve".
 _FIELD_FILTER_PATTERN = re.compile(
-    r"\b([A-Za-z_][A-Za-z0-9_]*)\s*"
-    r"(=|==|!=|<>|>=|<=|>|<|is|equals?|above|below|over|under|greater than|less than)\s*"
-    r"('[^']*'|\"[^\"]*\"|-?\d+(?:\.\d+)?|[A-Za-z_][A-Za-z0-9_]*)",
+    r"\b([A-Za-z_][A-Za-z0-9_]*)"
+    r"(?:\s*(==|!=|<>|>=|<=|=|>|<)\s*"
+    r"|\s+(is|equals?|above|below|over|under|greater than|less than)\s+)"
+    r"('[^']*'|\"[^\"]*\"|-?\d+(?:\.\d+)?\b|[A-Za-z_][A-Za-z0-9_]*\b)",
     re.IGNORECASE,
+)
+_NOT_FIELDS = frozenset(
+    {
+        "within",
+        "near",
+        "and",
+        "or",
+        "with",
+        "of",
+        "what",
+        "which",
+        "who",
+        "where",
+        "how",
+        "it",
+        "this",
+        "that",
+        "there",
+        "here",
+        "result",
+        "output",
+        "answer",
+    }
 )
 
 # Canonical operation tokens the rule-based planner can consume directly.
@@ -664,9 +690,8 @@ class QueryParser:
         # Extract field-level filters: "population > 10000" or "name = 'Hospital'"
         filters: List[Dict[str, Any]] = []
         for m in _FIELD_FILTER_PATTERN.finditer(query):
-            field, op, value = m.group(1), m.group(2).lower(), m.group(3)
-            # Skip structural words that look like field names but are not
-            if field.lower() in {"within", "near", "and", "or", "with", "of"}:
+            field, op, value = m.group(1), (m.group(2) or m.group(3)).lower(), m.group(4)
+            if field.lower() in _NOT_FIELDS:
                 continue
             filters.append({"field": field, "op": op, "value": value.strip("'\"")})
         if filters:
@@ -733,26 +758,31 @@ class QueryParser:
                 cls._layer_match_cache.move_to_end(cache_key)
                 return dict(cached)
 
-        matches: List[Tuple[str, float]] = []
+        # (layer, score, position in the query): equal scores keep the order the
+        # user named them, so "clip roads to flood_zones" makes roads the input.
+        found: List[Tuple[str, float, int]] = []
         for layer in available_layers:
             name = layer.lower()
             if not name:
                 continue
-            if name in lowered:
-                matches.append((layer, 1.0))
+            spaced = name.replace("_", " ")
+            hit = next((v for v in (name, spaced) if v in lowered), None)
+            if hit:
+                found.append((layer, 1.0, lowered.find(hit)))
                 continue
-            # Loose stem match - allow "hospital" to hit "hospitals".
-            stem = name.rstrip("s")
-            if stem and stem in lowered:
-                matches.append((layer, 0.85))
+            # Loose stem match - allow "hospital" to hit "hospitals", "flood zone" to hit "flood_zones".
+            stem = next((v.rstrip("s") for v in (name, spaced) if v.rstrip("s") and v.rstrip("s") in lowered), None)
+            if stem:
+                found.append((layer, 0.85, lowered.find(stem)))
                 continue
             # SequenceMatcher is O(|name| * |query|); cheap string
             # checks above let us skip it for most layer names.
             ratio = SequenceMatcher(None, name, lowered).ratio()
             if ratio >= 0.72:
-                matches.append((layer, ratio))
+                found.append((layer, ratio, len(lowered)))
 
-        matches.sort(key=lambda p: p[1], reverse=True)
+        found.sort(key=lambda f: (-f[1], f[2]))
+        matches: List[Tuple[str, float]] = [(f[0], f[1]) for f in found]
         entities: Dict[str, Any] = {}
         if matches:
             entities["primary_layer"] = matches[0][0]

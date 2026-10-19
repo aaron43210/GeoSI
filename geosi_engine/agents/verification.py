@@ -473,7 +473,13 @@ class VerificationAgent:
                 from geosi_engine.tools.domain_tools import DOMAIN_TOOL_NAMES
             except Exception:  # pragma: no cover
                 DOMAIN_TOOL_NAMES = ()
-            if not (steps and steps[-1].tool_name in DOMAIN_TOOL_NAMES and final is not None):
+            from geosi_engine.tools.data_connectors import ACTION_TOOL_NAMES
+
+            last_tool = steps[-1].tool_name if steps else ""
+            if last_tool in ACTION_TOOL_NAMES:
+                set_span_attr("verification.passed", True)
+                return VerificationReport(passed=True, issues=[], findings=findings)
+            if not (steps and last_tool in DOMAIN_TOOL_NAMES and final is not None):
                 return error(
                     "output",
                     "no result layer was produced — this request needs a " "processing tool that outputs a new layer",

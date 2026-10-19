@@ -63,34 +63,34 @@ def reverse_geocode(lat: float, lon: float) -> Optional[str]:
         return None
 
 
+def zoom_canvas_to(lon: float, lat: float, half_size_deg: float = 0.05) -> bool:
+    """Centre the QGIS map on a WGS84 point. Main thread only (touches the canvas)."""
+    from qgis.core import QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsProject, QgsRectangle
+
+    from geosi_engine.base import ui_iface
+
+    iface = ui_iface()
+    if iface is None:
+        return False
+    canvas = iface.mapCanvas()
+    rect = QgsRectangle(lon - half_size_deg, lat - half_size_deg, lon + half_size_deg, lat + half_size_deg)
+    canvas_crs = canvas.mapSettings().destinationCrs()
+    wgs84 = QgsCoordinateReferenceSystem("EPSG:4326")
+    if canvas_crs.isValid() and canvas_crs != wgs84:
+        rect = QgsCoordinateTransform(wgs84, canvas_crs, QgsProject.instance()).transformBoundingBox(rect)
+    canvas.setExtent(rect)
+    canvas.refresh()
+    return True
+
+
 def zoom_to_place(address: str, project=None) -> Optional[Tuple[float, float]]:
-    """
-    Geocode *address* and zoom the QGIS map canvas to it.
-
-    Returns (lon, lat) on success, None on failure.
-    """
-    result = geocode(address)
-    if result is None:
-        return None
-    lon, lat, display = result
-    logger.info("Zoomed to %r → %s (%f, %f)", address, display, lon, lat)
+    """Geocode *address* and zoom the map to it (main thread). Returns (lon, lat) or None."""
     try:
-        from qgis.core import QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsProject, QgsRectangle
-        from qgis.utils import iface
-
-        canvas = iface.mapCanvas()
-        # 0.05-degree box around the point
-        rect = QgsRectangle(lon - 0.05, lat - 0.05, lon + 0.05, lat + 0.05)
-        # Transform from WGS84 to canvas CRS if needed
-        canvas_crs = canvas.mapSettings().destinationCrs()
-        wgs84 = QgsCoordinateReferenceSystem("EPSG:4326")
-        if canvas_crs != wgs84:
-            xform = QgsCoordinateTransform(wgs84, canvas_crs, QgsProject.instance())
-            rect = xform.transformBoundingBox(rect)
-        canvas.setExtent(rect)
-        canvas.refresh()
-    except Exception as exc:
-        logger.debug("Canvas zoom skipped: %s", exc)
+        lon, lat, display = geocode(address)
+    except ValueError:
+        return None
+    logger.info("Zoom to %r → %s (%f, %f)", address, display, lon, lat)
+    zoom_canvas_to(lon, lat)
     return lon, lat
 
 

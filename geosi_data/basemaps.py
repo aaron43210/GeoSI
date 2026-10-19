@@ -151,6 +151,19 @@ def resolve_provider(name: str) -> Optional[str]:
     return "osm"
 
 
+def provider_in_text(text: str) -> str:
+    """The basemap a sentence asks for ("add a satellite basemap" → esri_satellite); OSM by default."""
+    low = (text or "").lower()
+    names = []
+    for key, info in PROVIDERS.items():
+        for name in [key, key.replace("_", " "), info["label"], *info.get("aliases", [])]:
+            names.append((name.lower(), key))
+    for name, key in sorted(names, key=lambda n: -len(n[0])):
+        if len(name) > 2 and name in low:
+            return key
+    return "osm"
+
+
 def list_providers() -> list[dict]:
     """Return a list of {key, label, aliases} for display."""
     return [{"key": k, "label": v["label"], "aliases": v.get("aliases", [])} for k, v in PROVIDERS.items()]
