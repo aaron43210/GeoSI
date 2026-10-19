@@ -9,7 +9,7 @@ Usage:
     from geosi_engine.cartography.layouts import build_print_layout, export_layout
 
     layout = build_print_layout(project, title="Flood Risk Zones")
-    export_layout(layout, "/tmp/flood_map.pdf")
+    export_layout(layout, "flood_map.pdf")
 """
 from __future__ import annotations
 
@@ -143,12 +143,9 @@ def build_print_layout(
             from qgis.core import QgsLayoutItemPicture
             arrow = QgsLayoutItemPicture(layout)
             # Use QGIS built-in north arrow SVG
-            svg = os.path.join(
-                os.environ.get("QGIS_PREFIX_PATH", "/usr"),
-                "share/qgis/svg/arrows/NorthArrow_04.svg",
-            )
-            if not os.path.exists(svg):
-                svg = ":images/north_arrows/NorthArrow_04.svg"
+            from qgis.core import QgsApplication
+            # pkgDataPath() resolves the install dir on Windows, macOS and Linux
+            svg = os.path.join(QgsApplication.pkgDataPath(), "svg", "arrows", "NorthArrow_04.svg")
             arrow.setPicturePath(svg)
             arrow.attemptSetSceneRect(QRectF(w_mm - margin - 15, h_mm - margin - 20, 12, 18))
             layout.addLayoutItem(arrow)

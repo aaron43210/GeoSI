@@ -414,33 +414,51 @@ class GeoSIAgent:
                     matches.append((available, ratio))
         return sorted(matches, key=lambda x: x[1], reverse=True)
 
-    # Patterns that indicate the query doesn't need any loaded layers.
-    _LAYER_FREE_RE = re.compile(
-        r"""
-        ^(?:hi|hello|hey|howdy|greetings?|help|what\s+can\s+you|who\s+are\s+you) |
-        \b(?:generate|write|create|show|give\s+me|make)\b.{0,40}
-            \b(?:code|script|example|snippet|template|function|class)\b |
-        \b(?:what\s+is|what\s+are|how\s+(?:do\s+I|to)|explain|describe|define|tell\s+me\s+about)\b |
-        \b(?:list\s+(?:all\s+)?(?:tools?|algorithms?|operations?|capabilities?)) |
-        \b(?:NDVI|NDWI|CRS|WGS|EPSG|GeoJSON|shapefile|GeoPackage|FlatGeobuf|WKT|WKB|
-           raster|vector|polygon|linestring|geometry|projection|reprojection|
-           coordinate|spatial\s+join|dissolve|buffer|clip|intersect)\b(?![^?]*\blayer\b)
-        """,
-        re.IGNORECASE | re.VERBOSE,
+    # Never touch data, even when a layer is named.
+    _GREETING_RE = re.compile(
+        r"^\s*(?:hi|hello|hey|howdy|greetings?|help|what\s+can\s+you|who\s+are\s+you)\b",
+        re.IGNORECASE,
+    )
+    _CODE_REQUEST_RE = re.compile(
+        r"\b(?:generate|write|create|show|give\s+me|make)\b.{0,40}"
+        r"\b(?:code|script|snippet|template|function|class)\b"
+        r"|\blist\s+(?:all\s+)?(?:tools?|algorithms?|operations?|capabilities?)\b",
+        re.IGNORECASE,
+    )
+    # Educational phrasing; only layer-free when no loaded layer is named.
+    _EXPLAIN_RE = re.compile(
+        r"\b(?:what\s+is|what\s+are|how\s+(?:do\s+I|to|does)|explain|describe|define"
+        r"|tell\s+me\s+about|difference\s+between)\b",
+        re.IGNORECASE,
+    )
+    _SPATIAL_TASK_RE = re.compile(
+        r"\b(?:buffer|clip|dissolve|intersect|reproject|select|extract|join|merge|union|"
+        r"difference|count|centroids?|convex\s+hull|voronoi|simplify|fix|rasterize|"
+        r"polygonize|calculate|compute|aggregate|hillshade|slope|aspect|contours?|"
+        r"grid|how\s+many|total|average|sum)\b",
+        re.IGNORECASE,
     )
 
-    def _query_needs_layers(self, query: str) -> bool:
-        """Return False when the query is conversational / educational / code-gen."""
-        if self._LAYER_FREE_RE.search(query or ""):
+    @staticmethod
+    def _names_loaded_layer(query: str, layers: Optional[List[str]]) -> bool:
+        q = (query or "").lower()
+        for name in layers or []:
+            stem = os.path.splitext(name)[0].lower()
+            forms = {stem, stem.replace("_", " "), stem.rstrip("s")}
+            if any(f and re.search(rf"\b{re.escape(f)}", q) for f in forms):
+                return True
+        return False
+
+    def _query_needs_layers(self, query: str, layers: Optional[List[str]] = None) -> bool:
+        """False for greetings, code requests and general GIS questions; True for data tasks."""
+        q = query or ""
+        if self._GREETING_RE.search(q) or self._CODE_REQUEST_RE.search(q):
             return False
-        # Any spatial verb + named layer → needs layers
-        spatial_verbs = re.compile(
-            r"\b(buffer|clip|dissolve|intersect|reproject|select|extract|join|"
-            r"merge|union|difference|count|centroid|convex.hull|simplify|fix|"
-            r"rasterize|polygonize|calculate|compute|aggregate)\b",
-            re.IGNORECASE,
-        )
-        return bool(spatial_verbs.search(query or ""))
+        if self._names_loaded_layer(q, layers):
+            return True
+        if self._EXPLAIN_RE.search(q):
+            return False
+        return bool(self._SPATIAL_TASK_RE.search(q))
 
     def validate_layers_exist(
         self, request: AnalysisRequest, state: StateManager
@@ -456,7 +474,7 @@ class GeoSIAgent:
             return False, "No state manager available"
 
         # Don't block the response for layer-free intents
-        if not self._query_needs_layers(request.query or ""):
+        if not self._query_needs_layers(request.query or "", state.list_layers()):
             return True, None
 
         available = state.list_layers()
@@ -536,7 +554,7 @@ class GeoSIAgent:
 
         # Conversational, educational, or code-generation queries should not
         # receive a dummy spatial step like count_features.
-        if not self._query_needs_layers(request.query or ""):
+        if not self._query_needs_layers(request.query or "", request.available_layers):
             return ExecutionPlan(
                 request=request,
                 steps=[],

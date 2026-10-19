@@ -211,13 +211,13 @@ def _default_cache_path() -> Path:
     if override:
         base = Path(override)
     else:
-        # Prefer the QGIS profile directory if it exists, otherwise temp.
-        qgis_profile = (
-            Path.home() / "Library/Application Support/QGIS/QGIS4/profiles/default/geosi"
-        )
-        base = qgis_profile if qgis_profile.parent.exists() else Path(
-            tempfile.gettempdir()
-        ) / "geosi"
+        # Active QGIS profile dir on any OS; ~/.geosi outside QGIS.
+        try:
+            from qgis.core import QgsApplication
+            profile = QgsApplication.qgisSettingsDirPath()
+            base = Path(profile) / "geosi" if profile else Path.home() / ".geosi"
+        except ImportError:
+            base = Path.home() / ".geosi"
     try:
         base.mkdir(parents=True, exist_ok=True)
     except Exception:

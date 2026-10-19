@@ -233,3 +233,43 @@ def test_validation_check_request_skips_knowledge_query():
     eng.state = StateManager()
     va = ValidationAgent(eng)
     assert va.check_request("What is a CRS and how do I reproject?", eng.state) is None
+
+
+# ── Regression: GIS keywords must not turn data tasks into chit-chat ─────────
+
+_BENCH_LAYERS = ["hospitals", "flood_zones", "parcels", "roads", "dem", "image"]
+
+
+def test_spatial_tasks_on_loaded_layers_need_layers():
+    from geosi_engine.agent import GeoSIAgent
+    for q in [
+        "buffer hospitals by 500 meters",
+        "create centroids of flood_zones",
+        "dissolve flood_zones into one polygon",
+        "create voronoi polygons from hospitals",
+        "reproject hospitals to EPSG:4326",
+        "create a hillshade of dem",
+        "calculate NDVI from image using band 3 as red and band 4 as NIR",
+        "how many hospitals are there?",
+        "what is the total number of beds across all hospitals?",
+    ]:
+        assert GeoSIAgent._query_needs_layers(GeoSIAgent, q, _BENCH_LAYERS), q
+
+
+def test_conversational_queries_stay_layer_free_with_layers_loaded():
+    from geosi_engine.agent import GeoSIAgent
+    for q in [
+        "hi",
+        "What is NDVI?",
+        "explain what a buffer is",
+        "how do I reproject a layer?",
+        "Generate GeoPandas code for buffering points",
+        "write a python script to buffer hospitals",
+        "what is the difference between raster and vector?",
+    ]:
+        assert not GeoSIAgent._query_needs_layers(GeoSIAgent, q, _BENCH_LAYERS), q
+
+
+def test_spatial_task_without_layers_still_needs_layers():
+    from geosi_engine.agent import GeoSIAgent
+    assert GeoSIAgent._query_needs_layers(GeoSIAgent, "buffer hospitals by 500 m", [])

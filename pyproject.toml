@@ -41,9 +41,6 @@ dependencies = [
 
     # --- LLM providers ---
     "anthropic==0.42.0",
-    "google-genai==0.3.0",
-    "ollama==0.4.4",                      # Local LLM support
-    "fastmcp>=2.1.2",                     # MCP tooling framework (bumped to fix websockets conflict)
 
     # --- Observability (Phase 2) ---
     "opentelemetry-api==1.29.0",
@@ -61,6 +58,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Optional fast path for geosi_mcp/stdio_server.py (falls back to a built-in stdio loop)
+mcp = [
+    "fastmcp>=2.1.2",
+]
 dev = [
     "ruff==0.8.4",
     "mypy==1.14.0",
@@ -85,6 +86,14 @@ line-length = 120
 target-version = "py311"
 src = ["geosi_engine", "geosi_rag", "geosi_knowledge", "geosi_data", "geosi_server", "geosi_mcp", "geosi_eval"]
 
+[tool.ruff.per-file-target-version]
+# Bundled in the QGIS plugin: must run on the Python QGIS ships (3.9 on 3.28 LTR)
+"geosi_plugin/**" = "py39"
+"geosi_engine/**" = "py39"
+"geosi_data/**" = "py39"
+"geosi_rag/**" = "py39"
+"geosi_knowledge/**" = "py39"
+
 [tool.ruff.lint]
 select = [
     "E", "F", "W",      # pycodestyle / pyflakes
@@ -104,6 +113,16 @@ max-complexity = 12
 
 [tool.ruff.format]
 quote-style = "double"
+
+[tool.black]
+line-length = 120
+target-version = ["py39"]
+extend-exclude = "QGIS_AI-Agent"
+
+[tool.isort]
+profile = "black"
+line_length = 120
+skip = ["QGIS_AI-Agent"]
 
 # ---------------------------------------------------------------------------
 # Mypy — type checking

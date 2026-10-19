@@ -196,7 +196,7 @@ def main() -> int:
     print("\n── score by category ──")
     for cat, (p, n) in sorted(by_cat.items()):
         print(f"  {cat:9} {p:2}/{n:<2}  {100.0 * p / n:5.1f}%")
-    print(f"  {'overall':9} {total:2}/{len(rows):<2}  {score:5.1f}%")
+    print(f"  {'overall':9} {total:2}/{len(rows):<2}  {score:5.1f}%", flush=True)
 
     if args.json:
         with open(args.json, "w", encoding="utf-8") as fh:

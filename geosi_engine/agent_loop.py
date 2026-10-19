@@ -399,7 +399,8 @@ class AgentLoop:
             )
             return ExecutionResult(success=True, answer=self._GREETING_REPLY + footer)
 
-        needs_layers = getattr(self.engine.agent, "_query_needs_layers", lambda _: True)(q)
+        needs_layers = getattr(self.engine.agent, "_query_needs_layers", lambda *_: True)(
+            q, self.engine.state.list_layers())
         is_code = bool(self._CODE_RE.search(q))
         is_knowledge = bool(self._KNOWLEDGE_RE.search(q))
 
