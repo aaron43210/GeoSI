@@ -179,17 +179,20 @@ class GeoSIAgent:
     def _detect_ollama_model(self) -> str:
         model = os.environ.get("OLLAMA_MODEL", "mistral")
         try:
-            import requests
-            resp = requests.get(f"{self._ollama_endpoint}/api/tags", timeout=1.5)
-            if resp.status_code == 200:
-                models = [m.get("name") for m in resp.json().get("models", [])]
-                # Embedding-only models cannot generate plans
-                models = [m for m in models if m and "embed" not in m]
-                if models and model not in models and f"{model}:latest" not in models:
-                    for pref in ["llama3.2:3b", "llama3:latest", "qwen2.5-coder:14b", "mistral"]:
-                        if pref in models:
-                            return pref
-                    return models[0]
+            import urllib.request
+            import json
+            req = urllib.request.Request(f"{self._ollama_endpoint}/api/tags")
+            with urllib.request.urlopen(req, timeout=1.5) as resp:
+                if resp.status == 200:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    models = [m.get("name") for m in data.get("models", [])]
+                    # Embedding-only models cannot generate plans
+                    models = [m for m in models if m and "embed" not in m]
+                    if models and model not in models and f"{model}:latest" not in models:
+                        for pref in ["llama3.2:3b", "llama3:latest", "llama3", "qwen2.5-coder:14b", "mistral"]:
+                            if pref in models:
+                                return pref
+                        return models[0]
         except Exception:
             pass
         return model
@@ -1088,9 +1091,12 @@ Return ONLY valid JSON:
 }}"""
 
     def _plan_with_ollama(self, request: AnalysisRequest) -> ExecutionPlan:
-        import requests
+        import json
+        import urllib.request
         try:
-            requests.get(f"{self._ollama_endpoint}/api/tags", timeout=1.5)
+            req = urllib.request.Request(f"{self._ollama_endpoint}/api/tags")
+            with urllib.request.urlopen(req, timeout=1.5) as resp:
+                pass
         except Exception as exc:
             raise RuntimeError(f"Ollama unreachable: {exc}")
 
@@ -1098,20 +1104,22 @@ Return ONLY valid JSON:
         # layers and any retry feedback. Re-sending earlier prompts (each with
         # a full tool catalog) would overflow a small model's context.
         prompt = self._get_prompt(request)
-        response = requests.post(
+        payload = json.dumps({
+            "model": self._ollama_model,
+            "prompt": prompt,
+            "stream": False,
+            "format": "json",
+            "options": {"temperature": 0.0},
+        }).encode("utf-8")
+        post_req = urllib.request.Request(
             f"{self._ollama_endpoint}/api/generate",
-            json={
-                "model": self._ollama_model,
-                "prompt": prompt,
-                "stream": False,
-                "format": "json",
-                "options": {"temperature": 0.0},
-            },
-            timeout=120,
+            data=payload,
+            headers={"Content-Type": "application/json"},
         )
-        response.raise_for_status()
-        text = response.json().get("response", "")
-        return self._json_to_plan(request, text)
+        with urllib.request.urlopen(post_req, timeout=120) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            text = data.get("response", "")
+            return self._json_to_plan(request, text)
 
     # ── OpenAI-compatible hosted models ───────────────────────────────
 

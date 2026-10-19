@@ -367,12 +367,15 @@ class AgentLoop:
             )
             return ExecutionResult(success=True, answer=self._GREETING_REPLY + footer)
 
+        needs_layers = getattr(self.engine.agent, "_query_needs_layers", lambda _: True)(q)
         is_code = bool(self._CODE_RE.search(q))
         is_knowledge = bool(self._KNOWLEDGE_RE.search(q))
-        if not is_code and not is_knowledge:
-            return None  # spatial query with no plan → keep existing error
 
-        # 2 & 3. Try LLM in chat mode
+        # If it's a spatial operation that needs layers, don't intercept it
+        if needs_layers and not is_code and not is_knowledge:
+            return None
+
+        # 2. Try LLM in chat mode (live Llama 3 or hosted API)
         try:
             llm_answer, llm_source = self._llm_chat(q)
             if llm_answer:
@@ -380,10 +383,21 @@ class AgentLoop:
         except Exception as exc:
             logger.debug("Conversational LLM failed: %s", exc)
 
-        # Offline fallback for common GIS concepts
+        # 3. Offline fallback for common GIS concepts and code snippets
         offline = self._offline_answer(q)
         if offline:
             return ExecutionResult(success=True, answer=offline, plan_source="offline_template")
+
+        # 4. If conversational query has no offline match and LLM was offline
+        if not needs_layers:
+            return ExecutionResult(
+                success=True,
+                answer=(
+                    "I am currently in offline mode and could not generate a response for this query. "
+                    "Please ensure Ollama is running (`ollama serve`) with `llama3` or configure a cloud API in Settings (⚙)."
+                ),
+                plan_source="offline_fallback",
+            )
 
         return None  # couldn't answer — let the original "no steps" path handle it
 
@@ -395,6 +409,9 @@ class AgentLoop:
         which provider answered (e.g. "ollama:llama3:latest").
         Returns ("", "") on failure.
         """
+        import urllib.request
+        import json
+
         agent = getattr(self.engine, "agent", None)
         if agent is None:
             return "", ""
@@ -418,26 +435,28 @@ class AgentLoop:
             except Exception as exc:
                 logger.debug("Conversational API chat failed: %s", exc)
 
-        # 2. Ollama local model (llama3, etc.)
-        endpoint = getattr(agent, "_ollama_endpoint", "http://localhost:11434")
+        # 2. Ollama local model (llama3, etc.) using stdlib urllib
+        endpoint = getattr(agent, "_ollama_endpoint", "http://localhost:11434").rstrip("/")
         model = getattr(agent, "_ollama_model", "llama3")
         try:
-            import requests
-            resp = requests.post(
+            payload = json.dumps({
+                "model": model,
+                "prompt": prompt,
+                "stream": False,
+                "options": {"temperature": 0.2},
+            }).encode("utf-8")
+            req = urllib.request.Request(
                 f"{endpoint}/api/generate",
-                json={
-                    "model": model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"temperature": 0.2},
-                },
-                timeout=60,
+                data=payload,
+                headers={"Content-Type": "application/json"},
             )
-            if resp.status_code == 200:
-                text = resp.json().get("response", "").strip()
-                if text:
-                    logger.debug("Conversational answer from Ollama (%s)", model)
-                    return text, f"ollama:{model}"
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                if resp.status == 200:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    text = data.get("response", "").strip()
+                    if text:
+                        logger.debug("Conversational answer from Ollama (%s)", model)
+                        return text, f"ollama:{model}"
         except Exception as exc:
             logger.debug("Conversational Ollama chat failed: %s", exc)
 
