@@ -240,8 +240,27 @@ class ValidationAgent:
         self._engine = engine
         self._validator = ValidationEngine()
 
+    # Patterns that bypass the named-layer check (conversational / educational / code-gen)
+    _LAYER_FREE_RE = re.compile(
+        r"^(?:hi|hello|hey|howdy|greetings?|help|what\s+can\s+you|who\s+are\s+you)"
+        r"|\b(?:what\s+is|what\s+are|how\s+(?:do\s+I|to|does)|explain|describe|define"
+        r"|tell\s+me\s+about|difference\s+between)\b"
+        r"|\b(?:generate|write|create|show|give\s+me|make)\b.{0,50}"
+        r"\b(?:code|script|snippet|example|template|function)\b",
+        re.IGNORECASE,
+    )
+
     def check_request(self, query: str, state: Optional[Any] = None) -> Optional[str]:
-        """Return a message when the request names a layer that isn't loaded."""
+        """
+        Return a message when the request names a layer that isn't loaded.
+
+        Conversational, educational, and code-gen queries are exempt so the
+        engine responds helpfully even when no project is open.
+        """
+        # Don't gate on layers for non-spatial queries
+        if self._LAYER_FREE_RE.search(query or ""):
+            return None
+
         state = state if state is not None else getattr(self._engine, "state", None)
         if state is None:
             return None

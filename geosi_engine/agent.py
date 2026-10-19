@@ -411,15 +411,50 @@ class GeoSIAgent:
                     matches.append((available, ratio))
         return sorted(matches, key=lambda x: x[1], reverse=True)
 
+    # Patterns that indicate the query doesn't need any loaded layers.
+    _LAYER_FREE_RE = re.compile(
+        r"""
+        ^(?:hi|hello|hey|howdy|greetings?|help|what\s+can\s+you|who\s+are\s+you) |
+        \b(?:generate|write|create|show|give\s+me|make)\b.{0,40}
+            \b(?:code|script|example|snippet|template|function|class)\b |
+        \b(?:what\s+is|what\s+are|how\s+(?:do\s+I|to)|explain|describe|define|tell\s+me\s+about)\b |
+        \b(?:list\s+(?:all\s+)?(?:tools?|algorithms?|operations?|capabilities?)) |
+        \b(?:NDVI|NDWI|CRS|WGS|EPSG|GeoJSON|shapefile|GeoPackage|FlatGeobuf|WKT|WKB|
+           raster|vector|polygon|linestring|geometry|projection|reprojection|
+           coordinate|spatial\s+join|dissolve|buffer|clip|intersect)\b(?![^?]*\blayer\b)
+        """,
+        re.IGNORECASE | re.VERBOSE,
+    )
+
+    def _query_needs_layers(self, query: str) -> bool:
+        """Return False when the query is conversational / educational / code-gen."""
+        if self._LAYER_FREE_RE.search(query or ""):
+            return False
+        # Any spatial verb + named layer → needs layers
+        spatial_verbs = re.compile(
+            r"\b(buffer|clip|dissolve|intersect|reproject|select|extract|join|"
+            r"merge|union|difference|count|centroid|convex.hull|simplify|fix|"
+            r"rasterize|polygonize|calculate|compute|aggregate)\b",
+            re.IGNORECASE,
+        )
+        return bool(spatial_verbs.search(query or ""))
+
     def validate_layers_exist(
         self, request: AnalysisRequest, state: StateManager
     ) -> Tuple[bool, Optional[str]]:
         """
         Validate that requested layers exist in the QGIS project.
         Returns (is_valid, error_message).
+
+        Conversational queries, code-generation requests, and educational
+        GIS questions bypass the "no layers loaded" check entirely.
         """
         if not state:
             return False, "No state manager available"
+
+        # Don't block the response for layer-free intents
+        if not self._query_needs_layers(request.query or ""):
+            return True, None
 
         available = state.list_layers()
         if not available:

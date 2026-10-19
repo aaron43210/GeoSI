@@ -179,3 +179,57 @@ def test_each_check_allows_different_geometry():
     # "5 random points in each zone" → 10 points is right, not "one per zone"
     eng = FakeEngine([_plan()], [_result(_layer("pts", "Point", 10))])
     assert AgentLoop(eng).run("create 5 random points inside each flood_zones polygon").success
+
+
+# ── Conversational / layer-free tests ────────────────────────────────────────
+
+def test_greeting_answered_without_layers():
+    """'hi' must succeed even with no layers loaded."""
+    eng = FakeEngine([], [])  # no layers, no plans, no results
+    eng.state = __import__("geosi_engine.state", fromlist=["StateManager"]).StateManager()
+    res = __import__("geosi_engine.agent_loop", fromlist=["AgentLoop"]).AgentLoop(eng).run("hi")
+    assert res.success
+    assert "GeoSI" in res.answer or "hi" in res.answer.lower() or res.answer
+
+
+def test_gis_question_not_blocked_without_layers():
+    """Educational GIS questions must not be rejected when no layers are loaded."""
+    from geosi_engine.agent_loop import AgentLoop
+    from geosi_engine.state import StateManager
+    eng = FakeEngine([], [])
+    eng.state = StateManager()
+    res = AgentLoop(eng).run("What is NDVI?")
+    # Must succeed (answer or no-steps graceful) — must NOT return the "no layers" error
+    assert "No layers" not in (res.answer or "")
+    assert "No layers" not in (res.error or "")
+
+
+def test_code_gen_not_blocked_without_layers():
+    """Code-gen queries must not be rejected when no layers are loaded."""
+    from geosi_engine.agent_loop import AgentLoop
+    from geosi_engine.state import StateManager
+    eng = FakeEngine([], [])
+    eng.state = StateManager()
+    res = AgentLoop(eng).run("Generate GeoPandas code to buffer points by 500 m")
+    assert "No layers" not in (res.answer or "")
+    assert "No layers" not in (res.error or "")
+
+
+def test_validation_check_request_skips_greeting():
+    """check_request must not report missing layers for a greeting."""
+    from geosi_engine.agents.validation import ValidationAgent
+    from geosi_engine.state import StateManager
+    eng = FakeEngine([], [])
+    eng.state = StateManager()
+    va = ValidationAgent(eng)
+    assert va.check_request("hello, what can you do?", eng.state) is None
+
+
+def test_validation_check_request_skips_knowledge_query():
+    """check_request must not report missing layers for a knowledge question."""
+    from geosi_engine.agents.validation import ValidationAgent
+    from geosi_engine.state import StateManager
+    eng = FakeEngine([], [])
+    eng.state = StateManager()
+    va = ValidationAgent(eng)
+    assert va.check_request("What is a CRS and how do I reproject?", eng.state) is None

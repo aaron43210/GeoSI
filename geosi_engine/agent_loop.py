@@ -247,6 +247,10 @@ class AgentLoop:
                 plan = self._plan(query, feedback)
             if not plan.steps:
                 if not report.attempts:
+                    # Try conversational / code-gen answer before giving up
+                    conv = self._conversational_answer(query, plan)
+                    if conv is not None:
+                        return conv
                     # Nothing runnable (refused, no planner): surface the explanation
                     return self.engine.executor.run(plan)
                 break  # re-planning produced nothing; keep earlier attempts
@@ -304,6 +308,141 @@ class AgentLoop:
         result.report = team.reporter.render_summary(final.plan, result,
                                                      getattr(self.engine, "_session_id", ""))
         return result
+
+    # ── Conversational / code-gen fallback ───────────────────────────────
+
+    # Queries that ask for code or scripts
+    _CODE_RE = re.compile(
+        r"\b(?:generate|write|create|show|give\s+me|make|example)\b.{0,50}"
+        r"\b(?:code|script|snippet|example|template|function|class)\b",
+        re.IGNORECASE,
+    )
+    # Greetings / help
+    _GREET_RE = re.compile(
+        r"^(?:hi|hello|hey|howdy|greetings?|help|what\s+can\s+you|who\s+are\s+you)",
+        re.IGNORECASE,
+    )
+    # GIS knowledge questions
+    _KNOWLEDGE_RE = re.compile(
+        r"\b(?:what\s+is|what\s+are|how\s+(?:do\s+I|to|does)|explain|describe|define"
+        r"|tell\s+me\s+about|difference\s+between|when\s+(?:to|should))\b",
+        re.IGNORECASE,
+    )
+
+    _GREETING_REPLY = (
+        "👋 Hi! I'm **GeoSI**, your autonomous geospatial assistant.\n\n"
+        "I can help you:\n"
+        "• **Analyse layers** — buffer, clip, dissolve, reproject, spatial join …\n"
+        "• **Answer GIS questions** — CRS, NDVI, projections, file formats …\n"
+        "• **Generate code** — GeoPandas, PyQGIS, GDAL, Rasterio snippets\n"
+        "• **Remote sensing** — NDVI, NDWI, band math on your rasters\n\n"
+        "Load a layer to run spatial operations, or just ask me anything!"
+    )
+
+    def _conversational_answer(
+        self, query: str, plan: "ExecutionPlan"
+    ) -> Optional["ExecutionResult"]:
+        """
+        Return a conversational ExecutionResult for non-spatial queries so the
+        engine never blocks on "no layers loaded."
+
+        Priority:
+            1. Greetings / help  → canned reply (no LLM cost)
+            2. Code-gen request  → LLM in chat mode (or a built-in template)
+            3. GIS question      → LLM in chat mode (or a best-effort answer)
+
+        Returns None when the query is clearly spatial and the empty-plan
+        reasoning (e.g. "No layers loaded") should surface as-is.
+        """
+        from geosi_engine.models import ExecutionResult
+
+        q = (query or "").strip()
+
+        # 1. Greetings
+        if self._GREET_RE.match(q):
+            layers = self.engine.state.list_layers()
+            footer = (
+                f"\n\n📂 Loaded layers: {', '.join(layers)}"
+                if layers else "\n\n📂 No layers loaded yet."
+            )
+            return ExecutionResult(success=True, answer=self._GREETING_REPLY + footer)
+
+        is_code = bool(self._CODE_RE.search(q))
+        is_knowledge = bool(self._KNOWLEDGE_RE.search(q))
+        if not is_code and not is_knowledge:
+            return None  # spatial query with no plan → keep existing error
+
+        # 2 & 3. Try LLM in chat mode
+        llm_answer = self._llm_chat(q)
+        if llm_answer:
+            return ExecutionResult(success=True, answer=llm_answer)
+
+        # Offline fallback for common GIS concepts
+        offline = self._offline_answer(q)
+        if offline:
+            return ExecutionResult(success=True, answer=offline)
+
+        return None  # couldn't answer — let the original "no steps" path handle it
+
+    def _llm_chat(self, query: str) -> Optional[str]:
+        """Ask the configured LLM in conversational mode.  Returns None on failure."""
+        agent = self.engine.agent
+        system = (
+            "You are GeoSI, an expert GIS assistant. Answer the user's question clearly "
+            "and concisely. For code requests, wrap code in ```python ... ``` blocks. "
+            "For educational questions, include practical examples."
+        )
+        prompt = f"{system}\n\nUser: {query}\nAssistant:"
+        # Use the agent's existing LLM infrastructure
+        for provider_name, provider in getattr(agent, "_llm_providers", {}).items():
+            try:
+                resp = provider(prompt, json_mode=False)
+                if resp and resp.strip():
+                    logger.debug("Conversational answer from %s", provider_name)
+                    return resp.strip()
+            except Exception as exc:
+                logger.debug("Conversational LLM %s failed: %s", provider_name, exc)
+        return None
+
+    # Common offline answers for frequently-asked GIS questions
+    _OFFLINE_FACTS: list = [
+        (re.compile(r"\bNDVI\b", re.I),
+         "**NDVI (Normalized Difference Vegetation Index)**\n\n"
+         "Formula: `(NIR − Red) / (NIR + Red)`\n\n"
+         "Values range from −1 to +1. Values above 0.3 typically indicate healthy "
+         "vegetation. Use NIR and Red bands from Sentinel-2 (B8, B4) or Landsat (B5, B4)."),
+        (re.compile(r"\bCRS\b|\bcoordinate reference system\b", re.I),
+         "**CRS (Coordinate Reference System)**\n\n"
+         "Defines how spatial data relates to Earth's surface. Common CRS:\n"
+         "• **EPSG:4326** — WGS84 geographic (lon/lat, degrees)\n"
+         "• **EPSG:3857** — Web Mercator (meters, used by web maps)\n"
+         "• **EPSG:32633** — UTM Zone 33N (good for central Europe, meters)\n\n"
+         "Always reproject layers to the same CRS before running spatial operations."),
+        (re.compile(r"\bshapefile\b|\bGeoPackage\b|\bGeoJSON\b", re.I),
+         "**Common GIS formats:**\n\n"
+         "• **Shapefile (.shp)** — legacy multi-file format, 2 GB limit, max 10-char field names\n"
+         "• **GeoPackage (.gpkg)** — modern SQLite-based, single file, no size limit ✓\n"
+         "• **GeoJSON (.geojson)** — JSON-based, human-readable, WGS84 by convention\n"
+         "• **FlatGeobuf (.fgb)** — binary, streamable, very fast for large datasets\n\n"
+         "Prefer GeoPackage for production workflows; GeoJSON for web sharing."),
+        (re.compile(r"\bgeopandas\b.*\bcode\b|\bcode\b.*\bgeopandas\b", re.I),
+         "```python\nimport geopandas as gpd\nfrom shapely.geometry import Point\n\n"
+         "# Read a file\ngdf = gpd.read_file('data.gpkg')\n\n"
+         "# Create a GeoDataFrame from scratch\npts = gpd.GeoDataFrame(\n"
+         "    {'name': ['A', 'B']},\n"
+         "    geometry=[Point(0, 0), Point(1, 1)],\n"
+         "    crs='EPSG:4326'\n)\n\n"
+         "# Buffer (reproject to metres first)\ngdf_m = gdf.to_crs('EPSG:3857')\n"
+         "buffered = gdf_m.copy()\nbuffered.geometry = gdf_m.geometry.buffer(500)\n"
+         "buffered = buffered.to_crs('EPSG:4326')\nbuffered.to_file('output.gpkg')\n```"),
+    ]
+
+    def _offline_answer(self, query: str) -> Optional[str]:
+        """Return a canned answer for common GIS questions when the LLM is offline."""
+        for pattern, answer in self._OFFLINE_FACTS:
+            if pattern.search(query):
+                return answer
+        return None
 
     def _plan(self, query: str, feedback: Optional[str]) -> ExecutionPlan:
         layers = self.engine.state.list_layers()
