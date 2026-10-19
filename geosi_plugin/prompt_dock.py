@@ -114,13 +114,25 @@ class GeoSIDock:
             "font-family: 'Consolas', 'Monaco', monospace; font-size: 13px; "
             "border: 1px solid #333; border-radius: 4px; padding: 8px;"
         )
+        # Detect which LLM is available for the welcome message
+        agent = self.engine.agent
+        if agent._api_configured():
+            llm_label = f"🟢 <b>{agent._api_model}</b> (hosted)"
+        elif self._ollama_online(agent):
+            llm_label = f"🟢 <b>{agent._ollama_model}</b> (Ollama — live)"
+        else:
+            llm_label = "🟡 <b>Offline mode</b> (deterministic + templates)"
+
         self.chat_display.setHtml(
-            "<p style='color: #4CAF50;'>🌍 GeoSI v2 ready. "
-            f"<b>{tool_count}</b> QGIS tools auto-discovered.</p>"
-            "<p style='color: #888;'>Type a GIS query, or try:</p>"
-            "<p style='color: #888;'>• <b>tools</b> — list all tools</p>"
-            "<p style='color: #888;'>• <b>layers</b> — list loaded layers</p>"
-            "<p style='color: #888;'>• <b>Buffer hospitals by 500m</b></p>"
+            "<p style='color: #4CAF50;'>🌍 <b>GeoSI v2</b> ready — "
+            f"<b>{tool_count}</b> QGIS tools auto-discovered. LLM: {llm_label}</p>"
+            "<p style='color: #888;'>I can help with GIS operations, answer questions,"
+            " and generate Python/GeoPandas code — no layers needed to start. Try:</p>"
+            "<p style='color: #aaa;'>• <b>hi</b> — get started</p>"
+            "<p style='color: #aaa;'>• <b>What is NDVI?</b></p>"
+            "<p style='color: #aaa;'>• <b>Generate GeoPandas code for buffering points</b></p>"
+            "<p style='color: #aaa;'>• <b>Buffer hospitals by 500m</b> (with a layer loaded)</p>"
+            "<p style='color: #aaa;'>• <b>tools</b> / <b>layers</b> / <b>search &lt;keyword&gt;</b></p>"
         )
         layout.addWidget(self.chat_display)
 
@@ -310,10 +322,17 @@ class GeoSIDock:
             return
         if result.success:
             self._append_assistant(result.answer)
+            # Show which model answered (plan_source tells us)
+            src = getattr(result, "plan_source", None)
+            if src and src not in ("rule_based", "deterministic", "template"):
+                # src is like "ollama:llama3:latest" or "api:gpt-4o-mini"
+                self._append_system(
+                    f"<span style='font-size:11px;color:#666;'>↳ answered by {html.escape(str(src))}</span>"
+                )
             if result.reasoning:
                 self._append_system(
                     f"<details><summary>📋 Reasoning</summary>"
-                    f"<pre>{result.reasoning}</pre></details>"
+                    f"<pre>{html.escape(result.reasoning)}</pre></details>"
                 )
             # Auto-load output layers into QGIS (main thread)
             self._load_result_layers(result)
@@ -569,6 +588,18 @@ class GeoSIDock:
         self.chat_display.append(
             f"<p style='color: #9E9E9E; font-size: 12px;'>{text}</p>"
         )
+
+    @staticmethod
+    def _ollama_online(agent) -> bool:
+        """Return True if the local Ollama endpoint is reachable right now."""
+        try:
+            import requests
+            return requests.get(
+                getattr(agent, "_ollama_endpoint", "http://localhost:11434") + "/api/tags",
+                timeout=1.0,
+            ).ok
+        except Exception:
+            return False
 
     def _append_error(self, text: str):
         self.chat_display.append(

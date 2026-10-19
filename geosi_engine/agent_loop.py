@@ -374,67 +374,74 @@ class AgentLoop:
 
         # 2 & 3. Try LLM in chat mode
         try:
-            llm_answer = self._llm_chat(q)
+            llm_answer, llm_source = self._llm_chat(q)
             if llm_answer:
-                return ExecutionResult(success=True, answer=llm_answer)
+                return ExecutionResult(success=True, answer=llm_answer, plan_source=llm_source)
         except Exception as exc:
             logger.debug("Conversational LLM failed: %s", exc)
 
         # Offline fallback for common GIS concepts
         offline = self._offline_answer(q)
         if offline:
-            return ExecutionResult(success=True, answer=offline)
+            return ExecutionResult(success=True, answer=offline, plan_source="offline_template")
 
         return None  # couldn't answer — let the original "no steps" path handle it
 
-    def _llm_chat(self, query: str) -> Optional[str]:
-        """Ask the configured LLM in conversational mode.  Returns None on failure."""
+    def _llm_chat(self, query: str) -> tuple:
+        """
+        Ask the configured LLM in conversational mode.
+
+        Returns (answer_text, source_label) where source_label identifies
+        which provider answered (e.g. "ollama:llama3:latest").
+        Returns ("", "") on failure.
+        """
         agent = getattr(self.engine, "agent", None)
         if agent is None:
-            return None
+            return "", ""
 
         system = (
             "You are GeoSI, an expert GIS assistant. Answer the user's question clearly "
-            "and concisely. For code requests, wrap code in ```python ... ``` blocks. "
-            "For educational questions, include practical examples."
+            "and concisely. For code requests, provide complete, production-ready Python "
+            "code inside ```python ... ``` blocks. For GIS concepts, include practical "
+            "examples and mention relevant coordinate systems or formats where helpful."
         )
         prompt = f"{system}\n\nUser: {query}\nAssistant:"
 
-        # 1. Hosted OpenAI-compatible API if configured
+        # 1. Hosted OpenAI-compatible API if configured (Groq, OpenAI, etc.)
         if getattr(agent, "_api_configured", lambda: False)():
             try:
                 resp = agent._api_chat(prompt, json_mode=False)
                 if resp and resp.strip():
-                    logger.debug("Conversational answer from hosted API")
-                    return resp.strip()
+                    model = getattr(agent, "_api_model", "hosted-api")
+                    logger.debug("Conversational answer from hosted API (%s)", model)
+                    return resp.strip(), f"api:{model}"
             except Exception as exc:
                 logger.debug("Conversational API chat failed: %s", exc)
 
-        # 2. Ollama local model
-        endpoint = getattr(agent, "_ollama_endpoint", "")
-        model = getattr(agent, "_ollama_model", "")
-        if endpoint and model:
-            try:
-                import requests
-                resp = requests.post(
-                    f"{endpoint}/api/generate",
-                    json={
-                        "model": model,
-                        "prompt": prompt,
-                        "stream": False,
-                        "options": {"temperature": 0.2},
-                    },
-                    timeout=30,
-                )
-                if resp.status_code == 200:
-                    text = resp.json().get("response", "").strip()
-                    if text:
-                        logger.debug("Conversational answer from Ollama")
-                        return text
-            except Exception as exc:
-                logger.debug("Conversational Ollama chat failed: %s", exc)
+        # 2. Ollama local model (llama3, etc.)
+        endpoint = getattr(agent, "_ollama_endpoint", "http://localhost:11434")
+        model = getattr(agent, "_ollama_model", "llama3")
+        try:
+            import requests
+            resp = requests.post(
+                f"{endpoint}/api/generate",
+                json={
+                    "model": model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"temperature": 0.2},
+                },
+                timeout=60,
+            )
+            if resp.status_code == 200:
+                text = resp.json().get("response", "").strip()
+                if text:
+                    logger.debug("Conversational answer from Ollama (%s)", model)
+                    return text, f"ollama:{model}"
+        except Exception as exc:
+            logger.debug("Conversational Ollama chat failed: %s", exc)
 
-        return None
+        return "", ""
 
     # Offline code templates prioritized when user asks for code
     _OFFLINE_CODE_SNIPPETS: list = [
