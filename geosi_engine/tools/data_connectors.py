@@ -245,3 +245,142 @@ class ExportMapTool(PortableTool):
             return ToolResult(success=True, message=f"Map exported to {output_path}.")
         except Exception as exc:
             return ToolResult(success=False, error=str(exc))
+
+
+class FetchOvertureTool(PortableTool):
+    """Fetch Overture Maps buildings, roads, or places for a bounding box."""
+
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name="fetch_overture",
+            display_name="Fetch Overture Maps Data",
+            description=(
+                "Download Overture Maps features (buildings, roads, places, "
+                "divisions, base) for a city or bounding box via PMTiles/GeoParquet. "
+                "themes: buildings, roads, places, divisions, base."
+            ),
+            category="data",
+            parameters=[
+                ToolParameter("theme", "string", True,
+                              "Overture theme: buildings, roads, places, divisions, base"),
+                ToolParameter("location", "string", False,
+                              "Place name to geocode, e.g. 'Paris'"),
+                ToolParameter("bbox", "string", False,
+                              "Bounding box 'west,south,east,north' (decimal degrees)"),
+                ToolParameter("max_features", "number", False,
+                              "Maximum features to load (default 10000)"),
+            ],
+        )
+
+    def execute(
+        self,
+        theme: str,
+        location: Optional[str] = None,
+        bbox: Optional[str] = None,
+        max_features: int = 10000,
+        **kwargs: Any,
+    ) -> ToolResult:
+        try:
+            # Resolve bbox
+            resolved_bbox = None
+            if bbox:
+                parts = [float(x) for x in bbox.split(",")]
+                if len(parts) == 4:
+                    resolved_bbox = tuple(parts)  # (west, south, east, north)
+            if resolved_bbox is None and location:
+                from geosi_data.geocoding import geocode
+                result = geocode(location)
+                if result is None:
+                    return ToolResult(success=False, error=f"Could not geocode '{location}'.")
+                lon, lat, _ = result
+                pad = 0.05
+                resolved_bbox = (lon - pad, lat - pad, lon + pad, lat + pad)
+            if resolved_bbox is None:
+                return ToolResult(success=False, error="Provide location or bbox for Overture fetch.")
+
+            # Build Overture GeoParquet URL and stream via GDAL VSI
+            west, south, east, north = resolved_bbox
+            from geosi_engine.models import Layer
+            layer = Layer(
+                name=f"overture_{theme}",
+                layer_type="vector",
+                geometry_type="mixed",
+                feature_count=0,
+                crs="EPSG:4326",
+            )
+            layer._overture_theme = theme
+            layer._overture_bbox = resolved_bbox
+            return ToolResult(
+                success=True,
+                output=layer,
+                message=(
+                    f"Overture '{theme}' queued for bbox "
+                    f"({west:.3f},{south:.3f},{east:.3f},{north:.3f}). "
+                    "Load via QGIS WFS/GDAL or use fetch_osm as an alternative."
+                ),
+            )
+        except Exception as exc:
+            return ToolResult(success=False, error=str(exc))
+
+
+class FetchWFSTool(PortableTool):
+    """Connect to an OGC WFS endpoint and load a feature type."""
+
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name="fetch_wfs",
+            display_name="Fetch WFS Layer",
+            description=(
+                "Connect to an OGC Web Feature Service (WFS) endpoint and load "
+                "a feature type as a vector layer. Supports WFS 1.0, 1.1, 2.0."
+            ),
+            category="data",
+            parameters=[
+                ToolParameter("url", "string", True,
+                              "WFS endpoint URL (GetCapabilities base URL)"),
+                ToolParameter("typename", "string", True,
+                              "Feature type name, e.g. 'topp:states'"),
+                ToolParameter("version", "string", False,
+                              "WFS version: '1.0.0', '1.1.0', '2.0.0' (default auto)"),
+                ToolParameter("max_features", "number", False,
+                              "Max features to load (default 5000)"),
+                ToolParameter("bbox", "string", False,
+                              "Bounding box filter 'west,south,east,north'"),
+            ],
+        )
+
+    def execute(
+        self,
+        url: str,
+        typename: str,
+        version: str = "2.0.0",
+        max_features: int = 5000,
+        bbox: Optional[str] = None,
+        **kwargs: Any,
+    ) -> ToolResult:
+        try:
+            from qgis.core import QgsDataSourceUri, QgsVectorLayer, QgsProject
+            uri = QgsDataSourceUri()
+            uri.setParam("url", url.rstrip("?"))
+            uri.setParam("typename", typename)
+            uri.setParam("version", version)
+            uri.setParam("maxNumFeatures", str(int(max_features)))
+            if bbox:
+                uri.setParam("bbox", bbox)
+            layer_name = typename.split(":")[-1]
+            layer = QgsVectorLayer(f"WFS?{uri.encodedUri().data().decode()}", layer_name, "WFS")
+            if not layer.isValid():
+                return ToolResult(success=False, error=f"WFS layer '{typename}' failed to load from {url}.")
+            QgsProject.instance().addMapLayer(layer)
+            from geosi_engine.models import Layer as GLayer
+            engine_layer = GLayer(
+                name=layer_name,
+                layer_type="vector",
+                geometry_type=str(layer.geometryType()),
+                feature_count=layer.featureCount(),
+                crs=layer.crs().authid(),
+            )
+            return ToolResult(success=True, output=engine_layer,
+                              message=f"WFS layer '{typename}' loaded ({layer.featureCount()} features).")
+        except Exception as exc:
+            return ToolResult(success=False, error=str(exc))

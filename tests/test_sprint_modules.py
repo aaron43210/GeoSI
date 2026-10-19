@@ -371,3 +371,101 @@ class TestDataConnectorSpecs(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Upgraded ASTGuard — comprehensive blocked list from TerraLab analysis
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestASTGuardExpanded(unittest.TestCase):
+    def setUp(self):
+        from geosi_engine.security import ASTGuard
+        self.guard = ASTGuard
+
+    def test_blocks_threading(self):
+        ok, v = self.guard.check("import threading\nt = threading.Thread(target=lambda: None)")
+        self.assertFalse(ok)
+
+    def test_blocks_pickle(self):
+        ok, v = self.guard.check("import pickle\npickle.loads(b'')")
+        self.assertFalse(ok)
+
+    def test_blocks_qgs_auth_manager(self):
+        ok, v = self.guard.check("mgr = QgsApplication.authManager()")
+        self.assertFalse(ok)
+
+    def test_blocks_dunder_subclasses(self):
+        ok, v = self.guard.check("x = object.__subclasses__()")
+        self.assertFalse(ok)
+
+    def test_blocks_ssh_path_pattern(self):
+        ok, v = self.guard.check("f = open('/home/user/.ssh/id_rsa', 'r')")
+        self.assertFalse(ok)
+
+    def test_blocks_etc_passwd_pattern(self):
+        ok, v = self.guard.check("open('/etc/passwd')")
+        self.assertFalse(ok)
+
+    def test_qgis_processing_still_allowed(self):
+        code = (
+            "import processing\n"
+            "from qgis.core import QgsVectorLayer, QgsProject\n"
+            "result = processing.run('native:buffer', {'INPUT': 'layer', 'DISTANCE': 100})"
+        )
+        ok, v = self.guard.check(code)
+        self.assertTrue(ok, v)
+
+    def test_numpy_geopandas_allowed(self):
+        code = (
+            "import numpy as np\n"
+            "import geopandas as gpd\n"
+            "gdf = gpd.read_file('test.gpkg')\n"
+            "gdf['area'] = gdf.geometry.area\n"
+        )
+        ok, v = self.guard.check(code)
+        self.assertTrue(ok, v)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# New data connector tools — Overture + WFS specs
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestNewDataConnectorSpecs(unittest.TestCase):
+    def test_fetch_overture_spec(self):
+        from geosi_engine.tools.data_connectors import FetchOvertureTool
+        spec = FetchOvertureTool().spec()
+        self.assertEqual(spec.name, "fetch_overture")
+        self.assertEqual(spec.category, "data")
+        required = [p.name for p in spec.parameters if p.required]
+        self.assertIn("theme", required)
+
+    def test_fetch_wfs_spec(self):
+        from geosi_engine.tools.data_connectors import FetchWFSTool
+        spec = FetchWFSTool().spec()
+        self.assertEqual(spec.name, "fetch_wfs")
+        required = [p.name for p in spec.parameters if p.required]
+        self.assertIn("url", required)
+        self.assertIn("typename", required)
+
+    def test_fetch_overture_no_bbox_no_location_fails(self):
+        from geosi_engine.tools.data_connectors import FetchOvertureTool
+        result = FetchOvertureTool().execute(theme="buildings")
+        self.assertFalse(result.success)
+        self.assertIn("bbox", result.error.lower() or result.error)
+
+    def test_fetch_overture_with_bbox_succeeds(self):
+        import json
+        # Mock geocoding not needed — bbox provided directly
+        from geosi_engine.tools.data_connectors import FetchOvertureTool
+        result = FetchOvertureTool().execute(
+            theme="buildings", bbox="-0.15,51.48,0.0,51.55"
+        )
+        self.assertTrue(result.success)
+        self.assertIn("buildings", result.message)
+
+    def test_all_tools_in_registry(self):
+        from geosi_engine.registry import ToolRegistry
+        reg = ToolRegistry()
+        reg.discover_portable_tools()
+        for name in ("fetch_overture", "fetch_wfs"):
+            self.assertIsNotNone(reg.get_tool(name), f"{name} not in registry")

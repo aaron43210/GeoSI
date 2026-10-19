@@ -24,48 +24,108 @@ from typing import List, Tuple
 
 logger = logging.getLogger("geosi_engine.security")
 
-# ── Blocked module names ───────────────────────────────────────────────
+# ── Blocked module names (comprehensive — derived from TerraLab ASTGuard) ─
 BLOCKED_MODULES = frozenset({
-    "os", "subprocess", "sys", "ctypes", "socket",
-    "threading", "multiprocessing", "signal",
-    "importlib", "importlib.util",
-    "builtins", "gc", "inspect",
-    "pty", "popen2", "commands",
-    "winreg", "winreg", "msvcrt",
+    # Process / system
+    "subprocess", "ctypes", "socket", "multiprocessing", "signal", "pty", "tty",
+    "marshal", "_thread", "winreg", "keyring", "code", "pdb", "runpy",
+    # Network
+    "smtplib", "ftplib", "telnetlib", "socketserver", "http.server", "xmlrpc",
+    "ssl", "asyncio", "selectors", "select",
+    "requests", "urllib3", "httpx", "aiohttp", "http.client", "urllib.request",
+    # Filesystem / archives
+    "fileinput", "linecache", "tarfile", "gzip", "bz2", "lzma", "zlib",
+    "configparser", "plistlib",
+    # Concurrency
+    "threading", "concurrent", "concurrent.futures", "sched", "queue",
+    # Introspection / import machinery
+    "builtins", "operator", "types", "weakref", "importlib", "importlib.util",
+    "copyreg", "gc", "inspect", "dis",
+    # DB / low-level
+    "sqlite3", "_sqlite3", "dbm", "cffi", "_cffi_backend",
+    # System resources
+    "resource", "fcntl", "mmap", "faulthandler", "sysconfig", "site",
+    "setuptools", "pip", "ensurepip", "venv", "distutils",
+    # Windows-specific
+    "msvcrt", "_winapi", "_winreg", "_overlapped", "_wmi", "wmi", "winsound",
+    "msilib", "_msi", "pythoncom", "pywintypes",
+    # Misc dangerous
+    "webbrowser", "pickle", "shelve", "codecs", "zipimport", "pkgutil", "imp",
+    "_io", "_socket", "_ctypes", "_posixsubprocess", "posix", "nt",
+    # GIS raw C bindings (use QGIS API instead)
+    "gdal", "ogr", "osr", "gdalconst", "gdal_array",
+    # QGIS internals that bypass the security model
+    "qgis.utils",
+    # DB drivers
+    "httplib2", "owslib", "pyodbc", "psycopg", "psycopg2",
+    # Debug / profiling
+    "timeit", "cProfile", "profile", "trace", "doctest", "pydoc",
+    "logging.config", "bdb", "cmd",
+    # Legacy
+    "sys", "os",
 })
 
-# Specific attribute accesses to block (module.attr)
+# Blocked attribute accesses (name-level, checked on ast.Attribute nodes)
 BLOCKED_ATTRS = frozenset({
-    "os.system", "os.popen", "os.execv", "os.execve", "os.fork",
-    "os.kill", "os.remove", "os.unlink", "os.rmdir", "os.removedirs",
-    "os.rename", "os.replace",
-    "subprocess.run", "subprocess.Popen", "subprocess.call",
-    "subprocess.check_output",
-    "ctypes.cdll", "ctypes.windll",
-    "socket.socket",
+    # os module
+    "system", "popen", "execv", "execve", "execl", "execlp", "execvp", "execvpe",
+    "spawnl", "spawnv", "spawnve", "spawnlp", "spawnvp", "fork", "forkpty",
+    "kill", "remove", "unlink", "rmdir", "removedirs", "rename", "replace",
+    "environ", "getenv", "putenv", "unsetenv", "modules", "_getframe",
+    "settrace", "setprofile",
+    # subprocess
+    "run", "Popen", "call", "check_output", "check_call", "getoutput", "getstatusoutput",
+    # ctypes
+    "cdll", "windll", "CDLL", "WinDLL", "LibraryLoader",
+    # socket
+    "socket", "create_connection", "create_server",
+    # shutil
+    "rmtree", "copytree", "move",
+    # QGIS auth / credentials
+    "authManager", "masterPasswordIsSet", "setMasterPassword", "authMethodConfig",
+    "storeAuthenticationConfig", "loadAuthenticationConfig",
+    # base64 decode tricks
+    "b64decode", "fromhex", "decodebytes", "a85decode", "b32decode", "b16decode",
+    # filesystem traversal
+    "fdopen", "scandir", "walk", "listdir",
 })
 
-# Blocked built-in function calls
+# Blocked built-in names (checked on ast.Name/ast.Call nodes)
 BLOCKED_BUILTINS = frozenset({
     "eval", "exec", "compile", "__import__",
-    "open",    # allow only explicit allowlisted paths — blocked by default
-    "input",
+    "open",    # blocked by default; pass allow_open=True to permit
+    "input", "breakpoint",
+    "globals", "locals", "vars", "memoryview",
+    # QGIS objects that bypass the security model
+    "QgsSettings", "QSettings", "QgsAuthMethodConfig", "QgsAuthManager",
+    "QgsNetworkAccessManager", "QNetworkAccessManager", "QNetworkRequest",
+    "QProcess", "QFile", "QDir", "QSaveFile", "QTemporaryFile",
+    "QgsBlockingNetworkRequest", "QgsNetworkContentFetcher",
+    "QgsFileDownloader", "QgsProcessingModelAlgorithm",
+    "QgsProcessingRegistry", "QgsNativeAlgorithms",
 })
 
-# Blocked dunder names
+# Blocked dunder names (checked on ast.Attribute nodes)
 BLOCKED_DUNDERS = frozenset({
-    "__subclasses__", "__bases__", "__mro__",
-    "__class__", "__globals__", "__builtins__",
-    "__code__", "__func__",
+    "__import__", "__builtins__", "__subclasses__", "__globals__", "__code__",
+    "__closure__", "__loader__", "__spec__", "__dict__", "__bases__", "__mro__",
+    "__class__", "__reduce__", "__reduce_ex__", "__getattribute__", "__func__",
+    "__self__", "__wrapped__", "__traceback__", "__getattr__", "__setattr__",
+    "__delattr__", "__build_class__", "__init_subclass__", "__base__",
 })
 
-# Regex for dangerous string patterns even in comments/strings
+# Regex for dangerous string patterns
 _DANGEROUS_PATTERNS = [
     re.compile(r"rm\s+-rf\s+/"),
-    re.compile(r"shutil\.rmtree\(.*[/\\]"),
+    re.compile(r"shutil\.rmtree"),
     re.compile(r"DROP\s+TABLE", re.IGNORECASE),
     re.compile(r"DELETE\s+FROM", re.IGNORECASE),
     re.compile(r"authManager\(\)"),
+    re.compile(r"\.ssh[/\\]"),
+    re.compile(r"id_rsa|id_ed25519"),
+    re.compile(r"/etc/passwd|/etc/shadow"),
+    re.compile(r"\.aws[/\\]"),
+    re.compile(r"qgis-auth\.db"),
 ]
 
 
