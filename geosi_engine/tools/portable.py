@@ -188,9 +188,11 @@ class CalculateFieldTool(PortableTool):
     def execute(self, layer_name: Any, field_name: str, expression: str, **kwargs) -> ToolResult:
         layer = layer_name
         try:
+            from geosi_engine.agents.validation import safe_evaluator
+
             gdf = layer.features.copy()
-            # Simple eval (caution: in production use a safer parser)
-            gdf[field_name] = gdf.eval(expression)
+            # Column arithmetic only: the AST check rejects calls, imports and attributes
+            gdf[field_name] = safe_evaluator.evaluate(gdf, expression)
 
             new_layer = Layer(
                 name=f"{layer.name}_updated",
@@ -365,6 +367,7 @@ class ValidateGeometryTool(PortableTool):
                 "null": null_count,
             }
             ok = invalid_count == 0 and null_count == 0
+            # Finding problems is a successful check; the report says what is wrong
             msg = (
                 f"✅ '{layer.name}': {total} features — all geometries are valid."
                 if ok
@@ -373,6 +376,6 @@ class ValidateGeometryTool(PortableTool):
                     f"{invalid_count} invalid, {empty_count} empty, {null_count} null."
                 )
             )
-            return ToolResult(success=ok, output=report, message=msg)
+            return ToolResult(success=True, output=report, message=msg)
         except Exception as e:
             return ToolResult(success=False, error=str(e))

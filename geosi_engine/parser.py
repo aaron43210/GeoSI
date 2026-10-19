@@ -343,18 +343,9 @@ _OPERATION_MAP: Dict[str, List[str]] = {
     "buffer": ["buffer", "grow by", "ring around"],
     "intersect": ["intersect", "overlap", "common area", "inside both"],
     "union": ["union"],
-    "clip": [
-        "clip",
-        "cut to",
-        "crop",
-        "extract",
-        "subset",
-        "shapefile from",
-        "region from",
-        "area from",
-        "need",
-        "get",
-    ],
+    # Only words that mean clipping: "extract"/"get"/"need" matched everyday
+    # requests ("extract hospitals with more than 100 beds" is a filter)
+    "clip": ["clip", "cut to", "crop"],
     "difference": ["difference", "erase", "subtract"],
     "centroid": ["centroid", "center point", "centre point"],
     "dissolve": ["dissolve"],
@@ -409,7 +400,7 @@ _OPERATION_MAP: Dict[str, List[str]] = {
 # ---------------------------------------------------------------------------
 
 # Bump when parsing rules change so stale cached parses are not reused.
-_CACHE_VERSION = 3
+_CACHE_VERSION = 4
 
 
 def _default_cache_path() -> Path:

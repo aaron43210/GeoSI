@@ -90,7 +90,11 @@ def _safe_name(filename: str) -> str:
 def _unzip_shapefile(zip_path: Path, dest_dir: Path) -> Path:
     """Unzip a shapefile bundle into *dest_dir*, return path to the .shp."""
     with zipfile.ZipFile(zip_path, "r") as zf:
-        zf.extractall(dest_dir)
+        # The upload limit covers the compressed size; also cap what it expands to
+        unpacked = sum(info.file_size for info in zf.infolist())
+        if unpacked > _MAX_UPLOAD_MB * 1024 * 1024:
+            raise ValueError(f"Zip expands to {unpacked // (1024 * 1024)} MB, over the {_MAX_UPLOAD_MB} MB limit")
+        zf.extractall(dest_dir)  # zipfile strips absolute paths and ".." components
     shps = list(dest_dir.rglob("*.shp"))
     if not shps:
         raise ValueError("Zip does not contain a .shp file")

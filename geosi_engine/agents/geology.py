@@ -20,8 +20,10 @@ PRD §4.1 Agent #9 — Production requirements
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from geosi_engine.telemetry import set_span_attr, span
 
@@ -42,6 +44,52 @@ GEOLOGY_OPERATIONS = {
     "landslide_susceptibility": "Compute landslide susceptibility using slope/geology/landuse",
     "ai_interpretation": "AI-assisted geological interpretation using LLM + RAG",
 }
+
+
+def weighted_overlay(paths: List[str], weights: List[float]) -> Tuple[Any, dict, List[float]]:
+    """
+    Rescale each raster to 0-1 (no-data masked), combine with weights that
+    sum to 1. Returns (score with NaN where any input is no-data, profile,
+    normalised weights). All rasters must share the grid of the first.
+    """
+    import numpy as np
+    import rasterio
+
+    weights = [float(w) for w in weights[: len(paths)]] + [1.0] * max(0, len(paths) - len(weights))
+    total = sum(weights) or 1.0
+    weights = [w / total for w in weights]
+    score, profile = None, None
+    for path, w in zip(paths, weights):
+        with rasterio.open(path) as src:
+            band = src.read(1).astype(float)
+            if src.nodata is not None:
+                band[band == src.nodata] = np.nan
+            if profile is None:
+                profile = src.profile.copy()
+            elif band.shape != score.shape:
+                raise ValueError(f"{os.path.basename(path)} is not on the same grid as {os.path.basename(paths[0])}")
+        lo, hi = np.nanmin(band), np.nanmax(band)
+        norm = (band - lo) / (hi - lo) if hi > lo else np.zeros_like(band)
+        score = norm * w if score is None else score + norm * w
+    return score, profile, [round(w, 4) for w in weights]
+
+
+def write_score(score: Any, profile: dict, out_path: Optional[str], name: str) -> str:
+    import numpy as np
+    import rasterio
+
+    out_path = out_path or os.path.join(tempfile.mkdtemp(prefix="geosi_geology_"), f"{name}.tif")
+    profile.update(dtype="float32", count=1, nodata=-9999.0)
+    with rasterio.open(out_path, "w", **profile) as dst:
+        dst.write(np.where(np.isnan(score), -9999.0, score).astype("float32"), 1)
+    return out_path
+
+
+def high_share(score: Any, threshold: float = 0.7) -> float:
+    import numpy as np
+
+    valid = score[~np.isnan(score)]
+    return round(float((valid > threshold).sum() / valid.size * 100), 2) if valid.size else 0.0
 
 
 @dataclass
@@ -185,96 +233,66 @@ class GeologyAgent:
 
     def landslide_susceptibility(self, job: GeologyJobRequest, rag_context: list) -> GeologyJobResult:
         """
-        Compute landslide susceptibility using weighted overlay of:
-        slope, lithology, land use, and proximity to faults.
+        Landslide susceptibility as a weighted overlay of the input rasters,
+        in order: slope, lithology, land use, fault proximity. Each layer is
+        rescaled to 0-1 (no-data masked); weights are normalised to sum to 1,
+        so the score is 0-1 and "high" (> 0.7) is meaningful.
         """
         logger.info("Landslide susceptibility analysis")
-        try:
-            import rasterio
-
-            weights = job.parameters.get(
-                "weights", {"slope": 0.40, "lithology": 0.30, "land_use": 0.20, "fault_proximity": 0.10}
-            )
-            if not job.input_layers:
-                return GeologyJobResult(
-                    success=False, operation="landslide_susceptibility", error="At least one raster layer required."
-                )
-
-            with rasterio.open(job.input_layers[0]) as src:
-                data = src.read(1).astype(float)
-                profile = src.profile.copy()
-
-            # Normalize 0-1
-            data_min, data_max = data.min(), data.max()
-            normalized = (data - data_min) / (data_max - data_min + 1e-9)
-            slope_weight = list(weights.values())[0]
-            susceptibility = normalized * slope_weight
-
-            out_path = job.parameters.get("output_path", "geosi_landslide_susceptibility.tif")
-            profile.update(dtype="float32", count=1)
-            with rasterio.open(out_path, "w", **profile) as dst:
-                dst.write(susceptibility.astype("float32"), 1)
-
-            high_risk_pct = float((susceptibility > 0.7).sum() / susceptibility.size * 100)
+        if not job.input_layers:
             return GeologyJobResult(
-                success=True,
-                operation="landslide_susceptibility",
-                output_layer=out_path,
-                statistics={"high_risk_pct": round(high_risk_pct, 2), "weights_used": weights},
-                interpretation=f"{high_risk_pct:.1f}% of the study area shows high landslide susceptibility (>0.7).",
+                success=False, operation="landslide_susceptibility", error="At least one raster layer required."
             )
+        default = {"slope": 0.40, "lithology": 0.30, "land_use": 0.20, "fault_proximity": 0.10}
+        weights = job.parameters.get("weights", default)
+        weight_list = list(weights.values()) if isinstance(weights, dict) else list(weights)
+        try:
+            score, profile, used = weighted_overlay(job.input_layers, weight_list)
         except ImportError:
             return GeologyJobResult(
                 success=False, operation="landslide_susceptibility", error="rasterio not available."
             )
         except Exception as exc:
             return GeologyJobResult(success=False, operation="landslide_susceptibility", error=str(exc))
+        out_path = write_score(score, profile, job.parameters.get("output_path"), "landslide_susceptibility")
+        high = high_share(score)
+        factors = (
+            ", ".join(list(default)[: len(used)])
+            if not isinstance(weights, dict)
+            else ", ".join(list(weights)[: len(used)])
+        )
+        note = "" if len(used) > 1 else " Only one factor was given, so this reflects that layer alone."
+        return GeologyJobResult(
+            success=True,
+            operation="landslide_susceptibility",
+            output_layer=out_path,
+            statistics={"high_risk_pct": high, "weights_used": used, "factors": factors},
+            interpretation=f"{high:.1f}% of the study area shows high landslide susceptibility (> 0.7).{note}",
+        )
 
     def mineral_prospectivity(self, job: GeologyJobRequest, rag_context: list) -> GeologyJobResult:
-        """
-        Compute mineral prospectivity index using weights-of-evidence
-        or logistic regression on evidential layers.
-        """
+        """Mineral prospectivity: weighted overlay of evidential rasters (equal weights by default)."""
         logger.info("Mineral prospectivity: %d evidential layers", len(job.input_layers))
-        try:
-            import rasterio
-
-            if not job.input_layers:
-                return GeologyJobResult(
-                    success=False, operation="mineral_prospectivity", error="Evidential layers required."
-                )
-
-            weights = job.parameters.get("weights", [1.0 / len(job.input_layers)] * len(job.input_layers))
-            composite = None
-            profile = None
-            for path, w in zip(job.input_layers, weights):
-                with rasterio.open(path) as src:
-                    band = src.read(1).astype(float)
-                    b_min, b_max = band.min(), band.max()
-                    norm = (band - b_min) / (b_max - b_min + 1e-9)
-                    if composite is None:
-                        composite = norm * w
-                        profile = src.profile.copy()
-                    else:
-                        composite += norm * w
-
-            out_path = job.parameters.get("output_path", "geosi_mineral_prospectivity.tif")
-            profile.update(dtype="float32", count=1)
-            with rasterio.open(out_path, "w", **profile) as dst:
-                dst.write(composite.astype("float32"), 1)
-
-            high_pct = float((composite > 0.7).sum() / composite.size * 100)
+        if not job.input_layers:
             return GeologyJobResult(
-                success=True,
-                operation="mineral_prospectivity",
-                output_layer=out_path,
-                statistics={"high_prospectivity_pct": round(high_pct, 2), "n_layers": len(job.input_layers)},
-                interpretation=f"{high_pct:.1f}% of the area shows high mineral prospectivity.",
+                success=False, operation="mineral_prospectivity", error="Evidential layers required."
             )
+        weights = job.parameters.get("weights") or [1.0] * len(job.input_layers)
+        try:
+            score, profile, used = weighted_overlay(job.input_layers, list(weights))
         except ImportError:
             return GeologyJobResult(success=False, operation="mineral_prospectivity", error="rasterio not available.")
         except Exception as exc:
             return GeologyJobResult(success=False, operation="mineral_prospectivity", error=str(exc))
+        out_path = write_score(score, profile, job.parameters.get("output_path"), "mineral_prospectivity")
+        high = high_share(score)
+        return GeologyJobResult(
+            success=True,
+            operation="mineral_prospectivity",
+            output_layer=out_path,
+            statistics={"high_prospectivity_pct": high, "n_layers": len(job.input_layers), "weights_used": used},
+            interpretation=f"{high:.1f}% of the area shows high mineral prospectivity (> 0.7).",
+        )
 
     def ai_interpretation(self, job: GeologyJobRequest, rag_context: list) -> GeologyJobResult:
         """

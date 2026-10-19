@@ -21,6 +21,7 @@ Production requirements:
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -69,6 +70,12 @@ _INDEX_FORMULAS: dict[str, dict[str, Any]] = {
         "description": "Normalized Burn Ratio",
     },
 }
+
+
+def derived_path(source: str, suffix: str) -> str:
+    """'scene.TIF' -> 'scene_NDVI.tif' next to it. Never returns the source path."""
+    stem, _ = os.path.splitext(source)
+    return f"{stem}_{suffix}.tif"
 
 
 @dataclass
@@ -212,7 +219,8 @@ class RemoteSensingAgent:
                 data = {}
                 for role, band_num in bands.items():
                     arr = src.read(band_num).astype(float)
-                    arr[arr == src.nodata] = float("nan") if src.nodata else 0.0
+                    if src.nodata is not None:
+                        arr[arr == src.nodata] = float("nan")
                     data[role] = arr
 
                 # Compute index using formula from registry
@@ -220,12 +228,12 @@ class RemoteSensingAgent:
                 lo, hi = formula_info["range"]
                 result_arr = result_arr.clip(lo, hi)
 
-                out_path = layer.replace(".tif", f"_{idx}.tif")
+                out_path = derived_path(layer, idx)
                 profile = src.profile.copy()
                 profile.update(count=1, dtype="float32", nodata=-9999.0)
 
                 with rasterio.open(out_path, "w", **profile) as dst:
-                    dst.write(result_arr.astype("float32"), 1)
+                    dst.write(np.where(np.isnan(result_arr), -9999.0, result_arr).astype("float32"), 1)
 
             stats = {
                 "min": float(result_arr[~np.isnan(result_arr)].min()) if result_arr.size else None,
@@ -274,7 +282,7 @@ class RemoteSensingAgent:
             changed_pixels = int(binary_change.sum())
             pct_changed = changed_pixels / binary_change.size * 100
 
-            out_path = layer_t2.replace(".tif", "_change.tif")
+            out_path = derived_path(layer_t2, "change")
             profile.update(count=1, dtype="float32", nodata=-9999.0)
             with rasterio.open(out_path, "w", **profile) as dst:
                 dst.write(change.astype("float32"), 1)
@@ -318,7 +326,7 @@ class RemoteSensingAgent:
                         corrected = band  # placeholder for advanced methods
                     corrected_bands.append(corrected)
 
-            out_path = layer.replace(".tif", f"_{method}_corrected.tif")
+            out_path = derived_path(layer, f"{method}_corrected")
             profile.update(dtype="float32")
             with rasterio.open(out_path, "w", **profile) as dst:
                 for i, b in enumerate(corrected_bands, start=1):

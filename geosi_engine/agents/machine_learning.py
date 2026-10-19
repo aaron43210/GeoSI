@@ -18,6 +18,8 @@ PRD §4.1 Agent #8 — Production requirements
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional
@@ -57,6 +59,10 @@ class MLJobResult:
     eval_run_id: Optional[str] = None
     error: Optional[str] = None
     duration_ms: float = 0.0
+
+
+def _temp_path(name: str) -> str:
+    return os.path.join(tempfile.mkdtemp(prefix="geosi_ml_"), name)
 
 
 class MachineLearningAgent:
@@ -179,7 +185,7 @@ class MachineLearningAgent:
                 "algorithm": job.algorithm,
             }
 
-            out_path = job.output_path or f"geosi_model_{job.algorithm}_{int(time.time())}.joblib"
+            out_path = job.output_path or _temp_path(f"model_{job.algorithm}.joblib")
             joblib.dump(clf, out_path)
             logger.info("Classifier trained: accuracy=%.3f → %s", metrics["accuracy"], out_path)
 
@@ -224,7 +230,7 @@ class MachineLearningAgent:
                 "rmse": float(np.sqrt(mean_squared_error(y_test, preds))),
                 "n_train": len(X_train),
             }
-            out_path = job.output_path or f"geosi_regressor_{job.algorithm}_{int(time.time())}.joblib"
+            out_path = job.output_path or _temp_path(f"regressor_{job.algorithm}.joblib")
             joblib.dump(reg, out_path)
 
             return MLJobResult(
@@ -277,8 +283,15 @@ class MachineLearningAgent:
             metrics = {"n_clusters": n_clusters, "n_noise": int((labels == -1).sum()) if -1 in labels else 0}
             if sil is not None:
                 metrics["silhouette_score"] = sil
+            # Keep the result: the input features with a "cluster" column (-1 = noise for DBSCAN)
+            out = self._last_frame.copy()
+            out["cluster"] = labels
+            out_path = job.output_path or _temp_path(f"clusters_{algo}.gpkg")
+            out.to_file(out_path, driver="GPKG")
 
-            return MLJobResult(success=True, job_type="clustering", algorithm=job.algorithm, metrics=metrics)
+            return MLJobResult(
+                success=True, job_type="clustering", algorithm=job.algorithm, metrics=metrics, output_path=out_path
+            )
 
         except ImportError as e:
             return MLJobResult(
@@ -325,6 +338,13 @@ class MachineLearningAgent:
 
     def _dispatch(self, job: MLJobRequest) -> MLJobResult:
         jt = job.job_type.lower()
+        if jt in ("classification", "regression") and not job.target_column:
+            return MLJobResult(
+                success=False,
+                job_type=jt,
+                algorithm=job.algorithm,
+                error=f"{jt.capitalize()} needs a target_column: the attribute to learn.",
+            )
         if jt == "classification":
             return self.train_classifier(job)
         elif jt == "regression":
@@ -357,8 +377,17 @@ class MachineLearningAgent:
             import geopandas as gpd
 
             gdf = gpd.read_file(job.input_layers[0])
-            cols = job.feature_columns or [c for c in gdf.columns if c not in ("geometry", job.target_column)]
-            X = gdf[cols].select_dtypes(include="number").values
+            self._last_frame = gdf
+            if not job.feature_columns and job.job_type.lower() == "clustering":
+                # Spatial clustering: group features by where they are
+                pts = gdf.geometry.representative_point()
+                X = np.column_stack([pts.x.values, pts.y.values])
+            else:
+                cols = job.feature_columns or [c for c in gdf.columns if c not in ("geometry", job.target_column)]
+                X = gdf[cols].select_dtypes(include="number").values
+                if X.shape[1] == 0:
+                    logger.warning("No numeric feature columns in %s", job.input_layers[0])
+                    return None, None
             has_target = job.target_column and job.target_column in gdf.columns
             y = gdf[job.target_column].values if has_target else np.zeros(len(X))
             return X, y

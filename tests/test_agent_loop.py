@@ -3,6 +3,8 @@
 import os
 import tempfile
 
+import pytest
+
 from geosi_engine.agent_loop import AgentLoop
 from geosi_engine.models import (
     AnalysisRequest,
@@ -305,3 +307,65 @@ def test_spatial_task_without_layers_still_needs_layers():
     from geosi_engine.agent import GeoSIAgent
 
     assert GeoSIAgent._query_needs_layers(GeoSIAgent, "buffer hospitals by 500 m", [])
+
+
+# ── Resume, undo, and multi-step plumbing ──────────────────────────────
+
+
+def test_resume_unknown_and_rejected_actions():
+    loop = AgentLoop(FakeEngine([], []))
+    assert "No paused request" in loop.resume("nope", True).answer
+    loop.paused["a1"] = object()
+    res = loop.resume("a1", False)
+    assert res.denied and not res.success and "nothing was changed" in res.answer
+
+
+def test_undo_without_and_with_a_checkpoint():
+    loop = AgentLoop(FakeEngine([], []))
+    assert loop.undo_last() is False
+
+    class Manager:
+        def __init__(self):
+            self.rolled, self.discarded = [], []
+
+        def rollback(self, cp):
+            self.rolled.append(cp)
+            return True
+
+        def discard(self, cp):
+            self.discarded.append(cp)
+
+    mgr = Manager()
+    loop._checkpoints, loop.last_checkpoint_id = mgr, "cp-1"
+    assert loop.undo_last() is True and mgr.rolled == ["cp-1"] == mgr.discarded
+    assert loop.last_checkpoint_id is None and loop.undo_last() is False  # only once
+
+
+@pytest.mark.parametrize(
+    "piece, expected",
+    [
+        ("dissolve the result", "dissolve buf"),
+        ("count the hospitals inside them", "count the hospitals inside buf"),
+        ("add their area", "add buf area"),
+        ("simplify", "simplify of buf"),
+        ("add an area field", "add an area field to buf"),
+        ("clip hospitals to flood_zones", "clip hospitals to flood_zones"),  # names its own layers
+    ],
+)
+def test_follow_up_steps_refer_to_the_previous_output(piece, expected):
+    assert AgentLoop(FakeEngine([], []))._bind_reference(piece, "buf") == expected
+
+
+def test_intermediate_outputs_get_unique_names():
+    loop = AgentLoop(FakeEngine([], []))
+    first = loop._register_intermediate(_layer("hospitals", "Point"))
+    assert first.name == "hospitals_2" and loop.engine.state.get_layer("hospitals_2") is first
+    assert loop._register_intermediate(first) is first  # already registered: unchanged
+
+
+def test_chain_reports_which_sub_task_failed():
+    loop = AgentLoop(
+        FakeEngine([_plan(), _plan()], [_result(_layer("out", "Polygon")), _result(ok=False)], replan=False)
+    )
+    res = loop.run("buffer hospitals by 100 m and then dissolve the result")
+    assert not res.success and res.answer.startswith("❌ Sub-task 2 of 2 failed")

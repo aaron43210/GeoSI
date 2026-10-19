@@ -153,6 +153,7 @@ def abstract(text: str, layer_names) -> str:
 
 
 def _words(text: str) -> set:
+    # Includes common words on purpose: _TEMPLATE_MIN_SIMILARITY in agent.py is tuned to this scoring
     return {w.rstrip("s") for w in re.findall(r"[a-z]+", text.lower()) if len(w) > 2}
 
 

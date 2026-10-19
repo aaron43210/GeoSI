@@ -249,7 +249,7 @@ class GeoSIAgent:
             if plan is not None:
                 return plan
         plan = self._plan_with_rules(request)
-        plan.plan_source = "rule_based"
+        plan.plan_source = plan.plan_source or "rule_based"
         return plan
 
     # Seconds a self-probed connection result is reused (the dock sets it directly)
@@ -297,8 +297,8 @@ class GeoSIAgent:
         if operation in well_understood and self._is_simple_request(request.query):
             logger.info(f"Op '{operation}' well-understood → rule-based plan")
             plan = self._plan_with_rules(request)
-            plan.plan_source = "rule_based"
             if plan.steps:
+                plan.plan_source = "rule_based"
                 return plan
 
         for planner in (

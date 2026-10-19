@@ -184,7 +184,8 @@ markers = [
 
 [tool.coverage.run]
 branch = true
-omit = ["*/migrations/*", "*/tests/*"]
+# QGIS-only modules run in the QGIS jobs of the plugin workflow (tests/qgis_integration.py)
+omit = ["*/migrations/*", "*/tests/*", "geosi_engine/cartography/*", "geosi_server/qgis_runtime.py"]
 
 [tool.coverage.report]
 # Per-agent module target from PRD §14: >= 70% coverage per agent
