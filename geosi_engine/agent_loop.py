@@ -436,6 +436,66 @@ class AgentLoop:
 
         return None
 
+    # Offline code templates prioritized when user asks for code
+    _OFFLINE_CODE_SNIPPETS: list = [
+        (re.compile(r"\b(?:rasterio|raster.*ndvi|ndvi.*raster|band\s*4|band\s*8)\b", re.I),
+         "```python\nimport numpy as np\nimport rasterio\n\n"
+         "# Open Red (e.g. Band 4) and NIR (e.g. Band 8) GeoTIFFs\n"
+         "with rasterio.open('red_band4.tif') as red_src, rasterio.open('nir_band8.tif') as nir_src:\n"
+         "    red = red_src.read(1).astype('float32')\n"
+         "    nir = nir_src.read(1).astype('float32')\n"
+         "    meta = nir_src.meta.copy()\n\n"
+         "# Calculate NDVI: (NIR - Red) / (NIR + Red)\n"
+         "# Avoid zero-division warnings\n"
+         "denom = nir + red\n"
+         "ndvi = np.where(denom == 0, 0, (nir - red) / denom)\n"
+         "ndvi = np.clip(ndvi, -1.0, 1.0)\n\n"
+         "# Write NDVI result raster\n"
+         "meta.update(dtype=rasterio.float32, count=1, nodata=0.0)\n"
+         "with rasterio.open('ndvi_output.tif', 'w', **meta) as dst:\n"
+         "    dst.write(ndvi.astype('float32'), 1)\n\n"
+         "print('NDVI calculation complete: ndvi_output.tif')\n```"),
+        (re.compile(r"\b(?:geopandas|dataframe|gdf)\b", re.I),
+         "```python\nimport geopandas as gpd\nimport pandas as pd\nfrom shapely.geometry import Point\n\n"
+         "# Sample data with 5 points and attribute fields\n"
+         "data = {\n"
+         "    'id': [1, 2, 3, 4, 5],\n"
+         "    'site_name': ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo'],\n"
+         "    'elevation_m': [120.5, 230.1, 85.0, 310.4, 150.2],\n"
+         "    'status': ['Active', 'Active', 'Inactive', 'Active', 'Pending'],\n"
+         "    'longitude': [-122.4194, -122.4089, -122.4285, -122.4350, -122.4010],\n"
+         "    'latitude':  [ 37.7749,   37.7833,   37.7650,   37.7900,   37.7700],\n"
+         "}\n\n"
+         "df = pd.DataFrame(data)\n"
+         "geometry = [Point(xy) for xy in zip(df['longitude'], df['latitude'])]\n"
+         "gdf = gpd.GeoDataFrame(df, geometry=geometry, crs='EPSG:4326')\n\n"
+         "print('Created GeoDataFrame:')\n"
+         "print(gdf.head())\n\n"
+         "# Optional: Export to GeoPackage or GeoJSON\n"
+         "# gdf.to_file('sample_points.gpkg', layer='sample_points', driver='GPKG')\n```"),
+        (re.compile(r"\b(?:pyqgis|memory\s+layer|scratch\s+layer)\b", re.I),
+         "```python\nfrom qgis.core import QgsVectorLayer, QgsField, QgsFeature, QgsGeometry, QgsPointXY, QgsProject\nfrom qgis.PyQt.QtCore import QVariant\n\n"
+         "# Create memory layer with Point geometry in WGS84\n"
+         "layer = QgsVectorLayer('Point?crs=EPSG:4326', 'sample_points', 'memory')\n"
+         "prov = layer.dataProvider()\n\n"
+         "# Add attribute fields\n"
+         "prov.addAttributes([\n"
+         "    QgsField('id', QVariant.Int),\n"
+         "    QgsField('name', QVariant.String),\n"
+         "    QgsField('value', QVariant.Double)\n"
+         "])\n"
+         "layer.updateFields()\n\n"
+         "# Add a sample feature\n"
+         "feat = QgsFeature()\n"
+         "feat.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(-122.4194, 37.7749)))\n"
+         "feat.setAttributes([1, 'Site Alpha', 42.5])\n"
+         "prov.addFeatures([feat])\n"
+         "layer.updateExtents()\n\n"
+         "# Add to current QGIS project\n"
+         "QgsProject.instance().addMapLayer(layer)\n"
+         "print('Memory layer added to canvas.')\n```"),
+    ]
+
     # Common offline answers for frequently-asked GIS questions
     _OFFLINE_FACTS: list = [
         (re.compile(r"\bNDVI\b", re.I),
@@ -457,28 +517,15 @@ class AgentLoop:
          "• **GeoJSON (.geojson)** — JSON-based, human-readable, WGS84 by convention\n"
          "• **FlatGeobuf (.fgb)** — binary, streamable, very fast for large datasets\n\n"
          "Prefer GeoPackage for production workflows; GeoJSON for web sharing."),
-        (re.compile(r"\b(?:geopandas|dataframe|gdf)\b", re.I),
-         "```python\nimport geopandas as gpd\nimport pandas as pd\nfrom shapely.geometry import Point\n\n"
-         "# Sample data with 5 points and attribute fields\n"
-         "data = {\n"
-         "    'id': [1, 2, 3, 4, 5],\n"
-         "    'site_name': ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo'],\n"
-         "    'elevation_m': [120.5, 230.1, 85.0, 310.4, 150.2],\n"
-         "    'status': ['Active', 'Active', 'Inactive', 'Active', 'Pending'],\n"
-         "    'longitude': [-122.4194, -122.4089, -122.4285, -122.4350, -122.4010],\n"
-         "    'latitude':  [ 37.7749,   37.7833,   37.7650,   37.7900,   37.7700],\n"
-         "}\n\n"
-         "df = pd.DataFrame(data)\n"
-         "geometry = [Point(xy) for xy in zip(df['longitude'], df['latitude'])]\n"
-         "gdf = gpd.GeoDataFrame(df, geometry=geometry, crs='EPSG:4326')\n\n"
-         "print('Created GeoDataFrame:')\n"
-         "print(gdf.head())\n\n"
-         "# Optional: Export to GeoPackage or GeoJSON\n"
-         "# gdf.to_file('sample_points.gpkg', layer='sample_points', driver='GPKG')\n```"),
     ]
 
     def _offline_answer(self, query: str) -> Optional[str]:
         """Return a canned answer for common GIS questions when the LLM is offline."""
+        is_code = bool(self._CODE_RE.search(query))
+        if is_code:
+            for pattern, answer in self._OFFLINE_CODE_SNIPPETS:
+                if pattern.search(query):
+                    return answer
         for pattern, answer in self._OFFLINE_FACTS:
             if pattern.search(query):
                 return answer
