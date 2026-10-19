@@ -532,6 +532,16 @@ class GeoSIAgent:
         """
         query_lower = (request.query or "").lower()
 
+        # Conversational, educational, or code-generation queries should not
+        # receive a dummy spatial step like count_features.
+        if not self._query_needs_layers(request.query or ""):
+            return ExecutionPlan(
+                request=request,
+                steps=[],
+                reasoning="Conversational / code-generation query — handled by conversation engine",
+                plan_source="conversational",
+            )
+
         # ── Determine which operations to run ──────────────────────────
         operation = request.parameters.get("operation", "")
         if operation:

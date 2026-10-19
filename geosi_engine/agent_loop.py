@@ -373,9 +373,12 @@ class AgentLoop:
             return None  # spatial query with no plan → keep existing error
 
         # 2 & 3. Try LLM in chat mode
-        llm_answer = self._llm_chat(q)
-        if llm_answer:
-            return ExecutionResult(success=True, answer=llm_answer)
+        try:
+            llm_answer = self._llm_chat(q)
+            if llm_answer:
+                return ExecutionResult(success=True, answer=llm_answer)
+        except Exception as exc:
+            logger.debug("Conversational LLM failed: %s", exc)
 
         # Offline fallback for common GIS concepts
         offline = self._offline_answer(q)
@@ -386,22 +389,51 @@ class AgentLoop:
 
     def _llm_chat(self, query: str) -> Optional[str]:
         """Ask the configured LLM in conversational mode.  Returns None on failure."""
-        agent = self.engine.agent
+        agent = getattr(self.engine, "agent", None)
+        if agent is None:
+            return None
+
         system = (
             "You are GeoSI, an expert GIS assistant. Answer the user's question clearly "
             "and concisely. For code requests, wrap code in ```python ... ``` blocks. "
             "For educational questions, include practical examples."
         )
         prompt = f"{system}\n\nUser: {query}\nAssistant:"
-        # Use the agent's existing LLM infrastructure
-        for provider_name, provider in getattr(agent, "_llm_providers", {}).items():
+
+        # 1. Hosted OpenAI-compatible API if configured
+        if getattr(agent, "_api_configured", lambda: False)():
             try:
-                resp = provider(prompt, json_mode=False)
+                resp = agent._api_chat(prompt, json_mode=False)
                 if resp and resp.strip():
-                    logger.debug("Conversational answer from %s", provider_name)
+                    logger.debug("Conversational answer from hosted API")
                     return resp.strip()
             except Exception as exc:
-                logger.debug("Conversational LLM %s failed: %s", provider_name, exc)
+                logger.debug("Conversational API chat failed: %s", exc)
+
+        # 2. Ollama local model
+        endpoint = getattr(agent, "_ollama_endpoint", "")
+        model = getattr(agent, "_ollama_model", "")
+        if endpoint and model:
+            try:
+                import requests
+                resp = requests.post(
+                    f"{endpoint}/api/generate",
+                    json={
+                        "model": model,
+                        "prompt": prompt,
+                        "stream": False,
+                        "options": {"temperature": 0.2},
+                    },
+                    timeout=30,
+                )
+                if resp.status_code == 200:
+                    text = resp.json().get("response", "").strip()
+                    if text:
+                        logger.debug("Conversational answer from Ollama")
+                        return text
+            except Exception as exc:
+                logger.debug("Conversational Ollama chat failed: %s", exc)
+
         return None
 
     # Common offline answers for frequently-asked GIS questions
@@ -425,16 +457,24 @@ class AgentLoop:
          "• **GeoJSON (.geojson)** — JSON-based, human-readable, WGS84 by convention\n"
          "• **FlatGeobuf (.fgb)** — binary, streamable, very fast for large datasets\n\n"
          "Prefer GeoPackage for production workflows; GeoJSON for web sharing."),
-        (re.compile(r"\bgeopandas\b.*\bcode\b|\bcode\b.*\bgeopandas\b", re.I),
-         "```python\nimport geopandas as gpd\nfrom shapely.geometry import Point\n\n"
-         "# Read a file\ngdf = gpd.read_file('data.gpkg')\n\n"
-         "# Create a GeoDataFrame from scratch\npts = gpd.GeoDataFrame(\n"
-         "    {'name': ['A', 'B']},\n"
-         "    geometry=[Point(0, 0), Point(1, 1)],\n"
-         "    crs='EPSG:4326'\n)\n\n"
-         "# Buffer (reproject to metres first)\ngdf_m = gdf.to_crs('EPSG:3857')\n"
-         "buffered = gdf_m.copy()\nbuffered.geometry = gdf_m.geometry.buffer(500)\n"
-         "buffered = buffered.to_crs('EPSG:4326')\nbuffered.to_file('output.gpkg')\n```"),
+        (re.compile(r"\b(?:geopandas|dataframe|gdf)\b", re.I),
+         "```python\nimport geopandas as gpd\nimport pandas as pd\nfrom shapely.geometry import Point\n\n"
+         "# Sample data with 5 points and attribute fields\n"
+         "data = {\n"
+         "    'id': [1, 2, 3, 4, 5],\n"
+         "    'site_name': ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo'],\n"
+         "    'elevation_m': [120.5, 230.1, 85.0, 310.4, 150.2],\n"
+         "    'status': ['Active', 'Active', 'Inactive', 'Active', 'Pending'],\n"
+         "    'longitude': [-122.4194, -122.4089, -122.4285, -122.4350, -122.4010],\n"
+         "    'latitude':  [ 37.7749,   37.7833,   37.7650,   37.7900,   37.7700],\n"
+         "}\n\n"
+         "df = pd.DataFrame(data)\n"
+         "geometry = [Point(xy) for xy in zip(df['longitude'], df['latitude'])]\n"
+         "gdf = gpd.GeoDataFrame(df, geometry=geometry, crs='EPSG:4326')\n\n"
+         "print('Created GeoDataFrame:')\n"
+         "print(gdf.head())\n\n"
+         "# Optional: Export to GeoPackage or GeoJSON\n"
+         "# gdf.to_file('sample_points.gpkg', layer='sample_points', driver='GPKG')\n```"),
     ]
 
     def _offline_answer(self, query: str) -> Optional[str]:
