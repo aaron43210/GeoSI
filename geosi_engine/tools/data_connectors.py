@@ -41,7 +41,8 @@ class AddBasemapTool(PortableTool):
             key = resolve_provider(provider)
             layer = add_basemap(key)
             if layer is None:
-                return ToolResult(success=False, error=f"Basemap provider '{provider}' not available (QGIS not running?).")
+                return ToolResult(
+                    success=False, error=f"Basemap provider '{provider}' not available (QGIS not running?).")
             return ToolResult(success=True, message=f"Basemap '{key}' added.", output=None)
         except Exception as exc:
             return ToolResult(success=False, error=str(exc))

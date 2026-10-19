@@ -181,12 +181,12 @@ if os.environ.get("GEOSI_JSON_LOGS", "").lower() in {"1", "true", "yes"}:
         logger.debug("json_log_formatter not installed — plain logging.")
 
 # ── Register route modules ─────────────────────────────────────────────
-from geosi_server.rag_routes import router as rag_router
-from geosi_server.workflow_routes import router as workflow_router
-from geosi_server.data_routes import router as data_router
-from geosi_server.viz_routes import router as viz_router
-from geosi_server.chat_routes import router as chat_router
-from geosi_server.admin_routes import router as admin_router
+from geosi_server.rag_routes import router as rag_router  # noqa: E402 — registered after app is created
+from geosi_server.workflow_routes import router as workflow_router  # noqa: E402 — registered after app is created
+from geosi_server.data_routes import router as data_router  # noqa: E402 — registered after app is created
+from geosi_server.viz_routes import router as viz_router  # noqa: E402 — registered after app is created
+from geosi_server.chat_routes import router as chat_router  # noqa: E402 — registered after app is created
+from geosi_server.admin_routes import router as admin_router  # noqa: E402 — registered after app is created
 try:
     import multipart  # noqa: F401 — python-multipart; required for file upload
     from geosi_server.workspace_routes import router as workspace_router
@@ -195,7 +195,7 @@ except ImportError:
     workspace_router = None  # type: ignore[assignment]
     _workspace_router_available = False
     logger.warning("python-multipart not installed — /workspace/layers upload disabled.")
-from geosi_mcp.server import router as mcp_router
+from geosi_mcp.server import router as mcp_router  # noqa: E402 — registered after app is created
 
 app.include_router(rag_router, prefix="/rag", tags=["RAG"])
 app.include_router(workflow_router, prefix="/workflow", tags=["Workflows"])
@@ -219,7 +219,7 @@ except Exception as exc:
 
 
 # ── Global endpoints ───────────────────────────────────────────────────
-from geosi_server.auth import api_key_auth
+from geosi_server.auth import api_key_auth  # noqa: E402 — registered after app is created
 
 
 @app.get("/health", tags=["Observability"])

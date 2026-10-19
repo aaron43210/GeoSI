@@ -19,7 +19,7 @@ from typing import Optional, Tuple
 logger = logging.getLogger("geosi_data.geocoding")
 
 _NOMINATIM = "https://nominatim.openstreetmap.org"
-_PHOTON    = "https://photon.komoot.io"
+_PHOTON = "https://photon.komoot.io"
 _UA = "GeoSI/2.0 (geosi-plugin; contact=geosi@geosi.io)"
 
 

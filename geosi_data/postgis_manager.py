@@ -264,7 +264,8 @@ class PostGISManager:
                     with self._engine.connect() as conn:
                         # Use allow-list-quoted identifier; COUNT(*) table ref is safe
                         count_result = conn.execute(
-                            text(f"SELECT COUNT(*) FROM {safe_table}")  # nosec B608 — safe_table validated by TableAllowList.validate_and_quote()
+                            # safe_table is validated by TableAllowList.validate_and_quote()
+                            text(f"SELECT COUNT(*) FROM {safe_table}")  # nosec B608
                         )
                         info["feature_count"] = count_result.scalar()
 

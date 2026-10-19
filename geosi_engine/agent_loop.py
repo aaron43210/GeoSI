@@ -426,7 +426,8 @@ class AgentLoop:
                 success=True,
                 answer=(
                     "I am currently in offline mode and could not generate a response for this query. "
-                    "Please ensure Ollama is running (`ollama serve`) with `llama3` or configure a cloud API in Settings (⚙)."
+                    "Please ensure Ollama is running (`ollama serve`) with `llama3` "
+                    "or configure a cloud API in Settings (⚙)."
                 ),
                 plan_source="offline_fallback",
             )
@@ -532,7 +533,8 @@ class AgentLoop:
          "# Optional: Export to GeoPackage or GeoJSON\n"
          "# gdf.to_file('sample_points.gpkg', layer='sample_points', driver='GPKG')\n```"),
         (re.compile(r"\b(?:pyqgis|memory\s+layer|scratch\s+layer)\b", re.I),
-         "```python\nfrom qgis.core import QgsVectorLayer, QgsField, QgsFeature, QgsGeometry, QgsPointXY, QgsProject\nfrom qgis.PyQt.QtCore import QVariant\n\n"
+         "```python\nfrom qgis.core import QgsVectorLayer, QgsField, QgsFeature, QgsGeometry, "
+         "QgsPointXY, QgsProject\nfrom qgis.PyQt.QtCore import QVariant\n\n"
          "# Create memory layer with Point geometry in WGS84\n"
          "layer = QgsVectorLayer('Point?crs=EPSG:4326', 'sample_points', 'memory')\n"
          "prov = layer.dataProvider()\n\n"

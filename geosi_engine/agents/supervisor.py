@@ -55,7 +55,7 @@ _CB_RESET_S = float(os.environ.get("CIRCUIT_BREAKER_RESET_SECONDS", "120"))
 class CBState(str, Enum):
     CLOSED = "closed"       # normal operation
     OPEN = "open"           # failing — skip this provider
-    HALF_OPEN = "half_open" # probe: allow one trial call
+    HALF_OPEN = "half_open"  # probe: allow one trial call
 
 
 @dataclass

@@ -75,7 +75,8 @@ class MetadataRepository:
                 }
                 tool_sequence = [s.tool_name for s in (plan.steps or [])]
                 if plan.request:
-                    intent = plan.request.intent.value if hasattr(plan.request.intent, "value") else str(plan.request.intent)
+                    intent_obj = plan.request.intent
+                    intent = intent_obj.value if hasattr(intent_obj, "value") else str(intent_obj)
 
             # Serialize result
             result_data = None

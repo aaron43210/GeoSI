@@ -50,7 +50,7 @@ TAG_PRESETS: Dict[str, List[Dict[str, str]]] = {
     "forests":      [{"landuse": "forest"}, {"natural": "wood"}],
     "residential":  [{"landuse": "residential"}],
     "industrial":   [{"landuse": "industrial"}],
-    "fire_stations":[{"amenity": "fire_station"}],
+    "fire_stations": [{"amenity": "fire_station"}],
     "police":       [{"amenity": "police"}],
     "post_offices": [{"amenity": "post_office"}],
     "bus_stops":    [{"highway": "bus_stop"}, {"public_transport": "stop_position"}],
@@ -77,7 +77,8 @@ def geocode_bbox(
     padded by *padding_deg* degrees.
     """
     try:
-        import urllib.request, urllib.parse
+        import urllib.request
+        import urllib.parse
         params = urllib.parse.urlencode({
             "q": place, "format": "json", "limit": "1",
         })

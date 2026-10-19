@@ -59,8 +59,11 @@ plugin_dir = os.path.dirname(__file__)
 if plugin_dir not in sys.path:
     sys.path.insert(0, plugin_dir)
 
-from geosi_engine.base import register_backend, register_expression_validator, register_inspector
-from geosi_engine.models import ToolResult, ToolParameter, Layer
+# imports below need sys.path set above
+from geosi_engine.base import (  # noqa: E402
+    register_backend, register_expression_validator, register_inspector,
+)
+from geosi_engine.models import ToolResult, ToolParameter, Layer  # noqa: E402
 
 logger = logging.getLogger("geosi_plugin.qgis_bridge")
 
@@ -110,8 +113,8 @@ _PARAM_TYPE_MAP: Dict[str, str] = {
     "layer":           "layer",   # QgsProcessingParameterMapLayer
     "mesh":            "layer",   # QgsProcessingParameterMeshLayer
     "multilayer":      "layer",   # QgsProcessingParameterMultipleLayers
-    "vectordestination": "layer", # output vector
-    "rasterdestination": "layer", # output raster
+    "vectordestination": "layer",  # output vector
+    "rasterdestination": "layer",  # output raster
     "featureSink":     "layer",   # QgsProcessingParameterFeatureSink
 
     # ── Numeric types → "number" ──────────────────────────────────────
@@ -122,7 +125,7 @@ _PARAM_TYPE_MAP: Dict[str, str] = {
     "range":           "number",  # QgsProcessingParameterRange
 
     # ── Boolean → "boolean" ───────────────────────────────────────────
-    "boolean":         "boolean", # QgsProcessingParameterBoolean
+    "boolean":         "boolean",  # QgsProcessingParameterBoolean
 
     # ── Everything else → "string" ────────────────────────────────────
     "string":          "string",  # QgsProcessingParameterString
@@ -208,7 +211,7 @@ def _algorithm_risk(alg_id: str) -> str:
 _SKIP_PROVIDERS: frozenset = frozenset({
     "model",        # Graphical modeler (user models, not tools)
     "script",       # User scripts
-    "preconfigured", # Pre-configured algorithms (wrappers)
+    "preconfigured",  # Pre-configured algorithms (wrappers)
 })
 
 

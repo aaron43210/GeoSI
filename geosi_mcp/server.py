@@ -363,7 +363,7 @@ async def _tool_get_layer(params: Dict, session_id: str) -> Dict:
     try:
         from qgis.core import QgsProject, QgsVectorLayer, QgsRasterLayer
         layer = next(
-            (l for l in QgsProject.instance().mapLayers().values() if l.name() == layer_name),
+            (lyr for lyr in QgsProject.instance().mapLayers().values() if lyr.name() == layer_name),
             None,
         )
         if layer is None:
@@ -380,13 +380,13 @@ async def _tool_get_layer(params: Dict, session_id: str) -> Dict:
             "source": layer.dataProvider().dataSourceUri() if layer.dataProvider() else "",
         })
         if isinstance(layer, QgsVectorLayer):
-            info["feature_count"]  = layer.featureCount()
-            info["geometry_type"]  = layer.geometryType().name
+            info["feature_count"] = layer.featureCount()
+            info["geometry_type"] = layer.geometryType().name
             info["fields"] = [{"name": f.name(), "type": f.typeName()} for f in layer.fields()]
         elif isinstance(layer, QgsRasterLayer):
             info["band_count"] = layer.bandCount()
-            info["width"]      = layer.width()
-            info["height"]     = layer.height()
+            info["width"] = layer.width()
+            info["height"] = layer.height()
     except ImportError:
         info["note"] = "QGIS not loaded — metadata unavailable."
     return info
@@ -398,7 +398,7 @@ async def _tool_approve_pending_action(params: Dict, session_id: str) -> Dict:
     if not action_id:
         raise ValueError("'action_id' parameter is required.")
     approved = bool(params.get("approved", False))
-    reason   = params.get("reason", "")
+    reason = params.get("reason", "")
 
     try:
         from geosi_engine.agents.permission_safety import PermissionSafetyAgent

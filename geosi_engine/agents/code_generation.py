@@ -232,7 +232,7 @@ class CodeGenerationAgent:
             lines.append(f"result_{i+1} = processing.run(")
             lines.append(f'    "{tool}",')
             lines.append(f"    {params_repr}")
-            lines.append(f")")
+            lines.append(")")
             lines.append(f'print(f"Step {i+1} ({tool}): {{result_{i+1}}}")')
 
         lines.append("\nprint('Workflow complete.')")
@@ -353,7 +353,7 @@ print(f"Output written: {{out_path}}")
             params = getattr(step, "parameters", {})
             lines.append(f"# Step {i+1}: {tool}")
             lines.append(f"# Parameters: {params}")
-            lines.append(f"# TODO: Implement this step")
+            lines.append("# TODO: Implement this step")
             lines.append("")
         return "\n".join(lines)
 

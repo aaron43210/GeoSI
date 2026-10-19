@@ -296,7 +296,12 @@ class _LocalCache:
 class QueryParser:
     """Natural-language GIS query parser with LLM + rules + cache."""
 
-    def __init__(self, use_llm: bool = True, use_cache: bool = True, conversation: Optional[ConversationManager] = None) -> None:
+    def __init__(
+        self,
+        use_llm: bool = True,
+        use_cache: bool = True,
+        conversation: Optional[ConversationManager] = None,
+    ) -> None:
         self.use_llm = use_llm
         self.use_cache = use_cache
         self.conversation = conversation or ConversationManager(
@@ -421,7 +426,7 @@ class QueryParser:
     @staticmethod
     def _hash(query: str, layers: List[str]) -> str:
         payload = json.dumps(
-            {"q": query.lower(), "l": sorted(l.lower() for l in layers)},
+            {"q": query.lower(), "l": sorted(n.lower() for n in layers)},
             sort_keys=True,
         ).encode("utf-8")
         return hashlib.sha256(payload).hexdigest()
@@ -665,10 +670,10 @@ class QueryParser:
         response.raise_for_status()
         data = response.json()
         text = data.get("response", "")
-        
+
         # Add response to conversation history
         self.conversation.add_assistant_message(text)
-        
+
         return self._json_to_request(query, text, available_layers)
 
     def _parse_with_anthropic(
@@ -762,7 +767,7 @@ class QueryParser:
         start = cleaned.find("{")
         end = cleaned.rfind("}")
         if start != -1 and end > start:
-            return json.loads(cleaned[start : end + 1])
+            return json.loads(cleaned[start: end + 1])
         raise ValueError("no JSON object found in LLM output")
 
     def _request_from_payload(

@@ -133,7 +133,9 @@ class WorkflowOptimizationAgent:
             "shared_tools": sorted(tools_a & tools_b),
             "recommendation": (
                 f"Plan A uses {len(steps_a)} steps, Plan B uses {len(steps_b)} steps. "
-                f"{'Plan B is shorter.' if len(steps_b) < len(steps_a) else 'Plan A is shorter.' if len(steps_a) < len(steps_b) else 'Same length.'}"
+                + ("Plan B is shorter." if len(steps_b) < len(steps_a)
+                   else "Plan A is shorter." if len(steps_a) < len(steps_b)
+                   else "Same length.")
             ),
         }
 

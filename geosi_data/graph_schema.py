@@ -27,23 +27,23 @@ from typing import Any, Dict
 # ── Node label constants ──────────────────────────────────────────────────
 
 class NodeLabel:
-    DATASET   = "Dataset"
-    WORKFLOW  = "Workflow"
-    AGENT     = "Agent"
+    DATASET = "Dataset"
+    WORKFLOW = "Workflow"
+    AGENT = "Agent"
     EXECUTION = "Execution"
-    TOOL      = "Tool"
+    TOOL = "Tool"
 
 
 # ── Relationship type constants ───────────────────────────────────────────
 
 class RelType:
-    USED         = "USED"
-    RAN_BY       = "RAN_BY"
-    FOLLOWS      = "FOLLOWS"
-    CONTAINS     = "CONTAINS"
+    USED = "USED"
+    RAN_BY = "RAN_BY"
+    FOLLOWS = "FOLLOWS"
+    CONTAINS = "CONTAINS"
     DERIVED_FROM = "DERIVED_FROM"
-    RELATED_TO   = "RELATED_TO"
-    PRECEDES     = "PRECEDES"
+    RELATED_TO = "RELATED_TO"
+    PRECEDES = "PRECEDES"
 
 
 # ── Node property builders ────────────────────────────────────────────────

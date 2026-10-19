@@ -28,7 +28,7 @@ class ConversationManager:
     def __init__(self, max_history: int = 20, system_prompt: Optional[str] = None):
         """
         Initialize conversation manager.
-        
+
         Args:
             max_history: Maximum number of turns to keep in history
             system_prompt: Optional system message to set LLM behavior
@@ -36,7 +36,7 @@ class ConversationManager:
         self.max_history = max_history
         self.history: List[Message] = []
         self.system_prompt = system_prompt
-        
+
         if system_prompt:
             self.history.append(Message(role="system", content=system_prompt))
 
@@ -55,10 +55,10 @@ class ConversationManager:
     def get_context(self, include_system: bool = True) -> str:
         """
         Build formatted conversation context for LLM prompts.
-        
+
         Args:
             include_system: Whether to include system message
-            
+
         Returns:
             Formatted conversation history
         """
@@ -72,10 +72,10 @@ class ConversationManager:
     def get_messages_for_api(self, exclude_system: bool = False) -> List[Dict]:
         """
         Get messages formatted for API calls (OpenAI-style).
-        
+
         Args:
             exclude_system: Whether to exclude system messages
-            
+
         Returns:
             List of message dicts with role and content
         """
@@ -94,16 +94,16 @@ class ConversationManager:
         """Get last user-assistant exchange as (user_msg, assistant_msg) tuple."""
         user_msg = None
         assistant_msg = None
-        
+
         for msg in reversed(self.history):
             if msg.role == "assistant" and not assistant_msg:
                 assistant_msg = msg.content
             elif msg.role == "user" and not user_msg:
                 user_msg = msg.content
-            
+
             if user_msg and assistant_msg:
                 return (user_msg, assistant_msg)
-        
+
         return None
 
     def clear(self) -> None:
@@ -118,10 +118,10 @@ class ConversationManager:
         # Always keep system message if present
         system_msgs = [m for m in self.history if m.role == "system"]
         other_msgs = [m for m in self.history if m.role != "system"]
-        
+
         if len(other_msgs) > self.max_history:
             other_msgs = other_msgs[-self.max_history:]
-        
+
         self.history = system_msgs + other_msgs
 
     def to_json(self) -> str:

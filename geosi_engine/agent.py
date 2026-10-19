@@ -471,8 +471,8 @@ class GeoSIAgent:
         if primary:
             primary_lower = primary.lower()
             primary_stem = os.path.splitext(primary_lower)[0]
-            available_lower = [l.lower() for l in available]
-            available_stems = [os.path.splitext(l)[0].lower() for l in available]
+            available_lower = [name.lower() for name in available]
+            available_stems = [os.path.splitext(name)[0].lower() for name in available]
 
             matched = (
                 primary_lower in available_lower
@@ -603,8 +603,8 @@ class GeoSIAgent:
 
             elif op_name == "clip" and tool_name == "gdal_cliprasterbymasklayer":
                 mask = request.entities.get("secondary_layer") or next(
-                    (l for l in (request.available_layers or []) if l != primary
-                     and getattr(self._state_layer(l), "layer_type", "") == "vector"), None)
+                    (name for name in (request.available_layers or []) if name != primary
+                     and getattr(self._state_layer(name), "layer_type", "") == "vector"), None)
                 if mask:
                     params["MASK"] = mask
                     params["CROP_TO_CUTLINE"] = True
@@ -647,6 +647,7 @@ class GeoSIAgent:
                 # One multi-band image: (A - B) / (A + B) with band numbers
                 # taken from the query ("band 3 as red", "band 4 as NIR").
                 q = (request.query or "").lower()
+
                 def band_for(name, default):
                     m = re.search(rf"band\s*(\d+)\s*(?:as|=|is|for)\s*(?:the\s*)?{name}", q) or \
                         re.search(rf"{name}\s*(?:band)?\s*(?:=|is|:)?\s*(?:band\s*)?(\d+)", q)
@@ -664,8 +665,8 @@ class GeoSIAgent:
                 available = request.available_layers or []
                 red = primary or (available[0] if available else "")
                 nir = request.entities.get("secondary_layer") or (available[1] if len(available) > 1 else "")
-                b4 = [l for l in available if "B4" in l.upper()]
-                b5 = [l for l in available if "B5" in l.upper()]
+                b4 = [name for name in available if "B4" in name.upper()]
+                b5 = [name for name in available if "B5" in name.upper()]
                 if b4 and b5:
                     red, nir = b4[0], b5[0]
                 if op_name == "ndvi":

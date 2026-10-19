@@ -61,7 +61,7 @@ EXAMPLES: List[Dict] = [
      "steps": [_step("native_countpointsinpolygon", {"POLYGONS": "parks", "POINTS": "trees", "FIELD": "NUMPOINTS"})]},
     {"query": "join each school to the district it falls in",
      "steps": [_step("native_joinattributesbylocation", {"INPUT": "schools", "JOIN": "districts", "PREDICATE": [0],
-                                                          "METHOD": 1})]},
+                                                         "METHOD": 1})]},
     {"query": "add the x and y coordinates of each well as fields",
      "steps": [_step("native_addxyfields", {"INPUT": "wells"})]},
     {"query": "convert lakes polygons to lines",
@@ -221,7 +221,8 @@ def instantiate(example: Dict, query: str, layers: Dict[str, object]) -> Optiona
         return None
 
     def value_after(field: str) -> Optional[str]:
-        m = re.search(rf"\b{re.escape(field.lower())}\b\s*(?:is|=|==|equals|of)?\s*['\"]?([A-Za-z0-9_.-]+)", query, re.I)
+        pattern = rf"\b{re.escape(field.lower())}\b\s*(?:is|=|==|equals|of)?\s*['\"]?([A-Za-z0-9_.-]+)"
+        m = re.search(pattern, query, re.I)
         return m.group(1) if m else None
 
     steps = []

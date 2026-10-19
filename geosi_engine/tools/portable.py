@@ -18,7 +18,7 @@ logger = logging.getLogger("geosi_engine.tools.portable")
 
 class LoadLayerTool(PortableTool):
     """Load spatial data from disk."""
-    
+
     def spec(self) -> ToolSpec:
         return ToolSpec(
             name="load_spatial_data",
@@ -34,10 +34,10 @@ class LoadLayerTool(PortableTool):
     def execute(self, filepath: str, layer_name: Optional[str] = None, **kwargs) -> ToolResult:
         if not os.path.exists(filepath):
             return ToolResult(success=False, error=f"File not found: {filepath}")
-        
+
         name = layer_name or os.path.basename(filepath).split('.')[0]
         ext = os.path.splitext(filepath)[1].lower()
-        
+
         try:
             # Vector loading
             if ext in ['.shp', '.geojson', '.gpkg', '.kml']:
@@ -65,7 +65,7 @@ class LoadLayerTool(PortableTool):
                     features=data
                 )
                 return ToolResult(success=True, output=layer, message=f"Loaded vector layer: {name}")
-            
+
             # Raster loading
             elif ext in ['.tif', '.tiff', '.asc', '.img']:
                 import rasterio
@@ -77,10 +77,10 @@ class LoadLayerTool(PortableTool):
                         feature_count=src.count,
                         crs=str(src.crs) if src.crs else "unknown",
                         filepath=filepath,
-                        features=None # We don't load full raster into memory here
+                        features=None  # We don't load full raster into memory here
                     )
                 return ToolResult(success=True, output=layer, message=f"Loaded raster layer: {name}")
-            
+
             return ToolResult(success=False, error=f"Unsupported format: {ext}")
         except Exception as e:
             return ToolResult(success=False, error=str(e))
@@ -88,7 +88,7 @@ class LoadLayerTool(PortableTool):
 
 class SaveLayerTool(PortableTool):
     """Save a layer to disk."""
-    
+
     def spec(self) -> ToolSpec:
         return ToolSpec(
             name="save_layer",
@@ -107,7 +107,7 @@ class SaveLayerTool(PortableTool):
         layer = layer_name
         if isinstance(layer, str):
             return ToolResult(success=False, error="Layer must be a Layer object")
-            
+
         try:
             if layer.layer_type == "vector" and layer.features is not None:
                 layer.features.to_file(filepath, driver=driver)
@@ -119,7 +119,7 @@ class SaveLayerTool(PortableTool):
 
 class CleanLayerTool(PortableTool):
     """Clean and repair vector geometries."""
-    
+
     def spec(self) -> ToolSpec:
         return ToolSpec(
             name="clean_layer",
@@ -137,7 +137,7 @@ class CleanLayerTool(PortableTool):
         layer = layer_name
         if layer.layer_type != "vector":
             return ToolResult(success=False, error="Only vector layers can be cleaned")
-            
+
         try:
             gdf = layer.features.copy()
             # Single pass over the geometry column: compute validity /
@@ -155,7 +155,7 @@ class CleanLayerTool(PortableTool):
                 valid_mask = gdf.geometry.is_valid
             if drop_empty:
                 gdf = gdf[~empty_mask & valid_mask]
-            
+
             new_layer = Layer(
                 name=f"{layer.name}_cleaned",
                 layer_type="vector",
@@ -172,7 +172,7 @@ class CleanLayerTool(PortableTool):
 
 class CalculateFieldTool(PortableTool):
     """Run an expression to create/update a field."""
-    
+
     def spec(self) -> ToolSpec:
         return ToolSpec(
             name="calculate_field",
@@ -192,7 +192,7 @@ class CalculateFieldTool(PortableTool):
             gdf = layer.features.copy()
             # Simple eval (caution: in production use a safer parser)
             gdf[field_name] = gdf.eval(expression)
-            
+
             new_layer = Layer(
                 name=f"{layer.name}_updated",
                 layer_type="vector",
@@ -352,11 +352,11 @@ class ValidateGeometryTool(PortableTool):
             if gdf is None or not hasattr(gdf, "geometry"):
                 return ToolResult(success=False, error="Layer has no geometry column.")
 
-            null_count    = int(gdf.geometry.isna().sum())
-            empty_count   = int(gdf.geometry.is_empty.sum())
+            null_count = int(gdf.geometry.isna().sum())
+            empty_count = int(gdf.geometry.is_empty.sum())
             invalid_count = int((~gdf.geometry.is_valid).sum())
-            total         = len(gdf)
-            valid_count   = total - null_count - empty_count - invalid_count
+            total = len(gdf)
+            valid_count = total - null_count - empty_count - invalid_count
 
             report = {
                 "total": total,

@@ -327,7 +327,7 @@ class RAGASRunner:
         gate_passed = (
             mean_faith >= FAITHFULNESS_THRESHOLD
             and mean_prec >= CONTEXT_PRECISION_THRESHOLD
-            and not self._ragas_available is False  # only PASS with real RAGAS
+            and self._ragas_available is not False  # only PASS with real RAGAS
         ) if self._ragas_available else False  # heuristic → SKIP (treated as not-failed)
 
         return EvalRunSummary(

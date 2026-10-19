@@ -307,7 +307,8 @@ class MachineLearningAgent:
             return self.predict(job)
         else:
             return MLJobResult(success=False, job_type=jt, algorithm=job.algorithm,
-                               error=f"Unknown ML job type '{job.job_type}'. Supported: classification, regression, clustering, predict")
+                               error=(f"Unknown ML job type '{job.job_type}'. "
+                                      "Supported: classification, regression, clustering, predict"))
 
     def _load_spatial_features(self, job: MLJobRequest):
         """
@@ -322,7 +323,8 @@ class MachineLearningAgent:
             gdf = gpd.read_file(job.input_layers[0])
             cols = job.feature_columns or [c for c in gdf.columns if c not in ("geometry", job.target_column)]
             X = gdf[cols].select_dtypes(include="number").values
-            y = gdf[job.target_column].values if job.target_column and job.target_column in gdf.columns else np.zeros(len(X))
+            has_target = job.target_column and job.target_column in gdf.columns
+            y = gdf[job.target_column].values if has_target else np.zeros(len(X))
             return X, y
         except Exception as exc:
             logger.warning("Feature loading failed: %s", exc)

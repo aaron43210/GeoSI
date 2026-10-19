@@ -27,6 +27,7 @@ try:
 except ImportError:
     pass
 
+
 @dataclass
 class Chunk:
     """

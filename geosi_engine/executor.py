@@ -278,9 +278,9 @@ class ExecutionEngine:
         error = None
         # Collect error messages from all failed steps
         if not all_success:
-            failed = [l for l in logs if l.status == ExecutionStatus.FAILED]
+            failed = [log for log in logs if log.status == ExecutionStatus.FAILED]
             error = "; ".join(
-                f"{l.step_id}: {l.error_message}" for l in failed if l.error_message
+                f"{log.step_id}: {log.error_message}" for log in failed if log.error_message
             )
 
         logger.info(
@@ -306,7 +306,7 @@ class ExecutionEngine:
         self, plan: ExecutionPlan, logs: list, last_result: Any
     ) -> str:
         """Generate a human-readable answer from execution results."""
-        succeeded = sum(1 for l in logs if l.status == ExecutionStatus.SUCCESS)
+        succeeded = sum(1 for log in logs if log.status == ExecutionStatus.SUCCESS)
         total = len(logs)
 
         if succeeded == total and last_result and last_result.success:

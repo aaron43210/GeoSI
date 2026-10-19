@@ -33,13 +33,41 @@ logger = logging.getLogger("geosi_engine.agents.remote_sensing")
 
 # Validated formulas for each spectral index (band-math strings)
 _INDEX_FORMULAS: dict[str, dict[str, Any]] = {
-    "NDVI":  {"formula": "(NIR - RED) / (NIR + RED)", "range": (-1.0, 1.0), "description": "Normalized Difference Vegetation Index"},
-    "NDWI":  {"formula": "(GREEN - NIR) / (GREEN + NIR)", "range": (-1.0, 1.0), "description": "Normalized Difference Water Index"},
-    "SAVI":  {"formula": "((NIR - RED) / (NIR + RED + 0.5)) * 1.5", "range": (-1.5, 1.5), "description": "Soil-Adjusted Vegetation Index"},
-    "EVI":   {"formula": "2.5 * (NIR - RED) / (NIR + 6*RED - 7.5*BLUE + 1)", "range": (-1.0, 1.0), "description": "Enhanced Vegetation Index"},
-    "NDBI":  {"formula": "(SWIR - NIR) / (SWIR + NIR)", "range": (-1.0, 1.0), "description": "Normalized Difference Built-up Index"},
-    "NDSI":  {"formula": "(GREEN - SWIR) / (GREEN + SWIR)", "range": (-1.0, 1.0), "description": "Normalized Difference Snow Index"},
-    "NBR":   {"formula": "(NIR - SWIR) / (NIR + SWIR)", "range": (-1.0, 1.0), "description": "Normalized Burn Ratio"},
+    "NDVI": {
+        "formula": "(NIR - RED) / (NIR + RED)",
+        "range": (-1.0, 1.0),
+        "description": "Normalized Difference Vegetation Index",
+    },
+    "NDWI": {
+        "formula": "(GREEN - NIR) / (GREEN + NIR)",
+        "range": (-1.0, 1.0),
+        "description": "Normalized Difference Water Index",
+    },
+    "SAVI": {
+        "formula": "((NIR - RED) / (NIR + RED + 0.5)) * 1.5",
+        "range": (-1.5, 1.5),
+        "description": "Soil-Adjusted Vegetation Index",
+    },
+    "EVI": {
+        "formula": "2.5 * (NIR - RED) / (NIR + 6*RED - 7.5*BLUE + 1)",
+        "range": (-1.0, 1.0),
+        "description": "Enhanced Vegetation Index",
+    },
+    "NDBI": {
+        "formula": "(SWIR - NIR) / (SWIR + NIR)",
+        "range": (-1.0, 1.0),
+        "description": "Normalized Difference Built-up Index",
+    },
+    "NDSI": {
+        "formula": "(GREEN - SWIR) / (GREEN + SWIR)",
+        "range": (-1.0, 1.0),
+        "description": "Normalized Difference Snow Index",
+    },
+    "NBR": {
+        "formula": "(NIR - SWIR) / (NIR + SWIR)",
+        "range": (-1.0, 1.0),
+        "description": "Normalized Burn Ratio",
+    },
 }
 
 
@@ -256,7 +284,11 @@ class RemoteSensingAgent:
 
             return RasterJobResult(
                 success=True, operation="change_detection", output_layer=out_path,
-                statistics={"changed_pixels": changed_pixels, "pct_changed": round(pct_changed, 2), "threshold": threshold},
+                statistics={
+                    "changed_pixels": changed_pixels,
+                    "pct_changed": round(pct_changed, 2),
+                    "threshold": threshold,
+                },
             )
         except ImportError:
             return RasterJobResult(success=False, operation="change_detection", error="rasterio not available.")
@@ -332,7 +364,8 @@ class RemoteSensingAgent:
         else:
             return RasterJobResult(
                 success=False, operation=op,
-                error=f"Unknown RS operation '{job.operation}'. Supported: spectral_index, change_detection, atmospheric_correction",
+                error=(f"Unknown RS operation '{job.operation}'. "
+                       "Supported: spectral_index, change_detection, atmospheric_correction"),
             )
 
     def _run_verification(self, result: RasterJobResult) -> RasterJobResult:
@@ -366,7 +399,8 @@ class RemoteSensingAgent:
                 L = 0.5
                 return ((data["NIR"] - data["RED"]) / (data["NIR"] + data["RED"] + L)) * (1 + L)
             elif idx == "EVI":
-                return 2.5 * (data["NIR"] - data["RED"]) / (data["NIR"] + 6 * data["RED"] - 7.5 * data.get("BLUE", 0) + 1)
+                nir, red, blue = data["NIR"], data["RED"], data.get("BLUE", 0)
+                return 2.5 * (nir - red) / (nir + 6 * red - 7.5 * blue + 1)
             elif idx == "NDBI":
                 return (data["SWIR"] - data["NIR"]) / (data["SWIR"] + data["NIR"])
             elif idx == "NDSI":

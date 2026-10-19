@@ -714,7 +714,7 @@ class GeoSIDock:
         self._sync_layers()
         layers = self.engine.state.list_layers()
         if layers:
-            items = "<br>".join(f"  • {l}" for l in layers)
+            items = "<br>".join(f"  • {name}" for name in layers)
             self._append_system(f"<b>📂 {len(layers)} layers loaded:</b><br>{items}")
         else:
             self._append_system("No layers loaded in QGIS.")
@@ -743,7 +743,8 @@ class GeoSIDock:
     def _append_assistant(self, text: str):
         rendered = self._markdown_to_html(text)
         self.chat_display.append(
-            f"<div style='color: #e0e0e0; margin-bottom: 12px;'><b style='color: #81C784;'>GeoSI:</b><br>{rendered}</div>"
+            "<div style='color: #e0e0e0; margin-bottom: 12px;'>"
+            f"<b style='color: #81C784;'>GeoSI:</b><br>{rendered}</div>"
         )
 
     @staticmethod
@@ -755,15 +756,22 @@ class GeoSIDock:
 
         # Preserve code blocks by replacing them with unique placeholders
         code_blocks = []
+
         def _replace_block(m):
             lang = (m.group(1) or "").strip().lower()
             code = m.group(2).strip("\r\n")
             escaped_code = html.escape(code)
-            badge = f"<div style='color: #4CAF50; font-size: 11px; margin-bottom: 4px; font-weight: bold;'>{lang.upper() or 'PYTHON'}</div>"
+            badge = (
+                "<div style='color: #4CAF50; font-size: 11px; margin-bottom: 4px; font-weight: bold;'>"
+                f"{lang.upper() or 'PYTHON'}</div>"
+            )
             block_html = (
-                f"<div style='background-color: #121212; border: 1px solid #333; border-radius: 4px; padding: 10px; margin: 8px 0;'>"
+                "<div style='background-color: #121212; border: 1px solid #333; "
+                "border-radius: 4px; padding: 10px; margin: 8px 0;'>"
                 f"{badge}"
-                f"<pre style='color: #a9b7c6; font-family: monospace; font-size: 12px; margin: 0; white-space: pre; line-height: 1.4;'><code>{escaped_code}</code></pre>"
+                "<pre style='color: #a9b7c6; font-family: monospace; font-size: 12px; "
+                "margin: 0; white-space: pre; line-height: 1.4;'>"
+                f"<code>{escaped_code}</code></pre>"
                 f"</div>"
             )
             code_blocks.append(block_html)
@@ -773,7 +781,8 @@ class GeoSIDock:
         formatted = html.escape(formatted)
         formatted = re.sub(
             r"`([^`]+)`",
-            r"<code style='background-color: #2b2b2b; color: #f8c555; padding: 2px 4px; border-radius: 3px; font-family: monospace;'>\1</code>",
+            r"<code style='background-color: #2b2b2b; color: #f8c555; padding: 2px 4px; "
+            r"border-radius: 3px; font-family: monospace;'>\1</code>",
             formatted,
         )
         formatted = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", formatted)

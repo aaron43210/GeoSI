@@ -274,7 +274,8 @@ class ReportGenerationAgent:
             )
             content = f"digraph workflow {{\n{dot_nodes}\n{dot_edges}\n}}"
 
-        out_path = req.output_path or f"geosi_workflow_{req.audit_log_id or int(time.time())}.{'md' if fmt == 'mermaid' else 'dot'}"
+        ext = 'md' if fmt == 'mermaid' else 'dot'
+        out_path = req.output_path or f"geosi_workflow_{req.audit_log_id or int(time.time())}.{ext}"
         Path(out_path).write_text(content, encoding="utf-8")
 
         return ReportResult(
@@ -339,7 +340,7 @@ class ReportGenerationAgent:
         if not md_result.success:
             return md_result
 
-        out_path = (req.output_path or f"geosi_report_{req.audit_log_id or int(time.time())}") 
+        out_path = (req.output_path or f"geosi_report_{req.audit_log_id or int(time.time())}")
         if not out_path.endswith(".pdf"):
             out_path += ".pdf"
 

@@ -54,6 +54,7 @@ _DESTRUCTIVE_INTENT_RE = re.compile(
 # Pending approval registry (in-memory)
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class _PendingApproval:
     action_id: str

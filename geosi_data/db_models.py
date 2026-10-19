@@ -364,4 +364,3 @@ class FeedbackHistoryRecord(Base):
     def __repr__(self) -> str:
         status = "✅" if self.success else "❌"
         return f"FeedbackHistoryRecord({status} {self.tool_name!r})"
-

@@ -20,12 +20,12 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from typing import Any, List, Optional
+import re as _re
 
 from geosi_engine.telemetry import span, set_span_attr
 
 logger = logging.getLogger("geosi_engine.agents.verification")
 
-import re as _re
 
 # A question gets its answer from data, so it need not produce a new layer
 QUESTION_RE = _re.compile(
@@ -148,7 +148,8 @@ class VerificationAgent:
             if invalid_count > 0:
                 findings.append(VerificationIssue(
                     severity="warning", category="geometry",
-                    message=f"{invalid_count} invalid geometries (Shapely is_valid=False). Consider running Fix Geometries.",
+                    message=(f"{invalid_count} invalid geometries (Shapely is_valid=False). "
+                             "Consider running Fix Geometries."),
                     layer=layer_path,
                 ))
             stats["invalid_geometries"] = invalid_count
@@ -509,7 +510,9 @@ class VerificationAgent:
         if not output_path:
             # No output file — check for in-memory success flag
             if getattr(result, "success", True):
-                return VerificationReport(passed=True, issues=[], statistics={"note": "In-memory result — no file verification needed."})
+                return VerificationReport(
+                    passed=True, issues=[],
+                    statistics={"note": "In-memory result — no file verification needed."})
             return VerificationReport(passed=False, issues=["Execution result has no output path and reports failure."])
 
         # Dispatch by extension

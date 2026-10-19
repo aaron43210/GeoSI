@@ -29,6 +29,7 @@ class PermissionDeniedError(Exception):
 
 class ApprovalPendingError(Exception):
     """Raised when a tool requires human approval that hasn't arrived yet."""
+
     def __init__(self, action_id: str, message: str = "") -> None:
         self.action_id = action_id
         super().__init__(message or f"Approval pending: action_id={action_id}")

@@ -252,6 +252,7 @@ class ResearchAgent:
         except Exception as exc:
             logger.debug("GraphRAG init failed (non-fatal): %s", exc)
             # Return a no-op stub
+
             class _NoopGraphRAG:
                 def search(self, **kwargs): return []
                 def cross_reference(self, **kwargs): return []

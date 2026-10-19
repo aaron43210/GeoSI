@@ -29,6 +29,7 @@ Streamable HTTP: set GEOSI_MCP_TRANSPORT=streamable-http to run on
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import logging
 import os
@@ -38,8 +39,6 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger("geosi_mcp.stdio_server")
 
 # ── Try to import fastmcp; fall back to a minimal hand-rolled stdio loop ──
-
-import importlib.util
 
 _HAS_FASTMCP = importlib.util.find_spec("fastmcp") is not None
 
@@ -157,7 +156,7 @@ def _run_stdio_fallback() -> None:
 
         if method == "tools/call":
             tool_name = req.get("params", {}).get("name", "")
-            arguments  = req.get("params", {}).get("arguments", {})
+            arguments = req.get("params", {}).get("arguments", {})
             try:
                 result = await _dispatch(tool_name, arguments)
                 return json.dumps({

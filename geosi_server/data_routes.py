@@ -153,4 +153,3 @@ async def delete_layer(name: str, api_key: str = Depends(admin_auth)):
     if not deleted_meta and not deleted_table:
         raise HTTPException(status_code=404, detail=f"Failed to delete {name}")
     return {"status": "deleted", "layer": name}
-

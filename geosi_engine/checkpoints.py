@@ -138,7 +138,7 @@ class CheckpointManager:
 
         try:
             current_ids = set(project.mapLayers().keys())
-            before_ids  = set(cp.layer_ids_before)
+            before_ids = set(cp.layer_ids_before)
 
             # 1. Remove layers added after the snapshot
             added_ids = current_ids - before_ids
@@ -267,7 +267,7 @@ class CheckpointManager:
         if len(self._checkpoints) <= self._max:
             return
         sorted_ids = sorted(self._checkpoints,
-                             key=lambda k: self._checkpoints[k].created_at)
+                            key=lambda k: self._checkpoints[k].created_at)
         for cid in sorted_ids[:len(self._checkpoints) - self._max]:
             cp = self._checkpoints.pop(cid)
             self._cleanup(cp)

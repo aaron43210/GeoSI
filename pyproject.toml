@@ -81,7 +81,7 @@ build-backend = "scikit_build_core.build"
 # Ruff — lint + import sort
 # ---------------------------------------------------------------------------
 [tool.ruff]
-line-length = 100
+line-length = 120
 target-version = "py311"
 src = ["geosi_engine", "geosi_rag", "geosi_knowledge", "geosi_data", "geosi_server", "geosi_mcp", "geosi_eval"]
 
