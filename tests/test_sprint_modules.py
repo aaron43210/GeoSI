@@ -143,9 +143,9 @@ class TestBasemaps(unittest.TestCase):
 
     def test_resolve_provider_fallback(self):
         from geosi_data.basemaps import resolve_provider
-        # resolve_provider returns None for unrecognized names (not "osm")
+        # resolve_provider defaults to "osm" for unrecognized names
         result = resolve_provider("totally_unknown_provider_xyz999")
-        self.assertIsNone(result)
+        self.assertEqual(result, "osm")
 
     def test_provider_dict_populated(self):
         from geosi_data.basemaps import PROVIDERS
@@ -188,12 +188,13 @@ class TestGeocoding(unittest.TestCase):
         self.assertAlmostEqual(lat, 51.5074)
         self.assertIn("London", name)
 
-    def test_geocode_empty_result_returns_none(self):
-        # geocode() returns None on empty result (doesn't raise)
-        with patch("urllib.request.urlopen", return_value=self._mock_response("[]")):
+    def test_geocode_empty_result_raises_value_error(self):
+        # geocode() raises ValueError when Nominatim returns empty list
+        with patch("geosi_data.geocoding.urllib.request.urlopen",
+                   return_value=self._mock_response("[]")):
             from geosi_data.geocoding import geocode
-            result = geocode("ZZZnonexistent9999")
-        self.assertIsNone(result)
+            with self.assertRaises(ValueError):
+                geocode("ZZZnonexistent9999")
 
     def test_reverse_geocode(self):
         import json
