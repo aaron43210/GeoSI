@@ -167,13 +167,16 @@ jobs:
         # Locate the bindings instead of assuming a layout (it differs between builds)
         run: |
           prefix=$(cygpath -u "$CONDA_PREFIX")
-          init=$(find "$prefix" -path '*/qgis/__init__.py' -path '*python*' -not -path '*/site-packages/*' 2>/dev/null | head -1)
-          if [ -z "$init" ]; then
+          echo "python: $(command -v python)"; python -c "import sys; print(sys.path)"
+          # The compiled core module only exists in the real qgis package
+          core=$(find "$prefix" -path '*/qgis/_core*.pyd' 2>/dev/null | head -1)
+          if [ -z "$core" ]; then
             echo "QGIS Python bindings not found under $CONDA_PREFIX; candidates:"
-            find "$prefix" -maxdepth 4 -type d -name python | head -20
+            find "$prefix" -name '_core*.pyd' 2>/dev/null | head -20
+            find "$prefix" -maxdepth 4 -type d -name qgis | head -20
             exit 1
           fi
-          pydir=$(dirname "$(dirname "$init")")
+          pydir=$(dirname "$(dirname "$core")")
           echo "QGIS Python bindings: $pydir"
           echo "PYTHONPATH=$(cygpath -w "$pydir");$(cygpath -w "$pydir/plugins")" >> "$GITHUB_ENV"
           echo "QGIS_PREFIX_PATH=$(cygpath -w "$prefix/Library")" >> "$GITHUB_ENV"

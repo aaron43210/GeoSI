@@ -7,7 +7,7 @@
 # ════════════════════════════════════════════════════════════════════
 
 # ── Stage 1: Builder ──────────────────────────────────────────────
-FROM python:3.11-slim AS builder
+FROM python:3.11-slim-bookworm AS builder
 
 WORKDIR /build
 
@@ -50,7 +50,7 @@ RUN pip install --upgrade pip && \
         opentelemetry-instrumentation-fastapi
 
 # ── Stage 2: Runtime ─────────────────────────────────────────────
-FROM python:3.11-slim AS runtime
+FROM python:3.11-slim-bookworm AS runtime
 
 LABEL maintainer="aaron@zapserve.in" \
       version="2.0.0-dev" \
