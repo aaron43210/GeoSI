@@ -58,6 +58,14 @@ def validate(meta: configparser.SectionProxy) -> list[str]:
     errors = [f"metadata.txt: missing '{k}'" for k in REQUIRED_METADATA if not meta.get(k, "").strip()]
     if not re.fullmatch(r"\d+\.\d+(\.\d+)?([-.]?[A-Za-z0-9.]+)?", meta.get("version", "")):
         errors.append(f"metadata.txt: invalid version {meta.get('version')!r}")
+    # QGIS treats a plugin without these as QGIS 3 only and refuses it in QGIS 4
+    try:
+        if float(meta.get("qgisMaximumVersion", "3.99")) < 4:
+            errors.append("metadata.txt: qgisMaximumVersion must be >= 4.0 (e.g. 4.99) for QGIS 4")
+    except ValueError:
+        errors.append(f"metadata.txt: invalid qgisMaximumVersion {meta.get('qgisMaximumVersion')!r}")
+    if meta.get("supportsQt6", "").lower() != "true":
+        errors.append("metadata.txt: supportsQt6=True is required for QGIS 4 (Qt6)")
     if meta.get("experimental", "").lower() != "true":
         errors.append("metadata.txt: experimental must be True for this release")
     for name in (meta.get("icon", ""), "__init__.py", "LICENSE"):

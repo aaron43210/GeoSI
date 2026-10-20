@@ -1,11 +1,13 @@
 [general]
 name=GeoSI
 qgisMinimumVersion=3.28
+qgisMaximumVersion=4.99
+supportsQt6=True
 description=Geospatial Superintelligence — Conversational GIS AI with dynamic QGIS tool discovery
 version=0.1.0
 author=Aaron R
 email=aaronr43210@gmail.com
-about=GeoSI v2 dynamically discovers ALL QGIS Processing algorithms at startup and makes them available to an LLM-powered conversational interface. No hardcoded tools — 1000+ algorithms auto-registered.
+about=Type GIS tasks in plain language: GeoSI picks the QGIS Processing tools, runs them on your layers, checks the result and adds it to the map. Works offline with built-in rules for common tasks, or with a local (Ollama) or hosted language model for open requests. Experimental.
 tracker=https://github.com/aaron43210/GeoSI/issues
 repository=https://github.com/aaron43210/GeoSI
 tags=ai,gis,llm,processing,analysis,automation
