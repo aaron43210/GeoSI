@@ -161,28 +161,16 @@ jobs:
       - name: Install QGIS
         run: conda install -y qgis
 
-      - name: Expose QGIS Python bindings (Windows)
-        # conda-forge installs them under Library\python, which is not on sys.path on Windows
-        if: runner.os == 'Windows'
-        # Locate the bindings instead of assuming a layout (it differs between builds)
-        run: |
-          prefix=$(cygpath -u "$CONDA_PREFIX")
-          echo "python: $(command -v python)"; python -c "import sys; print(sys.path)"
-          # The compiled core module only exists in the real qgis package
-          core=$(find "$prefix" -path '*/qgis/_core*.pyd' 2>/dev/null | head -1)
-          if [ -z "$core" ]; then
-            echo "QGIS Python bindings not found under $CONDA_PREFIX; candidates:"
-            find "$prefix" -name '_core*.pyd' 2>/dev/null | head -20
-            find "$prefix" -maxdepth 4 -type d -name qgis | head -20
-            exit 1
-          fi
-          pydir=$(dirname "$(dirname "$core")")
-          echo "QGIS Python bindings: $pydir"
-          echo "PYTHONPATH=$(cygpath -w "$pydir");$(cygpath -w "$pydir/plugins")" >> "$GITHUB_ENV"
-          echo "QGIS_PREFIX_PATH=$(cygpath -w "$prefix/Library")" >> "$GITHUB_ENV"
-
       - name: Load plugin in QGIS
-        run: python tests/plugin_smoke.py "dist/geosi_plugin-*.zip"
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            # conda's QGIS activation joins PYTHONPATH with ':' under bash, which
+            # Windows Python reads as one bad entry; set it with ';' after activation
+            lib=$(cygpath -w "$CONDA_PREFIX/Library")
+            export PYTHONPATH="$lib\\python;$lib\\python\\plugins"
+            export QGIS_PREFIX_PATH="$lib"
+          fi
+          python tests/plugin_smoke.py "dist/geosi_plugin-*.zip"
 
   release:
     name: "Release"

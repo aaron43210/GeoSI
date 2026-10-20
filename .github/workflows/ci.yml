@@ -307,6 +307,10 @@ jobs:
     name: "Docker Build"
     runs-on: ubuntu-latest
     needs: [unit_tests, security_scan]
+    # Pushing to ghcr.io needs package write access for the workflow token
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
 
